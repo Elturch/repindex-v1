@@ -219,6 +219,15 @@ export function ensureSection7(
   if (!block || block.trim().length === 0) {
     return { content: finalContent, appended: false, tail: "" };
   }
-  const tail = "\n\n## 7. Recomendaciones priorizadas\n\n" + block;
+  // Mejora 12 — numeración continua: deriva el siguiente número correlativo
+  // de los `## N.` existentes para evitar saltos (ej. 5 → 7). El guard
+  // sigue matchéando porque el heading conserva "Recomendaciones priorizadas".
+  const headingNums: number[] = [];
+  for (const m of finalContent.matchAll(/(?:^|\n)\s*##\s*(\d+)\.\s/g)) {
+    const n = parseInt(m[1], 10);
+    if (Number.isFinite(n)) headingNums.push(n);
+  }
+  const nextNum = headingNums.length > 0 ? Math.max(...headingNums) + 1 : 7;
+  const tail = `\n\n## ${nextNum}. Recomendaciones priorizadas\n\n` + block;
   return { content: finalContent + tail, appended: true, tail };
 }

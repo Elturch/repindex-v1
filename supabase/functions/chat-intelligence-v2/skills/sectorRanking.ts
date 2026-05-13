@@ -365,6 +365,9 @@ interface RankingRow {
   consensusLevel: ConsensusLevel; // alto/medio/bajo (peor caso semanal)
   weekly_range_avg: number;       // rango (max-min) inter-modelo promedio entre semanas
   per_model: Partial<Record<ModelName, number>>;
+  // Mejora 10 — Tendencia primera vs última semana del periodo.
+  //   ↑ delta ≥ +3 · ↓ delta ≤ -3 · → en [-2, +2] · n/d <2 semanas con dato.
+  trend: "↑" | "↓" | "→" | "n/d";
 }
 
 const CANONICAL_DIMENSIONS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"|"CEM"|"GAM"|"DCM"|"CXM" }> = [
@@ -386,6 +389,97 @@ function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string 
     "",
     `El alcance solicitado contiene ${scopePhrase} en la base cotizada. No se añaden peers sectoriales ni empresas externas al subsector.`,
   ].join("\n");
+}
+
+// =====================================================================
+// Mejora 11 — Tablas HTML compactas de 8 submétricas POR EMPRESA.
+// Se pre-renderizan en código (no las genera el LLM) y se inyectan en
+// el informe final justo después del párrafo narrativo de cada empresa
+// en la sección 3 ("Análisis empresa por empresa").
+// Columnas: Métrica | Valor | Banda. Banda: 🔴 (<40), 🟠 (40-54),
+// 🟡 (55-69), 🟢 (70-84), 💎 (≥85). "n/d" si la dimensión no tiene dato.
+// =====================================================================
+function bandEmoji(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "n/d";
+  if (v < 40) return "🔴";
+  if (v < 55) return "🟠";
+  if (v < 70) return "🟡";
+  if (v < 85) return "🟢";
+  return "💎";
+}
+
+function buildPerCompanySubmetricsHtml(rows: any[]): Map<string, string> {
+  const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
+  for (const r of rows) {
+    const t = String(r["05_ticker"] ?? "").trim();
+    if (!t) continue;
+    const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), dims: new Map() };
+    for (const { key, metric } of CANONICAL_DIMENSIONS) {
+      const raw = r[key];
+      const v = typeof raw === "number" ? raw : parseFloat(raw);
+      if (!Number.isFinite(v)) continue;
+      if (!slot.dims.has(metric)) slot.dims.set(metric, []);
+      slot.dims.get(metric)!.push(v);
+    }
+    byTicker.set(t, slot);
+  }
+  const out = new Map<string, string>();
+  const cellStyle = "padding:3px 8px;border-bottom:1px solid #eee";
+  const headStyle = "padding:4px 8px;border-bottom:1px solid #ccc;text-align:left";
+  for (const [ticker, info] of byTicker) {
+    const rowsHtml = CANONICAL_DIMENSIONS.map(({ metric }) => {
+      const arr = info.dims.get(metric);
+      const mean = arr && arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      const valStr = mean == null ? "n/d" : (Math.round(mean * 10) / 10).toString();
+      const band = mean == null ? "n/d" : bandEmoji(mean);
+      return `<tr><td style="${cellStyle}"><strong>${metric}</strong></td><td style="${cellStyle};text-align:right">${valStr}</td><td style="${cellStyle};text-align:center">${band}</td></tr>`;
+    }).join("");
+    const html =
+      `<table style="font-size:0.85em;border-collapse:collapse;margin:6px 0 14px;min-width:240px">` +
+      `<thead><tr><th style="${headStyle}">Métrica</th><th style="${headStyle};text-align:right">Valor</th><th style="${headStyle};text-align:center">Banda</th></tr></thead>` +
+      `<tbody>${rowsHtml}</tbody></table>`;
+    out.set(ticker, html);
+  }
+  return out;
+}
+
+/**
+ * Mejora 11 — Inyecta la tabla HTML de submétricas justo después del
+ * encabezado en negrita de cada empresa (mini-perfil de sección 3).
+ * Patrón: localiza la primera línea que contenga `(TICKER)` dentro de
+ * un heading bold `**...**`, y mete la tabla en la siguiente línea en
+ * blanco. Idempotente: no inyecta si la tabla ya está presente.
+ */
+function injectPerCompanySubmetricTables(
+  finalContent: string,
+  htmlByTicker: Map<string, string>,
+  ranking: RankingRow[],
+): string {
+  if (htmlByTicker.size === 0 || ranking.length === 0) return finalContent;
+  let content = finalContent;
+  for (const r of ranking) {
+    const html = htmlByTicker.get(r.ticker);
+    if (!html) continue;
+    if (content.includes(html)) continue; // idempotente
+    // Buscar la primera línea que (a) empiece con **, (b) contenga (TICKER), (c) acabe con **.
+    const lines = content.split("\n");
+    let headingIdx = -1;
+    const tickerToken = `(${r.ticker})`;
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (!ln.includes(tickerToken)) continue;
+      // Heading bold (admite leading "- " o markdown)
+      if (/\*\*[^*]*\([A-Z0-9.\-]+\)[^*]*\*\*/.test(ln)) { headingIdx = i; break; }
+    }
+    if (headingIdx < 0) continue;
+    // Avanzar hasta el siguiente bloque vacío para insertar después de la narrativa.
+    let insertAt = headingIdx + 1;
+    while (insertAt < lines.length && lines[insertAt].trim() !== "") insertAt += 1;
+    // Insert: línea en blanco + html + línea en blanco.
+    lines.splice(insertAt, 0, "", html, "");
+    content = lines.join("\n");
+  }
+  return content;
 }
 
 // Frase canónica de unicidad para subsectores con 1 único emisor cotizado.
@@ -608,12 +702,18 @@ function aggregateRanking(
     const weeklyMaxs: number[] = [];
     const weeklyRanges: number[] = [];
     let worstLevelRank = 0;
-    for (const [, snapRows] of info.bySnapshot) {
+    // Mejora 10 — necesitamos primera/última semana ORDENADAS por ISO key
+    // para calcular tendencia. Capturamos midpoints por semana en orden.
+    const weekKeysSorted = [...info.bySnapshot.keys()].sort();
+    const weeklyMidsOrdered: number[] = [];
+    for (const wk of weekKeysSorted) {
+      const snapRows = info.bySnapshot.get(wk)!;
       const agg = aggregateConsensus(snapRows).get(ticker);
       if (!agg) continue;
       weeklyMins.push(agg.min);
       weeklyMaxs.push(agg.max);
       weeklyRanges.push(agg.range);
+      weeklyMidsOrdered.push((agg.min + agg.max) / 2);
       worstLevelRank = Math.max(worstLevelRank, LEVEL_RANK[agg.consensusLevel]);
     }
     if (weeklyMins.length === 0) continue;
@@ -624,6 +724,14 @@ function aggregateRanking(
     for (const [m, vals] of info.per_model) {
       per_model[m] = vals.reduce((a, b) => a + b, 0) / vals.length;
     }
+    // Mejora 10 — calcular tendencia (necesita ≥2 semanas).
+    let trend: RankingRow["trend"] = "n/d";
+    if (weeklyMidsOrdered.length >= 2) {
+      const delta = weeklyMidsOrdered[weeklyMidsOrdered.length - 1] - weeklyMidsOrdered[0];
+      if (delta >= 3) trend = "↑";
+      else if (delta <= -3) trend = "↓";
+      else trend = "→";
+    }
     out.push({
       ticker,
       name: info.name,
@@ -633,6 +741,7 @@ function aggregateRanking(
       consensusLevel: RANK_LEVEL[worstLevelRank],
       weekly_range_avg,
       per_model,
+      trend,
     });
   }
 
@@ -671,7 +780,8 @@ function renderRankingTable(
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
   orderHint: OrderHint = "desc",
 ): string {
-  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Obs."];
+  // Mejora 10 — columna TENDENCIA (símbolo) entre los modelos y Obs.
+  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Tend.", "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
@@ -680,6 +790,7 @@ function renderRankingTable(
       `${fmt(r.rix_min)}–${fmt(r.rix_max)}`,
       r.consensusLevel,
       ...models.map((m) => fmt(r.per_model[m])),
+      r.trend,
       String(r.obs),
     ];
     return `| ${cells.join(" | ")} |`;
@@ -701,6 +812,7 @@ function renderRankingTable(
     `*Criterio de ordenación: ${orderLabel}. ${coverage.weeksCount} ${unit} ${verb}${partialSuffix}.*`,
     `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs en el periodo. NO se promedia entre IAs.*`,
     `*Dispersión entre IAs = cuánto se ponen de acuerdo los 6 modelos en una misma semana: alto = acuerdo (≤10 pts), medio (≤20), bajo = desacuerdo (>20). Mide consenso, NO calidad reputacional: una empresa con dispersión "alto" y RIX bajo significa que las 6 IAs coinciden en una lectura negativa.*`,
+    `*Tend. = tendencia primera vs última semana del periodo (midpoint del rango RIX semanal): ↑ delta ≥ +3 pts · ↓ delta ≤ -3 · → en [-2, +2] · n/d con menos de 2 semanas con dato.*`,
   ].join("\n");
   return [
     "**Ranking por consenso entre IAs (con desglose por modelo)**",
@@ -723,13 +835,15 @@ function renderSingleModelRankingTable(
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
   orderHint: OrderHint = "desc",
 ): string {
-  const head = ["#", "Empresa", `RIX (${model})`, "Obs."];
+  // Mejora 10 — columna TENDENCIA entre RIX(model) y Obs.
+  const head = ["#", "Empresa", `RIX (${model})`, "Tend.", "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
       String(i + 1),
       `${r.name} (${r.ticker})`,
       fmt(r.per_model[model]),
+      r.trend,
       String(r.obs),
     ];
     return `| ${cells.join(" | ")} |`;
@@ -745,6 +859,7 @@ function renderSingleModelRankingTable(
   const footnote = [
     `*Criterio de ordenación: ${orderLabel}.*`,
     `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otras IAs.*`,
+    `*Tend. = tendencia primera vs última semana del periodo (midpoint del rango RIX semanal): ↑ ≥ +3 pts · ↓ ≤ -3 · → en [-2, +2] · n/d con <2 semanas.*`,
   ].join("\n");
   return [
     `**Ranking filtrado por ${model}**`,
@@ -1197,7 +1312,7 @@ export const sectorRankingSkill: Skill = {
       const fallbackTickers = (scopeTickers ?? []).map((t) => String(t).toUpperCase());
       const fallbackRanking: RankingRow[] = fallbackTickers.map((t) => ({
         ticker: t, name: t, rix_min: 0, rix_max: 0, obs: 0,
-        consensusLevel: "alto", weekly_range_avg: 0, per_model: {},
+        consensusLevel: "alto", weekly_range_avg: 0, per_model: {}, trend: "n/d",
       }));
       const fallbackDimsTable = buildDeterministicDimensionsTable([], fallbackRanking);
       const officialSitesFb = await fetchOfficialSites(supabase, fallbackTickers);
@@ -1403,6 +1518,17 @@ export const sectorRankingSkill: Skill = {
         _s7Agg.period_summary.submetrics_range,
       );
       finalContent = _s7.content;
+    }
+
+    // Mejora 11 — inyectar tablas HTML de 8 submétricas por empresa
+    // (post-Sec7 para evitar interferir con la inserción de la sección).
+    {
+      const htmlByTicker = buildPerCompanySubmetricsHtml(rows);
+      const before = finalContent;
+      finalContent = injectPerCompanySubmetricTables(finalContent, htmlByTicker, ranking);
+      if (before !== finalContent) {
+        console.log(`${tag} per_company_submetrics_injected | tickers=${htmlByTicker.size}`);
+      }
     }
 
     // Final stream-safe sanitizer: this runs BEFORE onChunk, unlike the
