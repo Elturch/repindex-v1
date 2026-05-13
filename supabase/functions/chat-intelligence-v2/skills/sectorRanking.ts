@@ -391,6 +391,97 @@ function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string 
   ].join("\n");
 }
 
+// =====================================================================
+// Mejora 11 — Tablas HTML compactas de 8 submétricas POR EMPRESA.
+// Se pre-renderizan en código (no las genera el LLM) y se inyectan en
+// el informe final justo después del párrafo narrativo de cada empresa
+// en la sección 3 ("Análisis empresa por empresa").
+// Columnas: Métrica | Valor | Banda. Banda: 🔴 (<40), 🟠 (40-54),
+// 🟡 (55-69), 🟢 (70-84), 💎 (≥85). "n/d" si la dimensión no tiene dato.
+// =====================================================================
+function bandEmoji(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "n/d";
+  if (v < 40) return "🔴";
+  if (v < 55) return "🟠";
+  if (v < 70) return "🟡";
+  if (v < 85) return "🟢";
+  return "💎";
+}
+
+function buildPerCompanySubmetricsHtml(rows: any[]): Map<string, string> {
+  const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
+  for (const r of rows) {
+    const t = String(r["05_ticker"] ?? "").trim();
+    if (!t) continue;
+    const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), dims: new Map() };
+    for (const { key, metric } of CANONICAL_DIMENSIONS) {
+      const raw = r[key];
+      const v = typeof raw === "number" ? raw : parseFloat(raw);
+      if (!Number.isFinite(v)) continue;
+      if (!slot.dims.has(metric)) slot.dims.set(metric, []);
+      slot.dims.get(metric)!.push(v);
+    }
+    byTicker.set(t, slot);
+  }
+  const out = new Map<string, string>();
+  const cellStyle = "padding:3px 8px;border-bottom:1px solid #eee";
+  const headStyle = "padding:4px 8px;border-bottom:1px solid #ccc;text-align:left";
+  for (const [ticker, info] of byTicker) {
+    const rowsHtml = CANONICAL_DIMENSIONS.map(({ metric }) => {
+      const arr = info.dims.get(metric);
+      const mean = arr && arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      const valStr = mean == null ? "n/d" : (Math.round(mean * 10) / 10).toString();
+      const band = mean == null ? "n/d" : bandEmoji(mean);
+      return `<tr><td style="${cellStyle}"><strong>${metric}</strong></td><td style="${cellStyle};text-align:right">${valStr}</td><td style="${cellStyle};text-align:center">${band}</td></tr>`;
+    }).join("");
+    const html =
+      `<table style="font-size:0.85em;border-collapse:collapse;margin:6px 0 14px;min-width:240px">` +
+      `<thead><tr><th style="${headStyle}">Métrica</th><th style="${headStyle};text-align:right">Valor</th><th style="${headStyle};text-align:center">Banda</th></tr></thead>` +
+      `<tbody>${rowsHtml}</tbody></table>`;
+    out.set(ticker, html);
+  }
+  return out;
+}
+
+/**
+ * Mejora 11 — Inyecta la tabla HTML de submétricas justo después del
+ * encabezado en negrita de cada empresa (mini-perfil de sección 3).
+ * Patrón: localiza la primera línea que contenga `(TICKER)` dentro de
+ * un heading bold `**...**`, y mete la tabla en la siguiente línea en
+ * blanco. Idempotente: no inyecta si la tabla ya está presente.
+ */
+function injectPerCompanySubmetricTables(
+  finalContent: string,
+  htmlByTicker: Map<string, string>,
+  ranking: RankingRow[],
+): string {
+  if (htmlByTicker.size === 0 || ranking.length === 0) return finalContent;
+  let content = finalContent;
+  for (const r of ranking) {
+    const html = htmlByTicker.get(r.ticker);
+    if (!html) continue;
+    if (content.includes(html)) continue; // idempotente
+    // Buscar la primera línea que (a) empiece con **, (b) contenga (TICKER), (c) acabe con **.
+    const lines = content.split("\n");
+    let headingIdx = -1;
+    const tickerToken = `(${r.ticker})`;
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (!ln.includes(tickerToken)) continue;
+      // Heading bold (admite leading "- " o markdown)
+      if (/\*\*[^*]*\([A-Z0-9.\-]+\)[^*]*\*\*/.test(ln)) { headingIdx = i; break; }
+    }
+    if (headingIdx < 0) continue;
+    // Avanzar hasta el siguiente bloque vacío para insertar después de la narrativa.
+    let insertAt = headingIdx + 1;
+    while (insertAt < lines.length && lines[insertAt].trim() !== "") insertAt += 1;
+    // Insert: línea en blanco + html + línea en blanco.
+    lines.splice(insertAt, 0, "", html, "");
+    content = lines.join("\n");
+  }
+  return content;
+}
+
 // Frase canónica de unicidad para subsectores con 1 único emisor cotizado.
 // Cubre el assert A5_hotels_edge (regex acepta "subsector ... contiene/incluye ... 1 emisor"
 // y "1 único emisor cotizado"). También sirve para cualquier otro subsector con n=1.
