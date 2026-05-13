@@ -941,7 +941,7 @@ function buildUserMessageWithAssembler(
     `CRITERIO DE ORDENACIÓN DEL RANKING (declárarlo literalmente en la sección 1 o 2): ${orderLabel}.`,
     "",
     `MÉTRICAS GLOBALES VERIFICADAS (úsalas literalmente, NO recalcules):`,
-    `• Observaciones totales: ${rawRows.length}`,
+    `• Observaciones analizadas (post-filtro, registros realmente usados): ${rawRows.length}`,
     `• Semanas únicas con datos: ${uniqueWeeks}`,
     `• Empresas únicas analizadas: ${new Set(rawRows.map((r) => r["05_ticker"])).size}`,
     "",
