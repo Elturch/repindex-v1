@@ -25,6 +25,13 @@ import {
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompanies } from "@/hooks/useCompanies";
+import { useLatestBatchDate } from "@/hooks/useLatestBatchDate";
+import { compileFiltersToQuestion } from "@/lib/reports/compileQuestion";
+import { buildReportTitle } from "@/lib/reports/reportMemory";
+import type { CompanyMeta } from "@/lib/reports/coherenceEngine";
+import type { FilterState } from "@/lib/reports/filterState";
+import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import {
   listReports,
   getActiveId,
@@ -55,6 +62,24 @@ export default function RixViewer() {
   const location = useLocation();
   const { user } = useAuth();
   const userId = user?.id ?? "";
+  const { data: companiesRaw } = useCompanies();
+  const { data: lastBatchDate } = useLatestBatchDate();
+  const companies: CompanyMeta[] = useMemo(
+    () =>
+      (companiesRaw ?? []).map((c) => ({
+        ticker: c.ticker,
+        issuer_name: c.issuer_name,
+        sector_category: c.sector_category ?? null,
+        subsector: (c as any).subsector ?? null,
+        ibex_family_code: c.ibex_family_code ?? null,
+        verified_competitors: Array.isArray((c as any).verified_competitors)
+          ? ((c as any).verified_competitors as unknown[])
+              .map((x) => (typeof x === "string" ? x : String(x)))
+              .filter((x) => x && x.length > 0)
+          : null,
+      })),
+    [companiesRaw],
+  );
   const autoSentRef = useRef<string | null>(null);
   // Pending send: waits until sessionId matches the report's session
   // before firing sendMessage, so the user always sees a clear
@@ -71,6 +96,7 @@ export default function RixViewer() {
   const [renameValue, setRenameValue] = useState("");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenOpen, setRegenOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
@@ -164,29 +190,30 @@ export default function RixViewer() {
     setRenameValue("");
   };
 
-  const handleRegenerate = async () => {
+  const handleRegenerate = async (filters: FilterState) => {
     if (!activeReport || !userId) return;
     setIsRegenerating(true);
     try {
+      const question = compileFiltersToQuestion(filters, companies);
       const newSessionId = crypto.randomUUID();
       const baseName = activeReport.customName || activeReport.title;
       const entry = await addReport(userId, {
-        title: activeReport.title,
-        question: activeReport.question,
+        title: buildReportTitle(filters, companies),
+        question,
         sessionId: newSessionId,
-        filters: activeReport.filters,
+        filters,
         summary: activeReport.summary,
       });
       if (!entry) {
         setIsRegenerating(false);
         return;
       }
-      // Mantener el nombre personalizado con sufijo "(actualizado)"
       await renameReport(userId, entry.id, `${baseName} (actualizado)`);
       await refresh();
+      setRegenOpen(false);
       navigate("/visor", {
         state: {
-          autoSendQuestion: activeReport.question,
+          autoSendQuestion: question,
           reportId: entry.id,
           sessionId: newSessionId,
         },
@@ -194,6 +221,11 @@ export default function RixViewer() {
     } finally {
       setIsRegenerating(false);
     }
+  };
+
+  const handleDuplicateAndEdit = (filters: FilterState) => {
+    setRegenOpen(false);
+    navigate("/informes", { state: { prefilFilters: filters } });
   };
 
   const handleClearAll = async () => {
@@ -388,9 +420,9 @@ export default function RixViewer() {
                     variant="outline"
                     size="sm"
                     className="gap-1.5"
-                    onClick={handleRegenerate}
+                    onClick={() => setRegenOpen(true)}
                     disabled={isRegenerating || isLoading}
-                    title="Vuelve a lanzar la misma consulta con la última versión del agente"
+                    title="Edita los filtros y relanza el informe con la última versión del agente"
                   >
                     {isRegenerating ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -497,6 +529,19 @@ export default function RixViewer() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {activeReport && (
+        <RegenerateDialog
+          open={regenOpen}
+          onOpenChange={setRegenOpen}
+          initialFilters={activeReport.filters}
+          companies={companies}
+          lastBatchDate={lastBatchDate ?? null}
+          isRegenerating={isRegenerating}
+          onRegenerate={(f) => void handleRegenerate(f)}
+          onDuplicateAndEdit={handleDuplicateAndEdit}
+        />
+      )}
     </div>
   );
 }
