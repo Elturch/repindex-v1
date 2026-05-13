@@ -1520,6 +1520,17 @@ export const sectorRankingSkill: Skill = {
       finalContent = _s7.content;
     }
 
+    // Mejora 11 — inyectar tablas HTML de 8 submétricas por empresa
+    // (post-Sec7 para evitar interferir con la inserción de la sección).
+    {
+      const htmlByTicker = buildPerCompanySubmetricsHtml(rows);
+      const before = finalContent;
+      finalContent = injectPerCompanySubmetricTables(finalContent, htmlByTicker, ranking);
+      if (before !== finalContent) {
+        console.log(`${tag} per_company_submetrics_injected | tickers=${htmlByTicker.size}`);
+      }
+    }
+
     // Final stream-safe sanitizer: this runs BEFORE onChunk, unlike the
     // orchestrator-level safety net. It keeps live SSE, DB persistence and
     // stress-runner markdown aligned.
