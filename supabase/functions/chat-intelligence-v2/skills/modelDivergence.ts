@@ -12,6 +12,7 @@ import type {
 import { buildBasePrompt } from "../prompts/base.ts";
 import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildDivergenceRules } from "../prompts/divergenceMode.ts";
+import { NARRATIVE_QUALITY_PROMPT } from "../prompts/narrativeQuality.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { isLazyBrutoEnabled } from "../shared/featureFlags.ts";
 import { hydrateBrutoColumns } from "../datapack/builder.ts";
@@ -293,6 +294,7 @@ export const modelDivergenceSkill: Skill = {
         ticker: entity.ticker, modelsCount: aggs.length, weeksCount: parsed.temporal.snapshots_available,
         sigmaRix, highestModel: top, lowestModel: bot,
       }),
+      NARRATIVE_QUALITY_PROMPT,
     ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessageWithAssembler(
@@ -306,7 +308,7 @@ export const modelDivergenceSkill: Skill = {
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "o3",
-      reasoning_effort: "medium",
+      reasoning_effort: "high",
       maxTokens: 16000,
       temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
@@ -341,7 +343,7 @@ export const modelDivergenceSkill: Skill = {
         pre_rendered_tables: [finalContent, table],
         cited_sources_report: _divergenceCited,
       },
-      prompt_modules: ["base", "antiHallucination", "divergenceMode"],
+      prompt_modules: ["base", "antiHallucination", "divergenceMode", "narrativeQuality"],
       metadata: buildMetadata(aggs, parsed.temporal.from, parsed.temporal.to, sigmaRix),
     };
   },

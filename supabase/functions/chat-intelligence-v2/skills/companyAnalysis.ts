@@ -17,6 +17,7 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
+import { NARRATIVE_QUALITY_PROMPT } from "../prompts/narrativeQuality.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { renderModelBreakdownTable } from "../datapack/modelBreakdown.ts";
 import { renderTemporalEvolutionTable } from "../datapack/temporalEvolution.ts";
@@ -132,6 +133,8 @@ export function composePrompt(
           isPartial: datapack.temporal.is_partial,
         }),
       );
+    } else if (m === "narrativeQuality") {
+      blocks.push(NARRATIVE_QUALITY_PROMPT);
     }
   }
   return blocks.join("\n\n");
@@ -350,6 +353,7 @@ export const companyAnalysisSkill: Skill = {
       // siempre incluimos coverage para que las reglas de consenso se apliquen
       modules.push("coverageRules");
     }
+    modules.push("narrativeQuality");
 
     // 3. If no data at all, skip the LLM call to save tokens.
     if (observations_count === 0) {
@@ -394,7 +398,7 @@ export const companyAnalysisSkill: Skill = {
       userMessage,
       logPrefix: tag,
       model: "o3",
-      reasoning_effort: "low",
+      reasoning_effort: "high",
       maxTokens: 48000,
       temperature: 0,
       onChunk: (delta) => { try { onChunk?.(delta); } catch (_) { /* noop */ } },

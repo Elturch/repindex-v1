@@ -12,6 +12,7 @@ import { buildBasePrompt } from "../prompts/base.ts";
 import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildEvolutionRules } from "../prompts/evolutionMode.ts";
+import { NARRATIVE_QUALITY_PROMPT } from "../prompts/narrativeQuality.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import {
   assembleReport,
@@ -257,6 +258,7 @@ export const periodEvolutionSkill: Skill = {
         fromISO: parsed.temporal.from, toISO: parsed.temporal.to,
         rixFirst, rixLast, trend, mostVolatile: "RIX",
       }),
+      NARRATIVE_QUALITY_PROMPT,
     ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessageWithAssembler(
@@ -270,7 +272,7 @@ export const periodEvolutionSkill: Skill = {
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "o3",
-      reasoning_effort: "medium",
+      reasoning_effort: "high",
       maxTokens: 24000,
       temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
@@ -297,7 +299,7 @@ export const periodEvolutionSkill: Skill = {
 
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
-      prompt_modules: ["base", "antiHallucination", "periodMode", "evolutionMode"],
+      prompt_modules: ["base", "antiHallucination", "periodMode", "evolutionMode", "narrativeQuality"],
       metadata: buildMetadata(series, parsed.temporal.from, parsed.temporal.to),
     };
   },
