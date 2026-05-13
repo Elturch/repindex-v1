@@ -365,6 +365,9 @@ interface RankingRow {
   consensusLevel: ConsensusLevel; // alto/medio/bajo (peor caso semanal)
   weekly_range_avg: number;       // rango (max-min) inter-modelo promedio entre semanas
   per_model: Partial<Record<ModelName, number>>;
+  // Mejora 10 — Tendencia primera vs última semana del periodo.
+  //   ↑ delta ≥ +3 · ↓ delta ≤ -3 · → en [-2, +2] · n/d <2 semanas con dato.
+  trend: "↑" | "↓" | "→" | "n/d";
 }
 
 const CANONICAL_DIMENSIONS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"|"CEM"|"GAM"|"DCM"|"CXM" }> = [
