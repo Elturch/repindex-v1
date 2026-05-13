@@ -310,7 +310,7 @@ export const comparisonSkill: Skill = {
       pre_rendered_tables: [table],
     };
 
-    const modules = ["base", "antiHallucination", parsed.mode === "period" ? "periodMode" : "snapshotMode", "comparisonMode"];
+    const modules = ["base", "antiHallucination", parsed.mode === "period" ? "periodMode" : "snapshotMode", "comparisonMode", "narrativeQuality"];
     const systemPrompt = [
       buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
@@ -323,6 +323,7 @@ export const comparisonSkill: Skill = {
         weeksCount: parsed.temporal.snapshots_available,
         modelsWithData: commonModels,
       }),
+      NARRATIVE_QUALITY_PROMPT,
     ].filter(Boolean).join("\n\n");
 
     const flatRows = rowsPerEntity.flat();
@@ -341,7 +342,7 @@ export const comparisonSkill: Skill = {
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "o3",
-      reasoning_effort: "medium",
+      reasoning_effort: "high",
       maxTokens: 24000,
       temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
