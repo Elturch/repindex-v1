@@ -14,6 +14,7 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildComparisonRules } from "../prompts/comparisonMode.ts";
+import { NARRATIVE_QUALITY_PROMPT } from "../prompts/narrativeQuality.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { isLazyBrutoEnabled } from "../shared/featureFlags.ts";
 import { hydrateBrutoColumns } from "../datapack/builder.ts";
