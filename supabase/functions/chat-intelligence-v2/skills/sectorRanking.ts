@@ -15,6 +15,7 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
+import { NARRATIVE_QUALITY_PROMPT } from "../prompts/narrativeQuality.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
 import { buildSingleModelRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
