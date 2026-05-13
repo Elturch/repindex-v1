@@ -689,7 +689,8 @@ function renderRankingTable(
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
   orderHint: OrderHint = "desc",
 ): string {
-  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Obs."];
+  // Mejora 10 — columna TENDENCIA (símbolo) entre los modelos y Obs.
+  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Tend.", "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
@@ -698,6 +699,7 @@ function renderRankingTable(
       `${fmt(r.rix_min)}–${fmt(r.rix_max)}`,
       r.consensusLevel,
       ...models.map((m) => fmt(r.per_model[m])),
+      r.trend,
       String(r.obs),
     ];
     return `| ${cells.join(" | ")} |`;
@@ -719,6 +721,7 @@ function renderRankingTable(
     `*Criterio de ordenación: ${orderLabel}. ${coverage.weeksCount} ${unit} ${verb}${partialSuffix}.*`,
     `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs en el periodo. NO se promedia entre IAs.*`,
     `*Dispersión entre IAs = cuánto se ponen de acuerdo los 6 modelos en una misma semana: alto = acuerdo (≤10 pts), medio (≤20), bajo = desacuerdo (>20). Mide consenso, NO calidad reputacional: una empresa con dispersión "alto" y RIX bajo significa que las 6 IAs coinciden en una lectura negativa.*`,
+    `*Tend. = tendencia primera vs última semana del periodo (midpoint del rango RIX semanal): ↑ delta ≥ +3 pts · ↓ delta ≤ -3 · → en [-2, +2] · n/d con menos de 2 semanas con dato.*`,
   ].join("\n");
   return [
     "**Ranking por consenso entre IAs (con desglose por modelo)**",
@@ -741,13 +744,15 @@ function renderSingleModelRankingTable(
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
   orderHint: OrderHint = "desc",
 ): string {
-  const head = ["#", "Empresa", `RIX (${model})`, "Obs."];
+  // Mejora 10 — columna TENDENCIA entre RIX(model) y Obs.
+  const head = ["#", "Empresa", `RIX (${model})`, "Tend.", "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
       String(i + 1),
       `${r.name} (${r.ticker})`,
       fmt(r.per_model[model]),
+      r.trend,
       String(r.obs),
     ];
     return `| ${cells.join(" | ")} |`;
@@ -763,6 +768,7 @@ function renderSingleModelRankingTable(
   const footnote = [
     `*Criterio de ordenación: ${orderLabel}.*`,
     `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otras IAs.*`,
+    `*Tend. = tendencia primera vs última semana del periodo (midpoint del rango RIX semanal): ↑ ≥ +3 pts · ↓ ≤ -3 · → en [-2, +2] · n/d con <2 semanas.*`,
   ].join("\n");
   return [
     `**Ranking filtrado por ${model}**`,
