@@ -1176,6 +1176,7 @@ export const sectorRankingSkill: Skill = {
     if (parsed.mode === "period") modules.push("periodMode"); else modules.push("snapshotMode");
     // Always include coverageRules so consensus/divergence rules apply (parity with companyAnalysis).
     modules.push("coverageRules");
+    modules.push("narrativeQuality");
 
     if (ranking.length === 0) {
       // C — Honest fallback: probe rix_runs_v2 with a raw COUNT(*) before
@@ -1241,6 +1242,7 @@ export const sectorRankingSkill: Skill = {
         isPartial: effectiveTemporal.is_partial,
         isSnapshot: isSnapshotMode,
       }),
+      NARRATIVE_QUALITY_PROMPT,
     ].filter(Boolean).join("\n\n");
 
     const competitiveContext = await buildCompetitiveContextBlock(supabase, ranking);
@@ -1303,7 +1305,7 @@ export const sectorRankingSkill: Skill = {
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "o3",
-      reasoning_effort: "medium",
+      reasoning_effort: "high",
       maxTokens: 32000,
       temperature: 0,
       onChunk: (_d) => { /* buffered: do not stream raw LLM output */ },
