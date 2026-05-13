@@ -1215,7 +1215,7 @@ export const sectorRankingSkill: Skill = {
       const fallbackTickers = (scopeTickers ?? []).map((t) => String(t).toUpperCase());
       const fallbackRanking: RankingRow[] = fallbackTickers.map((t) => ({
         ticker: t, name: t, rix_min: 0, rix_max: 0, obs: 0,
-        consensusLevel: "alto", weekly_range_avg: 0, per_model: {},
+        consensusLevel: "alto", weekly_range_avg: 0, per_model: {}, trend: "n/d",
       }));
       const fallbackDimsTable = buildDeterministicDimensionsTable([], fallbackRanking);
       const officialSitesFb = await fetchOfficialSites(supabase, fallbackTickers);
