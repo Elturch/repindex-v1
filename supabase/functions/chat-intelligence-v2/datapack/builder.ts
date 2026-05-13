@@ -177,6 +177,7 @@ async function fetchRows(
   entity: ResolvedEntity,
   fromISO: string,
   toISO: string,
+  models?: string[],
 ): Promise<RawRunRow[]> {
   const all: RawRunRow[] = [];
   const flags = snapshotFlags();
@@ -185,6 +186,9 @@ async function fetchRows(
   console.log(
     `[RIX-V2][datapack] SQL window | ticker=${entity.ticker} | from=${fromISO} | to=${toISO} | projection=${lazy ? "LIGHT" : "FULL"} | flags=${JSON.stringify(flags)}`,
   );
+  if (models && models.length > 0) {
+    console.log("[RIX-V2][datapack] model filter applied:", models);
+  }
   // PHASE 5 — Align filter to SWEEP axis (07_period_to = Sunday del barrido).
   // Snapshot puntual (from===to) → eq; periodo largo → rango; ambos sobre
   // 07_period_to. Sustituye el filtro previo por 06_period_from que dejaba
@@ -198,6 +202,9 @@ async function fetchRows(
     q = isSnapshot
       ? q.eq("07_period_to", fromISO)
       : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
+    if (models && models.length > 0) {
+      q = q.in("02_model_name", models);
+    }
     const { data, error } = await q
       .order("07_period_to", { ascending: false })
       .range(page * 1000, (page + 1) * 1000 - 1);
@@ -240,10 +247,39 @@ export async function buildDataPack(
     };
   }
 
-  const rows = await fetchRows(supabase, entity, parsed.temporal.from, parsed.temporal.to);
-  console.log(
-    `[RIX-V2][datapack] ${entity.ticker} ${parsed.temporal.from}→${parsed.temporal.to}: ${rows.length} rows`,
-  );
+  let rows: RawRunRow[];
+  if (parsed.entities.length > 1) {
+    console.log(
+      `[RIX-V2][datapack] multi-entity mode: ${parsed.entities.length} companies`,
+    );
+    const collected: RawRunRow[] = [];
+    for (const ent of parsed.entities) {
+      if (!ent || ent.ticker === "N/A") continue;
+      const r = await fetchRows(
+        supabase,
+        ent,
+        parsed.temporal.from,
+        parsed.temporal.to,
+        parsed.models,
+      );
+      console.log(
+        `[RIX-V2][datapack] ${ent.ticker} ${parsed.temporal.from}→${parsed.temporal.to}: ${r.length} rows`,
+      );
+      collected.push(...r);
+    }
+    rows = collected;
+  } else {
+    rows = await fetchRows(
+      supabase,
+      entity,
+      parsed.temporal.from,
+      parsed.temporal.to,
+      parsed.models,
+    );
+    console.log(
+      `[RIX-V2][datapack] ${entity.ticker} ${parsed.temporal.from}→${parsed.temporal.to}: ${rows.length} rows`,
+    );
+  }
 
   // T2 Fase B — companyAnalysis.needsCitedSources = true. When LAZY flag is
   // on the rows above are LIGHT (no *_bruto). Hydrate the 7 raw columns now
