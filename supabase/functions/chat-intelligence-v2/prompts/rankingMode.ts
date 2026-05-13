@@ -42,7 +42,7 @@ Inserta LITERALMENTE el bloque marcado entre <PRE_RENDERED_RANKING_TABLE>...</PR
 
 ## 3. Análisis empresa por empresa (CRÍTICO — sección más extensa)
 Para CADA UNA de las ${topN} empresas del ranking, redacta un mini-perfil de 4-6 frases con esta estructura fija:
-- **Empresa (TICKER) — RIX X.X (posición #N de ${topN})**
+- **Empresa (TICKER) — RIX X.X (rango_min-rango_max) [↑/↓/→] (posición #N de ${topN})** — junto al RIX, entre paréntesis, muestra el rango semanal min-max del periodo (ej. "Telefónica 64.8 (57-72)") usando los valores semanales del DataPack. Inmediatamente después añade el INDICADOR DE TENDENCIA: comparar primera vs última semana del periodo — si sube >3 pts ↑, si baja >3 pts ↓, si la diferencia ≤3 pts →.
 - Lectura por modelos: qué modelos la valoran más alto / más bajo y diferencia (ej. "ChatGPT 72 vs Grok 48, divergencia 24 puntos").
 - Métrica más fuerte y más débil (de las 8 canónicas) con valor concreto.
 - Una observación cualitativa concreta extraída de las fuentes citadas (cita el medio: "según Expansión...", "Bloomberg destaca...").
