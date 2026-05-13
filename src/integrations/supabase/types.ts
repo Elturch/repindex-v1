@@ -2231,6 +2231,7 @@ export type Database = {
       rix_reports: {
         Row: {
           created_at: string
+          custom_name: string | null
           filters: Json
           id: string
           question: string
@@ -2241,6 +2242,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          custom_name?: string | null
           filters: Json
           id?: string
           question: string
@@ -2251,6 +2253,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          custom_name?: string | null
           filters?: Json
           id?: string
           question?: string

@@ -13,6 +13,7 @@ export interface ReportMemoryEntry {
   id: string;
   createdAt: number;
   title: string;
+  customName?: string | null;
   question: string;
   sessionId: string;
   filters: FilterState;
@@ -27,6 +28,7 @@ interface RowShape {
   id: string;
   session_id: string;
   title: string;
+  custom_name: string | null;
   question: string;
   filters: unknown;
   summary: unknown;
@@ -38,6 +40,7 @@ function rowToEntry(row: RowShape): ReportMemoryEntry {
     id: row.id,
     createdAt: new Date(row.created_at).getTime(),
     title: row.title,
+    customName: row.custom_name ?? null,
     question: row.question,
     sessionId: row.session_id,
     filters: row.filters as FilterState,
@@ -49,7 +52,7 @@ export async function listReports(userId: string): Promise<ReportMemoryEntry[]> 
   if (!userId) return [];
   const { data, error } = await supabase
     .from("rix_reports")
-    .select("id, session_id, title, question, filters, summary, created_at")
+    .select("id, session_id, title, custom_name, question, filters, summary, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(MAX_REPORTS);
@@ -75,7 +78,7 @@ export async function addReport(
       filters: entry.filters as any,
       summary: (entry.summary ?? null) as any,
     }])
-    .select("id, session_id, title, question, filters, summary, created_at")
+    .select("id, session_id, title, custom_name, question, filters, summary, created_at")
     .single();
   if (error || !data) {
     console.error("[reportMemory] addReport", error);
@@ -97,6 +100,21 @@ export async function removeReport(userId: string, id: string): Promise<void> {
   if (getActiveId() === id) setActiveId(null);
 }
 
+export async function renameReport(
+  userId: string,
+  id: string,
+  customName: string | null,
+): Promise<void> {
+  if (!userId) return;
+  const trimmed = customName?.trim() || null;
+  const { error } = await supabase
+    .from("rix_reports")
+    .update({ custom_name: trimmed } as any)
+    .eq("user_id", userId)
+    .eq("id", id);
+  if (error) console.error("[reportMemory] renameReport", error);
+}
+
 export async function clearAll(userId: string): Promise<void> {
   if (!userId) return;
   const { error } = await supabase
@@ -111,7 +129,7 @@ export async function getReport(userId: string, id: string): Promise<ReportMemor
   if (!userId) return null;
   const { data, error } = await supabase
     .from("rix_reports")
-    .select("id, session_id, title, question, filters, summary, created_at")
+    .select("id, session_id, title, custom_name, question, filters, summary, created_at")
     .eq("user_id", userId)
     .eq("id", id)
     .maybeSingle();

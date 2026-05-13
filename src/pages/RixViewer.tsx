@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { FileBarChart2, Download, Pencil, Plus, Loader2 } from "lucide-react";
+import { FileBarChart2, Download, Pencil, Plus, Loader2, Trash2, RefreshCw, Check, X } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,6 +31,8 @@ import {
   setActiveId,
   removeReport,
   clearAll,
+  renameReport,
+  addReport,
   ReportMemoryEntry,
 } from "@/lib/reports/reportMemory";
 
@@ -54,6 +67,10 @@ export default function RixViewer() {
 
   const [reports, setReports] = useState<ReportMemoryEntry[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(() => getActiveId());
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
@@ -122,6 +139,63 @@ export default function RixViewer() {
     await refresh();
   };
 
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    await handleRemove(id);
+  };
+
+  const startRename = (entry: ReportMemoryEntry) => {
+    setRenamingId(entry.id);
+    setRenameValue(entry.customName || entry.title);
+  };
+
+  const commitRename = async () => {
+    if (!renamingId) return;
+    await renameReport(userId, renamingId, renameValue);
+    setRenamingId(null);
+    setRenameValue("");
+    await refresh();
+  };
+
+  const cancelRename = () => {
+    setRenamingId(null);
+    setRenameValue("");
+  };
+
+  const handleRegenerate = async () => {
+    if (!activeReport || !userId) return;
+    setIsRegenerating(true);
+    try {
+      const newSessionId = crypto.randomUUID();
+      const baseName = activeReport.customName || activeReport.title;
+      const entry = await addReport(userId, {
+        title: activeReport.title,
+        question: activeReport.question,
+        sessionId: newSessionId,
+        filters: activeReport.filters,
+        summary: activeReport.summary,
+      });
+      if (!entry) {
+        setIsRegenerating(false);
+        return;
+      }
+      // Mantener el nombre personalizado con sufijo "(actualizado)"
+      await renameReport(userId, entry.id, `${baseName} (actualizado)`);
+      await refresh();
+      navigate("/visor", {
+        state: {
+          autoSendQuestion: activeReport.question,
+          reportId: entry.id,
+          sessionId: newSessionId,
+        },
+      });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   const handleClearAll = async () => {
     await clearAll(userId);
     await refresh();
@@ -164,10 +238,12 @@ export default function RixViewer() {
         ) : (
           reports.map((r) => {
             const isActive = r.id === activeId;
+            const displayName = r.customName || r.title;
+            const isRenaming = renamingId === r.id;
             return (
               <div
                 key={r.id}
-                onClick={() => handleSelect(r)}
+                onClick={() => !isRenaming && handleSelect(r)}
                 className={`group relative rounded-md border px-2.5 py-2 text-left transition-colors cursor-pointer ${
                   isActive
                     ? "border-primary bg-primary/5"
@@ -181,7 +257,41 @@ export default function RixViewer() {
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate">{r.title}</p>
+                    {isRenaming ? (
+                      <div
+                        className="flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void commitRename();
+                            else if (e.key === "Escape") cancelRename();
+                          }}
+                          className="h-6 text-xs px-1.5"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void commitRename()}
+                          className="text-primary hover:text-primary/80"
+                          aria-label="Guardar nombre"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelRename}
+                          className="text-muted-foreground hover:text-foreground"
+                          aria-label="Cancelar"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs font-medium truncate">{displayName}</p>
+                    )}
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       {new Date(r.createdAt).toLocaleString("es-ES", {
                         day: "2-digit",
@@ -191,17 +301,34 @@ export default function RixViewer() {
                       })}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(r.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive text-xs"
-                    aria-label="Eliminar"
-                  >
-                    ✕
-                  </button>
+                  {!isRenaming && (
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startRename(r);
+                        }}
+                        className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                        aria-label="Renombrar"
+                        title="Renombrar"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPendingDeleteId(r.id);
+                        }}
+                        className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                        aria-label="Eliminar"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -248,14 +375,31 @@ export default function RixViewer() {
           {messages.length > 0 && (
             <div className="flex items-center gap-2">
               {activeReport && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleEditFilters}
-                >
-                  <Pencil className="h-3.5 w-3.5" /> Editar filtros
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleEditFilters}
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Editar filtros
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleRegenerate}
+                    disabled={isRegenerating || isLoading}
+                    title="Vuelve a lanzar la misma consulta con la última versión del agente"
+                  >
+                    {isRegenerating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Regenerar informe
+                  </Button>
+                </>
               )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -329,6 +473,30 @@ export default function RixViewer() {
           </div>
         )}
       </main>
+
+      <AlertDialog
+        open={!!pendingDeleteId}
+        onOpenChange={(open) => !open && setPendingDeleteId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este informe?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. El informe se eliminará de tu memoria
+              y de la base de datos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmDelete()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
