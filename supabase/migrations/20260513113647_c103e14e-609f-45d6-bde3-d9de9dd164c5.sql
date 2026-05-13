@@ -1,0 +1,1 @@
+ALTER TABLE public.rix_reports ADD COLUMN IF NOT EXISTS custom_name TEXT NULL;
