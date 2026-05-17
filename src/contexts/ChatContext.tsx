@@ -664,6 +664,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             role: msg.role as 'user' | 'assistant',
             content: msg.content,
             suggestedQuestions: msg.suggested_questions as string[] | undefined,
+            drumrollQuestion: msg.drumroll_question as DrumrollQuestion | undefined,
+            metadata: fromStoredMetadata(msg.metadata, msg.content),
           }));
           setMessages(loadedMessages);
           
@@ -1183,6 +1185,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
             throw new Error('Stream vacío: no se recibió contenido del asistente');
           }
 
+          const reportCtx = finalMetadata?.reportContext || undefined;
+          const guardKind = detectGuardRejection(accumulatedContent, !!reportCtx);
+          const assistantMetadata: MessageMetadata = {
+            type: guardKind ? 'guard_rejection' : (finalMetadata?.type || 'standard'),
+            guardKind: guardKind || undefined,
+            companyName: finalMetadata?.companyName,
+            documentsFound: finalMetadata?.documentsFound,
+            structuredDataFound: finalMetadata?.structuredDataFound,
+            depthLevel: options?.depthLevel || sessionDepthLevel,
+            questionCategory: finalMetadata?.questionCategory,
+            verifiedSources: finalMetadata?.verifiedSources,
+            reportContext: reportCtx,
+            methodology: finalMetadata?.methodology || {
+              hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
+              modelsUsed: finalMetadata?.modelsUsed || [],
+              periodFrom: finalMetadata?.periodFrom,
+              periodTo: finalMetadata?.periodTo,
+              observationsCount: finalMetadata?.structuredDataFound || 0,
+              divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
+              divergencePoints: finalMetadata?.divergencePoints || 0,
+              uniqueCompanies: finalMetadata?.uniqueCompanies,
+              uniqueWeeks: finalMetadata?.uniqueWeeks,
+            },
+          };
+
           // Mark streaming as complete and add final metadata including methodology
           setMessages(prev => {
             const updated = [...prev];
@@ -1198,33 +1225,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 totalMs: Math.round(performance.now() - __metricsStart),
                 chunksCount: __metricsChunks,
               };
-              const reportCtx = finalMetadata?.reportContext || undefined;
-              const guardKind = detectGuardRejection(lastMsg.content, !!reportCtx);
-              lastMsg.metadata = {
-                type: guardKind ? 'guard_rejection' : (finalMetadata?.type || 'standard'),
-                guardKind: guardKind || undefined,
-                companyName: finalMetadata?.companyName,
-                documentsFound: finalMetadata?.documentsFound,
-                structuredDataFound: finalMetadata?.structuredDataFound,
-                depthLevel: options?.depthLevel || sessionDepthLevel,
-                questionCategory: finalMetadata?.questionCategory,
-                // Verified sources from ChatGPT and Perplexity for bibliography
-                verifiedSources: finalMetadata?.verifiedSources,
-                // Report context for InfoBar
-                reportContext: reportCtx,
-                // Methodology metadata for "Radar Reputacional" validation sheet
-                methodology: finalMetadata?.methodology || {
-                  hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
-                  modelsUsed: finalMetadata?.modelsUsed || [],
-                  periodFrom: finalMetadata?.periodFrom,
-                  periodTo: finalMetadata?.periodTo,
-                  observationsCount: finalMetadata?.structuredDataFound || 0,
-                  divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
-                  divergencePoints: finalMetadata?.divergencePoints || 0,
-                  uniqueCompanies: finalMetadata?.uniqueCompanies,
-                  uniqueWeeks: finalMetadata?.uniqueWeeks,
-                },
-              };
+              lastMsg.metadata = assistantMetadata;
             }
             return updated;
           });
@@ -1240,6 +1241,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
               suggested_questions: suggestedQuestions,
               documents_found: finalMetadata?.documentsFound,
               structured_data_found: finalMetadata?.structuredDataFound,
+              drumroll_question: drumrollQuestion,
+              metadata: toStoredMetadata(assistantMetadata),
               user_id: currentUserId,
               conversation_id: convId,
             });
