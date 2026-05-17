@@ -461,6 +461,7 @@ export type Database = {
           documents_found: number | null
           drumroll_question: Json | null
           id: string
+          metadata: Json | null
           question_category: string | null
           refined_question: string | null
           refinement_confidence: number | null
@@ -481,6 +482,7 @@ export type Database = {
           documents_found?: number | null
           drumroll_question?: Json | null
           id?: string
+          metadata?: Json | null
           question_category?: string | null
           refined_question?: string | null
           refinement_confidence?: number | null
@@ -501,6 +503,7 @@ export type Database = {
           documents_found?: number | null
           drumroll_question?: Json | null
           id?: string
+          metadata?: Json | null
           question_category?: string | null
           refined_question?: string | null
           refinement_confidence?: number | null
