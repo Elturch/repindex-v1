@@ -248,11 +248,11 @@ export function ChatMessages({
   }
 
   return (
-    <ScrollArea className={`${scrollHeight} pr-4`}>
+    <ScrollArea className={`${scrollHeight} w-full max-w-full min-w-0 overflow-x-hidden pr-0 sm:pr-4`}>
       <VectorStoreWarning />
-      <div className="space-y-4">
+      <div className="space-y-4 w-full max-w-full min-w-0">
         {messages.map((message, idx) => (
-          <div key={idx} className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+          <div key={idx} className={`flex flex-col w-full max-w-full min-w-0 ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div
               className={`relative min-w-0 max-w-full ${compact ? 'sm:max-w-[90%]' : 'sm:max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} overflow-hidden ${
                 message.role === 'user'
