@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,8 @@ import {
   SortOrder,
   SourceTier,
   ModelName,
+  reanchorWindow,
+  windowNeedsReanchor,
 } from "@/lib/reports/filterState";
 import { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterBlock } from "./FilterBlock";
