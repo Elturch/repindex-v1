@@ -499,6 +499,7 @@ export default function RixViewer() {
                   compact={false}
                   sessionId={sessionId}
                   languageCode={language.code}
+                  unboundedHeight
                 />
               </CardContent>
             </Card>
