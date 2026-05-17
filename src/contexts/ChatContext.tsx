@@ -10,6 +10,7 @@ import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technica
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
 import { getAgentVersion, getEdgeFunctionName, type AgentVersion } from "@/lib/agentVersion";
 import { detectsExplicitNewEntity, expandComparisonFollowup, isFreshExplicitQuery } from "@/lib/stickyEntityOverride";
+import type { Json } from "@/integrations/supabase/types";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -260,6 +261,28 @@ function detectGuardRejection(
     if (re.test(trimmed)) return kind;
   }
   return null;
+}
+
+function toStoredMetadata(metadata: MessageMetadata | undefined): Json | null {
+  return metadata ? (metadata as unknown as Json) : null;
+}
+
+function fromStoredMetadata(metadata: Json | null, content: string): MessageMetadata | undefined {
+  const stored = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as unknown as MessageMetadata)
+    : undefined;
+  const reportContext = stored?.reportContext;
+  const guardKind = stored?.guardKind || detectGuardRejection(content, !!reportContext);
+
+  if (stored) {
+    return {
+      ...stored,
+      type: guardKind ? 'guard_rejection' : stored.type,
+      guardKind: guardKind || undefined,
+    };
+  }
+
+  return guardKind ? { type: 'guard_rejection', guardKind } : undefined;
 }
 
 // Phase 4 — UX: short generic loader shown for the first ~600ms so users
