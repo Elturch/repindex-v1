@@ -1,29 +1,47 @@
-## Problema
+## Diagnóstico
 
-En `/visor`, al final del informe hay un botón **"Descargar como informe"** (en `src/components/chat/ChatMessages.tsx`, dentro de la burbuja del asistente, fila `flex justify-end`). En escritorio (≥1440px) se ve correctamente, pero en móvil (375), tablet y portátiles ~1280–1366px se sale por la derecha porque:
+Dos bugs distintos, ambos en `/visor`:
 
-1. La cabecera de `/visor` (`Editar filtros`, `Regenerar informe`, `Exportar`) usa `flex items-center justify-between` sin `flex-wrap`, lo que empuja el contenido y crea overflow horizontal de la página.
-2. La fila del botón de descarga dentro de la burbuja (`mt-3 pt-3 border-t flex justify-end`) queda anclada al borde derecho de la burbuja, que en viewports estrechos cae fuera del área visible.
+### Bug 1 — Botón "Descargar como informe" inalcanzable
+El componente `ChatMessages` envuelve los mensajes en un `ScrollArea` con altura FIJA `h-[500px]` (línea 131 y 251 de `src/components/chat/ChatMessages.tsx`). Sobre `/visor` esto significa que el informe (que mide miles de px) queda atrapado dentro de una ventana interna de 500 px; el usuario hace scroll de la página y no llega al botón porque éste vive al final de un scroll interno que casi nadie descubre. En desktop sólo se ve el botón "Exportar" de la cabecera. Esto es el origen del "solo está arriba".
 
-Reproducido en 375×812: el card del informe aparece desplazado y la columna derecha (donde vive el botón) queda cortada.
+### Bug 2 — Las descargas no incluyen las fuentes (bibliografía vacía)
+Tanto `downloadMessage` (botón inferior) como `downloadAsHtml` (botón superior) construyen la bibliografía leyendo `message.metadata.verifiedSources`. Pero la tabla `chat_intelligence_sessions` NO tiene columna `metadata` (verificado en `src/integrations/supabase/types.ts` líneas 453-523). Al guardar el mensaje del asistente (`ChatContext.tsx` líneas 1213, 1307, 1533) sólo se persisten `content`, `suggested_questions`, `documents_found`, `structured_data_found`. Al rehidratar la conversación al abrir un informe guardado (`loadHistory` líneas 628-672) el mensaje se reconstruye SIN `verifiedSources`, SIN `methodology` y SIN `reportContext`. Resultado: la bibliografía sale vacía y el período/contexto aparece nulo.
 
-## Cambios (solo presentación)
+Por eso un informe recién generado (en la misma sesión) sí trae fuentes, pero cualquier informe abierto desde la "memoria de informes" sale sin bibliografía.
 
-### 1. `src/pages/RixViewer.tsx` — cabecera responsive
-- En la fila título + acciones (línea ~396), añadir `flex-wrap gap-3` y permitir que el bloque de botones (línea ~408) se envuelva: `flex flex-wrap items-center gap-2`.
-- Así en ~768–1024px los botones bajan a una segunda línea en lugar de provocar overflow.
+## Plan
 
-### 2. `src/components/chat/ChatMessages.tsx` — botón de descarga siempre visible
-- En la fila del botón de descarga (línea ~403), cambiar `flex justify-end` por `flex justify-end flex-wrap gap-2`.
-- Añadir al contenedor de la burbuja (línea ~257) la clase `min-w-0` para que las tablas anchas no fuercen la burbuja a expandirse más allá del card padre.
-- En la burbuja del asistente, asegurar `overflow-hidden` (o `overflow-x-auto` en el wrapper de `MarkdownMessage` solamente, no en toda la burbuja) para que el contenido de tablas no empuje al botón fuera de pantalla.
+### Cambio 1 — Migración de DB
+Añadir columna `metadata JSONB NULL` a `chat_intelligence_sessions`. No requiere backfill (los informes antiguos seguirán sin fuentes, pero los nuevos las recuperarán).
 
-### 3. Verificación
-- Re-test visual en 375, 768, 1024, 1280, 1366 y 1920 px.
-- Confirmar que el botón "Descargar como informe" aparece en la esquina inferior derecha del último mensaje en todos los breakpoints, sin scroll horizontal de página.
+```sql
+ALTER TABLE public.chat_intelligence_sessions
+  ADD COLUMN metadata JSONB NULL;
+```
+
+### Cambio 2 — Persistir metadata al guardar
+En `src/contexts/ChatContext.tsx`:
+- Líneas ~1213, ~1307 y ~1533 (los 3 `insert` de mensajes assistant): añadir `metadata: { verifiedSources, methodology, reportContext, type, guardKind, companyName, depthLevel, questionCategory, ... }`.
+
+### Cambio 3 — Rehidratar metadata al cargar
+En `src/contexts/ChatContext.tsx` líneas 640-644 (`loadHistory`):
+- Leer `msg.metadata` y volcarlo en `message.metadata` con el shape que ya espera el resto del código (verifiedSources, methodology con periodFrom/periodTo/modelsUsed, reportContext, etc.).
+
+### Cambio 4 — Botón inferior alcanzable en /visor
+En `src/components/chat/ChatMessages.tsx`:
+- Añadir prop opcional `unboundedHeight?: boolean`. Cuando es `true`, `scrollHeight` se sustituye por `min-h-0` (sin altura fija), de modo que el contenido fluye con la página y el botón inferior queda al final del scroll natural.
+- En `src/pages/RixViewer.tsx` línea 499: pasar `unboundedHeight` al `<ChatMessages>`.
+- Reemplazar `ScrollArea` por `<div className="w-full max-w-full min-w-0 overflow-x-hidden">` cuando `unboundedHeight` (Radix `ScrollArea` no funciona bien sin altura definida).
+- `ChatIntelligence.tsx` y `FloatingChat.tsx` mantienen el comportamiento actual.
+
+### Verificación
+1. Generar un informe nuevo en `/informes` → abrirlo en `/visor` → comprobar que al hacer scroll de la página aparece el botón "Descargar como informe" al final.
+2. Click en el botón → el HTML descargado debe traer la sección "Bibliografía" con las URLs.
+3. Recargar la página, reabrir el informe desde la memoria lateral → repetir el test y comprobar que la bibliografía sigue ahí (metadata rehidratada).
 
 ## Fuera de alcance
 
-- No tocar lógica de descarga (`downloadMessage`, `triggerBlobDownload`).
-- No tocar prompts ni edge functions.
-- No cambiar el botón "Exportar" de la cabecera (solo permitir wrap).
+- No modificar prompts ni edge functions.
+- No retroactivar fuentes en informes anteriores.
+- No tocar el botón "Exportar" superior (sigue funcionando idéntico).
