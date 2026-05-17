@@ -1335,8 +1335,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: data.answer,
           suggested_questions: data.suggestedQuestions,
+          drumroll_question: data.drumrollQuestion as unknown as Json,
           documents_found: data.metadata?.documentsFound,
           structured_data_found: data.metadata?.structuredDataFound,
+          metadata: toStoredMetadata(assistantMessage.metadata),
           user_id: currentUserId,
           conversation_id: convId,
         });
@@ -1568,6 +1570,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: data.answer,
           suggested_questions: data.suggestedQuestions,
+          metadata: toStoredMetadata(enrichedMessage.metadata),
           user_id: currentUserId,
         }
       ]);
