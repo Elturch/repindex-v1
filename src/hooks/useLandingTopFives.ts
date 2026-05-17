@@ -148,7 +148,11 @@ async function fetchV2WeekEnriched(
       const ticker = r["05_ticker"];
       const meta = issuersMap.get(ticker);
       if (!meta) return null;
-      const score = r["52_cxm_excluded"] ? r["51_rix_score_adjusted"] : r["09_rix_score"];
+      const adjusted = r["51_rix_score_adjusted"];
+      const raw = r["09_rix_score"];
+      // Si CXM está excluido usamos el ajustado; si éste viene null (caso típico
+      // de no cotizadas sin score ajustado calculado), caemos al RIX bruto.
+      const score = r["52_cxm_excluded"] ? (adjusted ?? raw) : (raw ?? adjusted);
       if (score === null || score === undefined) return null;
       return {
         company_name: r["03_target_name"] || meta.name,
