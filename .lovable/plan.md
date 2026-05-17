@@ -1,47 +1,34 @@
-## Diagnóstico
+# Re-anclaje de fechas en "Regenerar informe" (opción B)
 
-Dos bugs distintos, ambos en `/visor`:
+Al abrir el diálogo de regenerar, los 11 filtros se cargan exactamente como en el informe original. Solo el bloque de fechas mostrará un aviso sugerido si el preset relativo (`last_week` / `last_month` / `last_quarter` / `ytd`) ya no apunta al último barrido disponible. El usuario decide pulsando.
 
-### Bug 1 — Botón "Descargar como informe" inalcanzable
-El componente `ChatMessages` envuelve los mensajes en un `ScrollArea` con altura FIJA `h-[500px]` (línea 131 y 251 de `src/components/chat/ChatMessages.tsx`). Sobre `/visor` esto significa que el informe (que mide miles de px) queda atrapado dentro de una ventana interna de 500 px; el usuario hace scroll de la página y no llega al botón porque éste vive al final de un scroll interno que casi nadie descubre. En desktop sólo se ve el botón "Exportar" de la cabecera. Esto es el origen del "solo está arriba".
+## Comportamiento
 
-### Bug 2 — Las descargas no incluyen las fuentes (bibliografía vacía)
-Tanto `downloadMessage` (botón inferior) como `downloadAsHtml` (botón superior) construyen la bibliografía leyendo `message.metadata.verifiedSources`. Pero la tabla `chat_intelligence_sessions` NO tiene columna `metadata` (verificado en `src/integrations/supabase/types.ts` líneas 453-523). Al guardar el mensaje del asistente (`ChatContext.tsx` líneas 1213, 1307, 1533) sólo se persisten `content`, `suggested_questions`, `documents_found`, `structured_data_found`. Al rehidratar la conversación al abrir un informe guardado (`loadHistory` líneas 628-672) el mensaje se reconstruye SIN `verifiedSources`, SIN `methodology` y SIN `reportContext`. Resultado: la bibliografía sale vacía y el período/contexto aparece nulo.
+- Si `window.preset === "custom"` → nunca se sugiere nada (el usuario eligió fechas explícitas).
+- Si el preset es relativo y `window.value.to !== lastBatchDate` → mostrar chip discreto bajo el bloque de fechas:
+  *"📅 Actualizar al último barrido (DD/MM/YYYY)"* como botón secundario pequeño.
+- Al pulsar: recalcular `from`/`to` según el preset, anclado a `lastBatchDate`, y marcar el filtro como `user-set` (decisión explícita del usuario).
+- Si las fechas ya están al día, no se muestra nada → cero ruido visual.
+- El resto de filtros (universo, sector, modelos, métricas, Top N, orden, source tier, granularidad, intent) se cargan tal cual, sin tocar su `origin`.
 
-Por eso un informe recién generado (en la misma sesión) sí trae fuentes, pero cualquier informe abierto desde la "memoria de informes" sale sin bibliografía.
+## Cambios técnicos
 
-## Plan
+1. **`src/components/reports/RegenerateDialog.tsx`**
+   - Recibir `lastBatchDate` (ya lo recibe) y calcular `needsReanchor` con un helper local.
+   - Pasar `lastBatchDate` + callback `onReanchorWindow` a `FilterPanel` (o renderizar el chip directamente encima del panel — preferible mantenerlo en el bloque de fechas).
 
-### Cambio 1 — Migración de DB
-Añadir columna `metadata JSONB NULL` a `chat_intelligence_sessions`. No requiere backfill (los informes antiguos seguirán sin fuentes, pero los nuevos las recuperarán).
+2. **`src/components/reports/FilterPanel.tsx`** (o el `FilterBlock` específico de fechas)
+   - Dentro del bloque "Ventana temporal", si `lastBatchDate` y preset relativo y `to !== lastBatchDate`: renderizar un `<Button variant="outline" size="sm">` con icono `Calendar` y texto *"Actualizar a {DD/MM}"*.
+   - Handler: recomputar `{from, to}` según preset usando `lastBatchDate` como ancla y llamar `setFilter(state, "window", newWindow, "user-set")`.
 
-```sql
-ALTER TABLE public.chat_intelligence_sessions
-  ADD COLUMN metadata JSONB NULL;
-```
-
-### Cambio 2 — Persistir metadata al guardar
-En `src/contexts/ChatContext.tsx`:
-- Líneas ~1213, ~1307 y ~1533 (los 3 `insert` de mensajes assistant): añadir `metadata: { verifiedSources, methodology, reportContext, type, guardKind, companyName, depthLevel, questionCategory, ... }`.
-
-### Cambio 3 — Rehidratar metadata al cargar
-En `src/contexts/ChatContext.tsx` líneas 640-644 (`loadHistory`):
-- Leer `msg.metadata` y volcarlo en `message.metadata` con el shape que ya espera el resto del código (verifiedSources, methodology con periodFrom/periodTo/modelsUsed, reportContext, etc.).
-
-### Cambio 4 — Botón inferior alcanzable en /visor
-En `src/components/chat/ChatMessages.tsx`:
-- Añadir prop opcional `unboundedHeight?: boolean`. Cuando es `true`, `scrollHeight` se sustituye por `min-h-0` (sin altura fija), de modo que el contenido fluye con la página y el botón inferior queda al final del scroll natural.
-- En `src/pages/RixViewer.tsx` línea 499: pasar `unboundedHeight` al `<ChatMessages>`.
-- Reemplazar `ScrollArea` por `<div className="w-full max-w-full min-w-0 overflow-x-hidden">` cuando `unboundedHeight` (Radix `ScrollArea` no funciona bien sin altura definida).
-- `ChatIntelligence.tsx` y `FloatingChat.tsx` mantienen el comportamiento actual.
-
-### Verificación
-1. Generar un informe nuevo en `/informes` → abrirlo en `/visor` → comprobar que al hacer scroll de la página aparece el botón "Descargar como informe" al final.
-2. Click en el botón → el HTML descargado debe traer la sección "Bibliografía" con las URLs.
-3. Recargar la página, reabrir el informe desde la memoria lateral → repetir el test y comprobar que la bibliografía sigue ahí (metadata rehidratada).
+3. **Helper `reanchorWindow(preset, lastBatchDate)`** en `src/lib/reports/filterState.ts`
+   - `last_week` → from = lastBatchDate - 6d, to = lastBatchDate
+   - `last_month` → from = lastBatchDate - 29d, to = lastBatchDate
+   - `last_quarter` → from = lastBatchDate - 89d, to = lastBatchDate
+   - `ytd` → from = `${year}-01-01`, to = lastBatchDate
 
 ## Fuera de alcance
 
-- No modificar prompts ni edge functions.
-- No retroactivar fuentes en informes anteriores.
-- No tocar el botón "Exportar" superior (sigue funcionando idéntico).
+- No se toca `RixReports.tsx` (el flujo de creación nueva ya re-ancla solo).
+- No se modifica el motor de coherencia ni `compileQuestion`.
+- No se altera el resto de filtros en ningún caso.

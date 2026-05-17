@@ -152,3 +152,37 @@ export function unlockDerived<K extends FilterId>(
 ): FilterState {
   return setFilter(state, id, emptyValue, "free");
 }
+
+/**
+ * Re-ancla una ventana temporal con preset relativo al último barrido
+ * canónico disponible (`lastBatchDate`, YYYY-MM-DD). Si el preset es
+ * `custom`, devuelve la ventana sin cambios — las fechas explícitas del
+ * usuario nunca se sobrescriben.
+ */
+export function reanchorWindow(
+  window: TimeWindow,
+  lastBatchDate: string,
+): TimeWindow {
+  if (window.preset === "custom") return window;
+  const to = new Date(`${lastBatchDate}T00:00:00`);
+  const from = new Date(to);
+  if (window.preset === "last_week") from.setDate(to.getDate() - 6);
+  else if (window.preset === "last_month") from.setDate(to.getDate() - 29);
+  else if (window.preset === "last_quarter") from.setDate(to.getDate() - 89);
+  else if (window.preset === "ytd") {
+    from.setMonth(0);
+    from.setDate(1);
+  }
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { preset: window.preset, from: iso(from), to: lastBatchDate };
+}
+
+/** ¿La ventana actual está desfasada respecto al último barrido? */
+export function windowNeedsReanchor(
+  window: TimeWindow,
+  lastBatchDate: string | null | undefined,
+): boolean {
+  if (!lastBatchDate) return false;
+  if (window.preset === "custom") return false;
+  return window.to !== lastBatchDate;
+}

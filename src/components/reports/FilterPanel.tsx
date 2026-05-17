@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,8 @@ import {
   SortOrder,
   SourceTier,
   ModelName,
+  reanchorWindow,
+  windowNeedsReanchor,
 } from "@/lib/reports/filterState";
 import { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterBlock } from "./FilterBlock";
@@ -449,6 +451,26 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
             </button>
           ))}
         </div>
+        {windowNeedsReanchor(state.window.value, lastBatchDate) && (
+          <button
+            type="button"
+            onClick={() =>
+              setState(
+                setFilter(
+                  state,
+                  "window",
+                  reanchorWindow(state.window.value, lastBatchDate as string),
+                  "user-set",
+                ),
+              )
+            }
+            className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10"
+            title="Re-ancla el preset al último domingo con datos disponibles"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Actualizar al último barrido ({format(new Date(`${lastBatchDate}T00:00:00`), "dd/MM/yyyy")})
+          </button>
+        )}
       </FilterBlock>
 
       <FilterBlock title="Granularidad" origin={state.granularity.origin}>
