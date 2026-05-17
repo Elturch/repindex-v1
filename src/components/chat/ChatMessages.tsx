@@ -254,7 +254,7 @@ export function ChatMessages({
         {messages.map((message, idx) => (
           <div key={idx} className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div
-              className={`relative min-w-0 max-w-full sm:${compact ? 'max-w-[90%]' : 'max-w-[85%]'} ${compact ? 'max-w-[90%]' : 'max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} overflow-hidden ${
+              className={`relative min-w-0 max-w-full ${compact ? 'sm:max-w-[90%]' : 'sm:max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} overflow-hidden ${
                 message.role === 'user'
                   ? 'bg-primary text-primary-foreground'
                   : message.metadata?.type === 'guard_rejection'
