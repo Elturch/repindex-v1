@@ -4,7 +4,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MIN_ROWS_PER_SWEEP = 180;
-const SWEEP_HOUR_UTC = 9;
+const SWEEP_HOUR_UTC = 9; // sólo hint informativo
 
 export interface ResolvedSunday {
   sundayISO: string;
@@ -13,21 +13,24 @@ export interface ResolvedSunday {
   source: "db_max" | "fallback_calendar";
 }
 
+/**
+ * Devuelve SIEMPRE el último domingo de calendario (hoy si hoy es domingo).
+ * `sweepInProgress` es sólo hint por reloj; la decisión real se toma en
+ * `resolveLastClosedSunday` mirando filas reales en BD.
+ */
 export function computeLastClosedSundayPure(now: Date): { sundayISO: string; sweepInProgress: boolean } {
   const dow = now.getUTCDay();
   const hourUTC = now.getUTCHours();
-  const sweepInProgress = dow === 0 && hourUTC < SWEEP_HOUR_UTC;
+  const sweepInProgressHint = dow === 0 && hourUTC < SWEEP_HOUR_UTC;
   const baseDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let back: number;
-  if (dow === 0) back = sweepInProgress ? 7 : 0;
-  else back = dow;
+  const back = dow;
   const sun = new Date(baseDay);
   sun.setUTCDate(sun.getUTCDate() - back);
-  return { sundayISO: sun.toISOString().slice(0, 10), sweepInProgress };
+  return { sundayISO: sun.toISOString().slice(0, 10), sweepInProgress: sweepInProgressHint };
 }
 
 export async function resolveLastClosedSunday(supabase: SupabaseClient, now: Date = new Date()): Promise<ResolvedSunday> {
-  const { sundayISO: calendarSunday, sweepInProgress } = computeLastClosedSundayPure(now);
+  const { sundayISO: calendarSunday, sweepInProgress: hint } = computeLastClosedSundayPure(now);
   try {
     const { data, error } = await supabase
       .from("rix_runs_v2")
@@ -43,11 +46,14 @@ export async function resolveLastClosedSunday(supabase: SupabaseClient, now: Dat
       }
       const sorted = Array.from(counts.entries()).sort((a, b) => b[0].localeCompare(a[0]));
       for (const [day, n] of sorted) {
-        if (n >= MIN_ROWS_PER_SWEEP) return { sundayISO: day, sweepInProgress, rowsAvailable: n, source: "db_max" };
+        if (n >= MIN_ROWS_PER_SWEEP) {
+          const sweepInProgress = day === calendarSunday ? false : hint;
+          return { sundayISO: day, sweepInProgress, rowsAvailable: n, source: "db_max" };
+        }
       }
     }
   } catch (_e) { /* fall through */ }
-  return { sundayISO: calendarSunday, sweepInProgress, rowsAvailable: 0, source: "fallback_calendar" };
+  return { sundayISO: calendarSunday, sweepInProgress: hint, rowsAvailable: 0, source: "fallback_calendar" };
 }
 
 export function formatSundayLabel(sundayISO: string, sweepInProgress = false): string {

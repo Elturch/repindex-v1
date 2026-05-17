@@ -4,7 +4,7 @@
 // two implementations is caught structurally.
 export const MATRIX = [
   ["Domingo 03-may 11:00 CEST",   "2026-05-03T09:00:00Z", "2026-05-03", false],
-  ["Domingo 03-may 10:59 CEST",   "2026-05-03T08:59:00Z", "2026-04-26", true ],
+  ["Domingo 03-may 10:59 CEST",   "2026-05-03T08:59:00Z", "2026-05-03", true ],
   ["Domingo 03-may 13:00 CEST",   "2026-05-03T11:00:00Z", "2026-05-03", false],
   ["Lunes 04-may 09:00 CEST",     "2026-05-04T07:00:00Z", "2026-05-03", false],
   ["Miércoles 06-may 12:00 CEST", "2026-05-06T10:00:00Z", "2026-05-03", false],

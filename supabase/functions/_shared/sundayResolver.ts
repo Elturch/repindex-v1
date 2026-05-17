@@ -4,7 +4,7 @@
 // y src/lib/skills/__tests__/sundayResolver.test.ts).
 
 const MIN_ROWS_PER_SWEEP = 180;          // 30 issuers × 6 models floor
-const SWEEP_HOUR_UTC = 9;                // 11:00 CEST = 09:00 UTC
+const SWEEP_HOUR_UTC = 9;                // 11:00 CEST = 09:00 UTC — sólo hint para el label
 
 export interface ResolvedSunday {
   sundayISO: string;
@@ -13,22 +13,32 @@ export interface ResolvedSunday {
   source: "db_max" | "fallback_calendar";
 }
 
-/** Pure, DB-less calendar logic. Same contract in Deno and frontend. */
+/**
+ * Pure, DB-less calendar logic. Devuelve SIEMPRE el último domingo de
+ * calendario (incluyendo hoy si hoy es domingo). El flag
+ * `sweepInProgress` es sólo una pista por reloj — la decisión real de
+ * si el barrido está cerrado se toma empíricamente en
+ * `resolveLastClosedSunday` mirando filas reales en BD.
+ */
 export function computeLastClosedSundayPure(now: Date): { sundayISO: string; sweepInProgress: boolean } {
   const dow = now.getUTCDay();
   const hourUTC = now.getUTCHours();
-  const sweepInProgress = dow === 0 && hourUTC < SWEEP_HOUR_UTC;
+  const sweepInProgressHint = dow === 0 && hourUTC < SWEEP_HOUR_UTC;
   const baseDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  let back: number;
-  if (dow === 0) back = sweepInProgress ? 7 : 0;
-  else back = dow;
+  const back = dow; // 0 si es domingo → hoy; 1..6 si no
   const sun = new Date(baseDay);
   sun.setUTCDate(sun.getUTCDate() - back);
-  return { sundayISO: sun.toISOString().slice(0, 10), sweepInProgress };
+  return { sundayISO: sun.toISOString().slice(0, 10), sweepInProgress: sweepInProgressHint };
 }
 
+/**
+ * Decisión empírica: si el domingo de hoy ya tiene ≥180 filas en
+ * `rix_runs_v2`, ese es el barrido cerrado, independientemente del reloj.
+ * Si no, retrocede al domingo anterior con ≥180. Nunca descarta un
+ * barrido cerrado en BD por la hora.
+ */
 export async function resolveLastClosedSunday(supabase: any, now: Date = new Date()): Promise<ResolvedSunday> {
-  const { sundayISO: calendarSunday, sweepInProgress } = computeLastClosedSundayPure(now);
+  const { sundayISO: calendarSunday, sweepInProgress: hint } = computeLastClosedSundayPure(now);
   try {
     const { data, error } = await supabase
       .from("rix_runs_v2")
@@ -45,12 +55,16 @@ export async function resolveLastClosedSunday(supabase: any, now: Date = new Dat
       const sorted = Array.from(counts.entries()).sort((a, b) => b[0].localeCompare(a[0]));
       for (const [day, n] of sorted) {
         if (n >= MIN_ROWS_PER_SWEEP) {
+          // Empírico: si el día elegido es el domingo de hoy y tiene
+          // ≥180 filas, el barrido está cerrado aunque el reloj sugiera
+          // lo contrario.
+          const sweepInProgress = day === calendarSunday ? false : hint;
           return { sundayISO: day, sweepInProgress, rowsAvailable: n, source: "db_max" };
         }
       }
     }
   } catch (_e) { /* fall through to calendar fallback */ }
-  return { sundayISO: calendarSunday, sweepInProgress, rowsAvailable: 0, source: "fallback_calendar" };
+  return { sundayISO: calendarSunday, sweepInProgress: hint, rowsAvailable: 0, source: "fallback_calendar" };
 }
 
 export function formatSundayLabel(sundayISO: string, sweepInProgress = false): string {
