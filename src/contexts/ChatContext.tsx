@@ -664,7 +664,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             role: msg.role as 'user' | 'assistant',
             content: msg.content,
             suggestedQuestions: msg.suggested_questions as string[] | undefined,
-            drumrollQuestion: msg.drumroll_question as DrumrollQuestion | undefined,
+            drumrollQuestion: msg.drumroll_question as unknown as DrumrollQuestion | undefined,
             metadata: fromStoredMetadata(msg.metadata, msg.content),
           }));
           setMessages(loadedMessages);
@@ -1241,7 +1241,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               suggested_questions: suggestedQuestions,
               documents_found: finalMetadata?.documentsFound,
               structured_data_found: finalMetadata?.structuredDataFound,
-              drumroll_question: drumrollQuestion,
+              drumroll_question: drumrollQuestion as unknown as Json,
               metadata: toStoredMetadata(assistantMetadata),
               user_id: currentUserId,
               conversation_id: convId,
