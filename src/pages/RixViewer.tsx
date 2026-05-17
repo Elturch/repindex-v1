@@ -393,8 +393,8 @@ export default function RixViewer() {
       <Header />
 
       <main className="container max-w-screen-2xl px-4 py-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold flex items-center gap-2">
               <FileBarChart2 className="h-6 w-6 text-primary" />
               Visor de Informes RIX
@@ -405,7 +405,7 @@ export default function RixViewer() {
           </div>
 
           {messages.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {activeReport && (
                 <>
                   <Button
