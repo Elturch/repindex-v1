@@ -10,6 +10,7 @@ import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technica
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
 import { getAgentVersion, getEdgeFunctionName, type AgentVersion } from "@/lib/agentVersion";
 import { detectsExplicitNewEntity, expandComparisonFollowup, isFreshExplicitQuery } from "@/lib/stickyEntityOverride";
+import type { Json } from "@/integrations/supabase/types";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -260,6 +261,28 @@ function detectGuardRejection(
     if (re.test(trimmed)) return kind;
   }
   return null;
+}
+
+function toStoredMetadata(metadata: MessageMetadata | undefined): Json | null {
+  return metadata ? (metadata as unknown as Json) : null;
+}
+
+function fromStoredMetadata(metadata: Json | null, content: string): MessageMetadata | undefined {
+  const stored = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as unknown as MessageMetadata)
+    : undefined;
+  const reportContext = stored?.reportContext;
+  const guardKind = stored?.guardKind || detectGuardRejection(content, !!reportContext);
+
+  if (stored) {
+    return {
+      ...stored,
+      type: guardKind ? 'guard_rejection' : stored.type,
+      guardKind: guardKind || undefined,
+    };
+  }
+
+  return guardKind ? { type: 'guard_rejection', guardKind } : undefined;
 }
 
 // Phase 4 — UX: short generic loader shown for the first ~600ms so users
@@ -641,6 +664,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             role: msg.role as 'user' | 'assistant',
             content: msg.content,
             suggestedQuestions: msg.suggested_questions as string[] | undefined,
+            drumrollQuestion: msg.drumroll_question as unknown as DrumrollQuestion | undefined,
+            metadata: fromStoredMetadata(msg.metadata, msg.content),
           }));
           setMessages(loadedMessages);
           
@@ -1160,6 +1185,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
             throw new Error('Stream vacío: no se recibió contenido del asistente');
           }
 
+          const reportCtx = finalMetadata?.reportContext || undefined;
+          const guardKind = detectGuardRejection(accumulatedContent, !!reportCtx);
+          const assistantMetadata: MessageMetadata = {
+            type: guardKind ? 'guard_rejection' : (finalMetadata?.type || 'standard'),
+            guardKind: guardKind || undefined,
+            companyName: finalMetadata?.companyName,
+            documentsFound: finalMetadata?.documentsFound,
+            structuredDataFound: finalMetadata?.structuredDataFound,
+            depthLevel: options?.depthLevel || sessionDepthLevel,
+            questionCategory: finalMetadata?.questionCategory,
+            verifiedSources: finalMetadata?.verifiedSources,
+            reportContext: reportCtx,
+            methodology: finalMetadata?.methodology || {
+              hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
+              modelsUsed: finalMetadata?.modelsUsed || [],
+              periodFrom: finalMetadata?.periodFrom,
+              periodTo: finalMetadata?.periodTo,
+              observationsCount: finalMetadata?.structuredDataFound || 0,
+              divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
+              divergencePoints: finalMetadata?.divergencePoints || 0,
+              uniqueCompanies: finalMetadata?.uniqueCompanies,
+              uniqueWeeks: finalMetadata?.uniqueWeeks,
+            },
+          };
+
           // Mark streaming as complete and add final metadata including methodology
           setMessages(prev => {
             const updated = [...prev];
@@ -1175,33 +1225,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 totalMs: Math.round(performance.now() - __metricsStart),
                 chunksCount: __metricsChunks,
               };
-              const reportCtx = finalMetadata?.reportContext || undefined;
-              const guardKind = detectGuardRejection(lastMsg.content, !!reportCtx);
-              lastMsg.metadata = {
-                type: guardKind ? 'guard_rejection' : (finalMetadata?.type || 'standard'),
-                guardKind: guardKind || undefined,
-                companyName: finalMetadata?.companyName,
-                documentsFound: finalMetadata?.documentsFound,
-                structuredDataFound: finalMetadata?.structuredDataFound,
-                depthLevel: options?.depthLevel || sessionDepthLevel,
-                questionCategory: finalMetadata?.questionCategory,
-                // Verified sources from ChatGPT and Perplexity for bibliography
-                verifiedSources: finalMetadata?.verifiedSources,
-                // Report context for InfoBar
-                reportContext: reportCtx,
-                // Methodology metadata for "Radar Reputacional" validation sheet
-                methodology: finalMetadata?.methodology || {
-                  hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
-                  modelsUsed: finalMetadata?.modelsUsed || [],
-                  periodFrom: finalMetadata?.periodFrom,
-                  periodTo: finalMetadata?.periodTo,
-                  observationsCount: finalMetadata?.structuredDataFound || 0,
-                  divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
-                  divergencePoints: finalMetadata?.divergencePoints || 0,
-                  uniqueCompanies: finalMetadata?.uniqueCompanies,
-                  uniqueWeeks: finalMetadata?.uniqueWeeks,
-                },
-              };
+              lastMsg.metadata = assistantMetadata;
             }
             return updated;
           });
@@ -1217,6 +1241,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
               suggested_questions: suggestedQuestions,
               documents_found: finalMetadata?.documentsFound,
               structured_data_found: finalMetadata?.structuredDataFound,
+              drumroll_question: drumrollQuestion as unknown as Json,
+              metadata: toStoredMetadata(assistantMetadata),
               user_id: currentUserId,
               conversation_id: convId,
             });
@@ -1309,8 +1335,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: data.answer,
           suggested_questions: data.suggestedQuestions,
+          drumroll_question: data.drumrollQuestion as unknown as Json,
           documents_found: data.metadata?.documentsFound,
           structured_data_found: data.metadata?.structuredDataFound,
+          metadata: toStoredMetadata(assistantMessage.metadata),
           user_id: currentUserId,
           conversation_id: convId,
         });
@@ -1542,6 +1570,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: data.answer,
           suggested_questions: data.suggestedQuestions,
+          metadata: toStoredMetadata(enrichedMessage.metadata),
           user_id: currentUserId,
         }
       ]);

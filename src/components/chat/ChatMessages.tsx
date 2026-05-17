@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,6 +31,7 @@ interface ChatMessagesProps {
   compact?: boolean;
   sessionId?: string;
   languageCode?: string;
+  unboundedHeight?: boolean;
 }
 
 export function ChatMessages({
@@ -43,6 +44,7 @@ export function ChatMessages({
   compact = false,
   sessionId,
   languageCode = 'es',
+  unboundedHeight = false,
 }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const vectorStoreStatus = useVectorStoreStatus();
@@ -125,10 +127,23 @@ export function ChatMessages({
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
+    if (unboundedHeight) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, unboundedHeight]);
 
   const scrollHeight = compact ? "h-[300px]" : "h-[500px]";
+
+  const MessagesViewport = ({ children }: { children: ReactNode }) => {
+    if (unboundedHeight) {
+      return <div className="w-full max-w-full min-w-0 overflow-x-hidden">{children}</div>;
+    }
+
+    return (
+      <ScrollArea className={`${scrollHeight} w-full max-w-full min-w-0 overflow-x-hidden pr-0 sm:pr-4`}>
+        {children}
+      </ScrollArea>
+    );
+  };
   
   // Vector store repopulating warning banner
   const VectorStoreWarning = () => {
@@ -151,20 +166,20 @@ export function ChatMessages({
 
   if (isLoadingHistory) {
     return (
-      <ScrollArea className={`${scrollHeight} pr-4`}>
+      <MessagesViewport>
         <VectorStoreWarning />
         <div className="space-y-4 py-4">
           <Skeleton className="h-16 w-3/4" />
           <Skeleton className="h-16 w-3/4 ml-auto" />
           <Skeleton className="h-16 w-3/4" />
         </div>
-      </ScrollArea>
+      </MessagesViewport>
     );
   }
 
   if (messages.length === 0) {
     return (
-      <ScrollArea className={`${scrollHeight} w-full max-w-full min-w-0 overflow-x-hidden pr-0 sm:pr-4`}>
+      <MessagesViewport>
         <VectorStoreWarning />
         <div className="flex h-full w-full min-w-0 max-w-full flex-col items-center justify-start overflow-x-hidden pt-4 pb-2">
           <div className="mb-[100px] w-full min-w-0 max-w-full space-y-2 px-2 text-center sm:px-0">
@@ -243,12 +258,12 @@ export function ChatMessages({
             </div>
           </div>
         </div>
-      </ScrollArea>
+      </MessagesViewport>
     );
   }
 
   return (
-    <ScrollArea className={`${scrollHeight} w-full max-w-full min-w-0 overflow-x-hidden pr-0 sm:pr-4`}>
+    <MessagesViewport>
       <VectorStoreWarning />
       <div className="space-y-4 w-full max-w-full min-w-0">
         {messages.map((message, idx) => (
@@ -400,7 +415,7 @@ export function ChatMessages({
 
               {/* Download button — bottom-right of assistant bubbles */}
               {message.role === 'assistant' && !message.isStreaming && (
-                <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30 flex justify-end`}>
+                <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30 flex flex-wrap justify-end gap-2`}>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -451,6 +466,6 @@ export function ChatMessages({
         )}
         <div ref={messagesEndRef} />
       </div>
-    </ScrollArea>
+    </MessagesViewport>
   );
 }
