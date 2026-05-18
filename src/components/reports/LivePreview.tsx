@@ -9,7 +9,7 @@ import {
   getScopeTickers,
   CompanyMeta,
 } from "@/lib/reports/coherenceEngine";
-import { FilterState } from "@/lib/reports/filterState";
+import { FilterState, toDbModelNames } from "@/lib/reports/filterState";
 
 interface Props {
   state: FilterState;
