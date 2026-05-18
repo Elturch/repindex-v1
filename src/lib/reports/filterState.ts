@@ -90,6 +90,23 @@ export const ALL_MODELS: ModelName[] = [
   "Qwen",
 ];
 
+/**
+ * Mapeo UI -> nombres canónicos almacenados en rix_runs_v2."02_model_name".
+ * La BD guarda "Google Gemini" y "Deepseek" mientras la UI muestra labels limpias.
+ */
+export const MODEL_DB_NAMES: Record<ModelName, string> = {
+  ChatGPT: "ChatGPT",
+  Perplexity: "Perplexity",
+  Gemini: "Google Gemini",
+  DeepSeek: "Deepseek",
+  Grok: "Grok",
+  Qwen: "Qwen",
+};
+
+export function toDbModelNames(models: ModelName[]): string[] {
+  return models.map((m) => MODEL_DB_NAMES[m] ?? m);
+}
+
 export const ALL_METRICS: AxisMetric[] = [
   "RIX",
   "NVM",
