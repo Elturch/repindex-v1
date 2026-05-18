@@ -142,11 +142,13 @@ export default function RixViewer() {
   // and guarantees the user sees the loading state.
   useEffect(() => {
     if (!pending) return;
+    if (!userId) return; // wait for auth to resolve
     if (sessionId !== pending.sessionId) return;
+    if (isLoadingHistory) return; // wait for history hydration to finish
     const q = pending.question;
     setPending(null);
     sendMessage(q, { skipNormalization: true });
-  }, [pending, sessionId, sendMessage]);
+  }, [pending, sessionId, sendMessage, userId, isLoadingHistory]);
 
   const activeReport = useMemo(
     () => reports.find((r) => r.id === activeId) ?? null,
