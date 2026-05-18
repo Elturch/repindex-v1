@@ -44,7 +44,7 @@ export function LivePreview({ state, warnings, companies }: Props) {
           )
           .gte("06_period_from", state.window.value.from < "2026-01-01" ? "2026-01-01" : state.window.value.from)
           .lte("07_period_to", state.window.value.to)
-          .in("02_model_name", state.models.value as string[])
+          .in("02_model_name", toDbModelNames(state.models.value))
           .limit(50);
         if (tickers.length > 0 && tickers.length < 200) {
           q = q.in("05_ticker", tickers);
