@@ -31,6 +31,7 @@ import {
   ModelName,
   reanchorWindow,
   windowNeedsReanchor,
+  todayISO,
 } from "@/lib/reports/filterState";
 import { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterBlock } from "./FilterBlock";
@@ -355,9 +356,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="justify-start font-normal">
                 <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                {state.window.value.from
-                  ? format(new Date(state.window.value.from), "yyyy-MM-dd")
-                  : "Desde"}
+                {state.window.value.from || "Desde"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -382,9 +381,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="justify-start font-normal">
                 <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                {state.window.value.to
-                  ? format(new Date(state.window.value.to), "yyyy-MM-dd")
-                  : "Hasta"}
+                {state.window.value.to || "Hasta"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -425,20 +422,13 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
               }
               onClick={() => {
                 // Anclar al último barrido canónico (último domingo con datos).
-                // Si aún no se ha cargado, fallback a hoy.
-                const to = lastBatchDate ? new Date(`${lastBatchDate}T00:00:00`) : new Date();
-                const from = new Date(to);
-                if (p.id === "last_week") from.setDate(to.getDate() - 6);
-                else if (p.id === "last_month") from.setDate(to.getDate() - 29);
-                else if (p.id === "last_quarter") from.setDate(to.getDate() - 89);
-                else { from.setMonth(0); from.setDate(1); }
-                setState(
-                  setFilter(state, "window", {
-                    preset: p.id,
-                    from: format(from, "yyyy-MM-dd"),
-                    to: format(to, "yyyy-MM-dd"),
-                  }),
+                // Si aún no se ha cargado, fallback a hoy (UTC-safe).
+                const anchor = lastBatchDate ?? todayISO();
+                const next = reanchorWindow(
+                  { preset: p.id, from: anchor, to: anchor },
+                  anchor,
                 );
+                setState(setFilter(state, "window", next));
               }}
               className={cn(
                 "px-2 py-0.5 rounded text-xs border",
@@ -468,7 +458,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
             title="Re-ancla el preset al último domingo con datos disponibles"
           >
             <RefreshCw className="h-3 w-3" />
-            Actualizar al último barrido ({format(new Date(`${lastBatchDate}T00:00:00`), "dd/MM/yyyy")})
+            Actualizar al último barrido ({lastBatchDate})
           </button>
         )}
       </FilterBlock>
