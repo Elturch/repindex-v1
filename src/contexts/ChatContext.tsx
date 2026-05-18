@@ -985,8 +985,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const __metricsStart = performance.now();
       let __metricsFirstChunkAt: number | null = null;
 
-      // v2 calls get an extra 90s safety timeout so a hung stream triggers
-      // the fallback rather than spinning forever. v1 keeps current behavior.
+      // v2 calls get a safety timeout aligned with depthLevel
+      // (quick=120s / complete=180s / exhaustive=300s) so o3 high-reasoning
+      // sweeps over IBEX-35 no longer get cut at a hardcoded 90s.
       const v2AbortController =
         effectiveAgentVersion === 'v2' ? new AbortController() : null;
       // P2-A: track the reason the abort fired (declared above try-scope)
@@ -996,7 +997,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         ? setTimeout(() => {
             v2AbortReason = 'client_timeout';
             v2AbortController.abort();
-          }, 90000)
+          }, timeoutMs)
         : null;
 
       console.log('[FE-BE]', {
