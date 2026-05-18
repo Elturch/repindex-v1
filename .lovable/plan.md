@@ -1,47 +1,35 @@
+Plan de corrección:
 
-## Diagnóstico
+1. Corregir el anclaje de fechas de informes
+- En `src/lib/reports/filterState.ts`, añadir helpers ISO basados en UTC para operar siempre sobre `YYYY-MM-DD`.
+- Reescribir `reanchorWindow` para que `last_week`, `last_month`, `last_quarter` y `ytd` no dependan de la zona horaria local.
+- Mantener intactas las ventanas `custom` elegidas por el usuario.
 
-El barrido de hoy (domingo 17-may-2026, 09:00 UTC) ya está completo en `rix_runs_v2` con 1.050 filas (todas las empresas × 6 modelos). Sin embargo, los informes generados antes de las 09:00 UTC se anclan al domingo anterior (10-may-2026). Causa:
+2. Aplicar ese anclaje en `/informes`
+- En `src/pages/RixReports.tsx`, sustituir el cálculo manual con `new Date(...T00:00:00)` por `reanchorWindow`.
+- Así el informe por defecto terminará exactamente en el último barrido disponible, por ejemplo `2026-05-17`, no `2026-05-16`.
 
-`supabase/functions/_shared/sundayResolver.ts` (y su gemelo `src/lib/skills/sundayResolver.ts`) decide `sweepInProgress = (dow === 0 && hourUTC < 9)` por reloj, **sin mirar la BD**. Luego filtra `lte("07_period_to", calendarSunday)` donde `calendarSunday = domingo anterior` cuando `sweepInProgress=true`. Resultado: la query nunca llega a ver el barrido del propio domingo aunque ya esté cerrado, y devuelve el domingo previo.
+3. Corregir los chips 7d / 30d / 90d / YTD
+- En `src/components/reports/FilterPanel.tsx`, reemplazar los cálculos manuales por `reanchorWindow`.
+- Evitar formatear ISO dates con `new Date(YYYY-MM-DD)` para mostrarlas, porque también puede desplazar el día.
+- Mostrar las fechas ISO directamente donde ya están en formato `YYYY-MM-DD`.
 
-Esto:
-- Afecta a Informes RIX y al Agente RIX (todo lo que pasa por `parseTemporal` o `resolveLastClosedSunday`).
-- No afecta a `useLatestBatchDate` (devuelve correctamente el 17-may), por eso el panel de filtros muestra una fecha y luego el informe usa otra.
+4. Blindar el auto-envío del informe en `/visor`
+- En `src/pages/RixViewer.tsx`, hacer que el auto-envío espere a tres condiciones: usuario autenticado, sesión activa correcta y carga de histórico terminada.
+- Evitar duplicados por `reportId`.
+- Mantener visible el estado “generando” mientras el informe está pendiente.
 
-## Cambio propuesto
+5. Hacer visible el fallo si el backend no llega a responder
+- En `src/contexts/ChatContext.tsx`, comprobar errores al guardar el mensaje de usuario.
+- Si el guardado falla, insertar un mensaje visible de error y no dejar la sesión con una pregunta guardada sin respuesta.
+- Si V2 se corta por timeout o aborto, mostrar también un mensaje de asistente persistible/visible, no solo un toast efímero.
 
-Hacer que `sweepInProgress` sea **empírico, no por reloj**: un domingo se considera "en curso" solo si **no hay aún ≥180 filas con `07_period_to = ese domingo`**. Si ya hay barrido cerrado en BD, se usa.
+Validación prevista:
+- Confirmar en código que no queda `new Date(${lastBatchDate}T00:00:00)` en informes.
+- Confirmar que una ventana 30d con último barrido `2026-05-17` termina en `2026-05-17`.
+- Confirmar que `/visor` no llama a `sendMessage` hasta que `sessionId` coincide y `isLoadingHistory` es falso.
 
-### Algoritmo nuevo (en `_shared/sundayResolver.ts` y su mirror `src/lib/skills/sundayResolver.ts`)
-
-```text
-1. calendarSunday = último domingo calendario (sin restar 7).
-2. Consultar conteo de filas con 07_period_to = calendarSunday.
-3. Si count >= 180  → devolver calendarSunday, sweepInProgress=false, source="db_max".
-4. Si count <  180 y dow===0 → sweepInProgress=true; bajar a domingo anterior con ≥180.
-5. Resto del flujo (loop por días con ≥180) se mantiene como red de seguridad.
-```
-
-El flag `SWEEP_HOUR_UTC` desaparece de la decisión (se queda solo como pista informativa para el label, opcional).
-
-### Archivos a tocar
-
-- `supabase/functions/_shared/sundayResolver.ts` — reescribir `computeLastClosedSundayPure` + `resolveLastClosedSunday` con la lógica empírica. Mantener firma pública intacta (`ResolvedSunday`, `formatSundayLabel`).
-- `src/lib/skills/sundayResolver.ts` — espejo idéntico (la propia cabecera del archivo exige sincronía).
-- `src/lib/skills/__tests__/sundayResolver.test.ts` — añadir 2 tests:
-  - Domingo con ≥180 filas a las 06:00 UTC → devuelve hoy.
-  - Domingo con 0 filas a las 06:00 UTC → devuelve domingo anterior.
-
-### Lo que NO se toca
-
-- `useLatestBatchDate` (ya correcto).
-- `RixReports` re-ancla por defecto, sigue igual.
-- `RegenerateDialog` y el botón "Actualizar al último barrido" (no relacionado).
-- Parser temporal, scopedQuery, compileQuestion, filtros, coherence: ningún cambio.
-
-## Validación
-
-1. `bunx vitest run src/lib/skills/__tests__/sundayResolver.test.ts`.
-2. Generar un informe nuevo desde `/informes` y verificar que la ventana del informe llega hasta `2026-05-17` (no `2026-05-10`).
-3. Comprobar en logs de `chat-intelligence-v2` que `parseTemporal` resuelve `to = 2026-05-17`.
+Fuera de alcance:
+- No tocar base de datos.
+- No tocar APIs externas.
+- No modificar `sundayResolver`, pipeline de barrido ni prompts del agente.

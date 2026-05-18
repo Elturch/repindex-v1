@@ -103,14 +103,12 @@ export const ALL_METRICS: AxisMetric[] = [
 ];
 
 function defaultWindow(): TimeWindow {
-  // Default to last 4 weeks ending today
-  const to = new Date();
-  const from = new Date();
-  from.setDate(to.getDate() - 28);
+  // Default to last 4 weeks ending today (UTC-safe).
+  const todayIso = todayISO();
   return {
     preset: "last_month",
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
+    from: subDaysISO(todayIso, 28),
+    to: todayIso,
   };
 }
 
@@ -154,6 +152,33 @@ export function unlockDerived<K extends FilterId>(
 }
 
 /**
+ * UTC-safe helpers operating on `YYYY-MM-DD` strings. The previous
+ * implementation used `new Date('YYYY-MM-DDT00:00:00')` (local time) +
+ * `toISOString().slice(0,10)` (UTC), which silently subtracted 1 day in
+ * any timezone east of UTC (e.g. CEST). That made the report window end
+ * the day before the actual last sweep, excluding the newest data.
+ */
+function parseIsoUTC(iso: string): Date {
+  // `YYYY-MM-DD` parses as UTC midnight by spec — explicit for clarity.
+  return new Date(`${iso}T00:00:00Z`);
+}
+function isoFromUTC(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+export function todayISO(): string {
+  return isoFromUTC(new Date());
+}
+export function subDaysISO(iso: string, n: number): string {
+  const d = parseIsoUTC(iso);
+  d.setUTCDate(d.getUTCDate() - n);
+  return isoFromUTC(d);
+}
+export function startOfYearISO(iso: string): string {
+  const d = parseIsoUTC(iso);
+  return `${d.getUTCFullYear()}-01-01`;
+}
+
+/**
  * Re-ancla una ventana temporal con preset relativo al último barrido
  * canónico disponible (`lastBatchDate`, YYYY-MM-DD). Si el preset es
  * `custom`, devuelve la ventana sin cambios — las fechas explícitas del
@@ -164,17 +189,12 @@ export function reanchorWindow(
   lastBatchDate: string,
 ): TimeWindow {
   if (window.preset === "custom") return window;
-  const to = new Date(`${lastBatchDate}T00:00:00`);
-  const from = new Date(to);
-  if (window.preset === "last_week") from.setDate(to.getDate() - 6);
-  else if (window.preset === "last_month") from.setDate(to.getDate() - 29);
-  else if (window.preset === "last_quarter") from.setDate(to.getDate() - 89);
-  else if (window.preset === "ytd") {
-    from.setMonth(0);
-    from.setDate(1);
-  }
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { preset: window.preset, from: iso(from), to: lastBatchDate };
+  let from = lastBatchDate;
+  if (window.preset === "last_week") from = subDaysISO(lastBatchDate, 6);
+  else if (window.preset === "last_month") from = subDaysISO(lastBatchDate, 29);
+  else if (window.preset === "last_quarter") from = subDaysISO(lastBatchDate, 89);
+  else if (window.preset === "ytd") from = startOfYearISO(lastBatchDate);
+  return { preset: window.preset, from, to: lastBatchDate };
 }
 
 /** ¿La ventana actual está desfasada respecto al último barrido? */

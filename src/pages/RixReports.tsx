@@ -10,6 +10,7 @@ import {
   createInitialFilterState,
   FilterState,
   setFilter,
+  reanchorWindow,
 } from "@/lib/reports/filterState";
 import { runCoherence, CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterPanel } from "@/components/reports/FilterPanel";
@@ -42,18 +43,10 @@ export default function RixReports() {
   useEffect(() => {
     if (!lastBatchDate) return;
     if (state.window.origin !== "free") return;
-    const to = new Date(`${lastBatchDate}T00:00:00`);
-    const from = new Date(to);
-    from.setDate(to.getDate() - 29);
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
     if (state.window.value.to === lastBatchDate) return; // ya anclado
+    const next = reanchorWindow(state.window.value, lastBatchDate);
     setState((prev) =>
-      setFilter(
-        prev,
-        "window",
-        { preset: "last_month", from: iso(from), to: iso(to) },
-        "free",
-      ),
+      setFilter(prev, "window", next, "free"),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastBatchDate]);

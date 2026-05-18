@@ -788,14 +788,36 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const convId = await ensureConversationRecord(question.slice(0, 50));
 
     // Save user message to DB with user_id
-    await supabase.from('chat_intelligence_sessions').insert({
-      session_id: sessionId,
-      role: 'user',
-      content: question,
-      user_id: currentUserId,
-      conversation_id: convId,
-      depth_level: options?.depthLevel || sessionDepthLevel,
-    });
+    const { error: userInsertError } = await supabase
+      .from('chat_intelligence_sessions')
+      .insert({
+        session_id: sessionId,
+        role: 'user',
+        content: question,
+        user_id: currentUserId,
+        conversation_id: convId,
+        depth_level: options?.depthLevel || sessionDepthLevel,
+      });
+    if (userInsertError) {
+      console.error('[ChatContext] Failed to persist user message:', userInsertError);
+      const failMsg: Message = {
+        role: 'assistant',
+        content:
+          'No se pudo registrar tu pregunta (error de conexión con la base de datos). Reintenta en unos segundos.',
+        metadata: { type: 'guard_rejection', guardKind: 'generic' },
+      };
+      setMessages(prev => [...prev, failMsg]);
+      if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
+      if (initialLoaderTimeoutRef.current) { clearTimeout(initialLoaderTimeoutRef.current); initialLoaderTimeoutRef.current = null; }
+      setIsLoading(false);
+      setIsStreaming(false);
+      toast({
+        title: 'Error guardando la pregunta',
+        description: userInsertError.message,
+        variant: 'destructive',
+      });
+      return;
+    }
 
     // Step 3 — declared outside try so the finally block can clear the v2
     // safety timeout regardless of where the failure happened.
@@ -1434,12 +1456,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
         return;
       }
       if (blockFallback && getAgentVersion() === 'v2') {
+        const description =
+          fallbackVector === 'client_timeout'
+            ? 'El informe V2 superó el tiempo máximo del cliente. Reintenta o cambia a V1 manualmente.'
+            : 'V2 se interrumpió antes de devolver datos. Reintenta o cambia a V1 manualmente.';
+        const failMsg: Message = {
+          role: 'assistant',
+          content: `⚠️ ${description}`,
+          metadata: { type: 'guard_rejection', guardKind: 'generic' },
+        };
+        setMessages(prev => [...prev, failMsg]);
+        if (currentUserId) {
+          await supabase.from('chat_intelligence_sessions').insert({
+            session_id: sessionId,
+            role: 'assistant',
+            content: failMsg.content,
+            user_id: currentUserId,
+            metadata: toStoredMetadata(failMsg.metadata),
+          });
+        }
         toast({
           title: 'V2 lento o sin respuesta',
-          description:
-            fallbackVector === 'client_timeout'
-              ? 'El informe V2 superó el tiempo máximo del cliente. Reintenta o cambia a V1 manualmente.'
-              : 'V2 se interrumpió antes de devolver datos. Reintenta o cambia a V1 manualmente.',
+          description,
           variant: 'destructive',
         });
         return;
