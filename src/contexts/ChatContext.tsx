@@ -1456,12 +1456,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
         return;
       }
       if (blockFallback && getAgentVersion() === 'v2') {
+        const description =
+          fallbackVector === 'client_timeout'
+            ? 'El informe V2 superó el tiempo máximo del cliente. Reintenta o cambia a V1 manualmente.'
+            : 'V2 se interrumpió antes de devolver datos. Reintenta o cambia a V1 manualmente.';
+        const failMsg: Message = {
+          role: 'assistant',
+          content: `⚠️ ${description}`,
+          metadata: { type: 'guard_rejection', guardKind: 'generic' },
+        };
+        setMessages(prev => [...prev, failMsg]);
+        if (currentUserId) {
+          await supabase.from('chat_intelligence_sessions').insert({
+            session_id: sessionId,
+            role: 'assistant',
+            content: failMsg.content,
+            user_id: currentUserId,
+            metadata: toStoredMetadata(failMsg.metadata),
+          });
+        }
         toast({
           title: 'V2 lento o sin respuesta',
-          description:
-            fallbackVector === 'client_timeout'
-              ? 'El informe V2 superó el tiempo máximo del cliente. Reintenta o cambia a V1 manualmente.'
-              : 'V2 se interrumpió antes de devolver datos. Reintenta o cambia a V1 manualmente.',
+          description,
           variant: 'destructive',
         });
         return;
