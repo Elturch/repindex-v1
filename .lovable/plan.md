@@ -1,37 +1,52 @@
-## Problema
+# Por qué los informes ahora solo muestran 4 modelos (antes 6)
 
-En el bloque **"7. Recomendaciones estratégicas accionables"** el agente recortó a 5 entidades (HOS, HLA, HMH, VIA, VIT) y dejó fuera a **Quirónsalud (#6)**, justo la que estaba en peor situación relativa. La regla actual del prompt dice *"MÍNIMO 5"* y el LLM la interpreta como tope superior + orden por ranking descendente.
+## Resumen para no técnicos
 
-## Causa raíz
+El sábado pasado los informes mostraban los 6 modelos porque la consulta a la base de datos **no filtraba por modelo**: traía todo lo que hubiera para esa empresa y ese período, y luego el código reconocía cada modelo internamente. El **13 de mayo (commit `20f6a59`)** se añadió un filtro al SQL para ahorrar tráfico cuando el usuario pide modelos específicos. Ese filtro se aplicó **sin traducir los nombres** entre la UI y la base de datos. Como en la BD los modelos se llaman `"Google Gemini"` y `"Deepseek"` y el pipeline V2 los pide como `"Gemini"` y `"DeepSeek"`, esos dos modelos quedan fuera silenciosamente. Resultado: cualquier informe generado después del 13 de mayo pierde 2 de los 6 modelos.
 
-`supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts` (líneas 63-70):
+Es una regresión, no un cambio intencional de metodología.
 
-```
-## 7. Recomendaciones estratégicas accionables (MÍNIMO 5, ESPECÍFICAS POR EMPRESA)
-Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
-...
-Distribuye las recomendaciones cubriendo idealmente todas las empresas del alcance, no solo el líder.
-```
+## Evidencia técnica
 
-"Mínimo 5" + "idealmente todas" → el modelo se queda en 5. No hay regla dura de cobertura total ni de orden por debilidad.
+1. **Commit responsable**: `20f6a59` — 2026-05-13 08:44 UTC, archivo `supabase/functions/chat-intelligence-v2/datapack/builder.ts`.
+2. **Antes (estado del sábado y previos)**: `fetchRows()` se llamaba sin parámetro `models` → la query sólo filtraba por `ticker` + ventana temporal. Los 6 nombres convivían sin problema porque nadie comparaba strings de modelo en SQL.
+3. **Después del 13-may**: se añadió `if (models && models.length > 0) q = q.in("02_model_name", models);` y se pasó `parsed.models` desde `buildDataPack()`. `parsed.models` viene del enum V2 (`MODEL_NAMES`) que usa los labels cortos `"Gemini"` y `"DeepSeek"`.
+4. **Mismatch con BD**: una consulta directa para Ferrovial 2026-04 → 2026-05 devuelve 6 filas por modelo con nombres `"ChatGPT"`, `"Deepseek"`, `"Google Gemini"`, `"Grok"`, `"Perplexity"`, `"Qwen"`. El `.in("02_model_name", ["ChatGPT","Perplexity","Gemini","DeepSeek","Grok","Qwen"])` matchea solo 4 → Gemini y DeepSeek se descartan a nivel SQL.
+5. **Confirmación en el informe HTML adjunto**: sección 3 "Visión por Modelo de IA" lista solo 4 filas; sección 4 "Evolución Temporal" muestra `Filas: 4` por semana.
+6. **¿Por qué `sectorRanking` no falla?**: ese skill (`sectorRanking.ts` líneas 1212-1214) hace la traducción local `m === "Gemini" ? "Google Gemini" : m === "DeepSeek" ? "Deepseek" : m` antes de su propio SQL. El `builder.ts` central no la tiene, por eso solo afecta a `companyAnalysis`, `comparison`, `modelDivergence`, `companyEvolution` (todos los que pasan por `buildDataPack`).
+7. **Por qué pasó desapercibido**: `normalizeModelName()` sí traduce al leer (`"Google Gemini" → "Gemini"`), pero ese normalizador ya no llega a ver esas filas porque el SQL las descartó antes. No hay assertion de "esperaba 6 modelos, recibí 4" en el datapack, así que no salta ningún warning.
 
-## Cambio propuesto (1 archivo, solo prompt)
+## Fix propuesto (1 archivo, mínimo)
 
-Editar `supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts` en el bloque de la sección 7:
+Editar `supabase/functions/chat-intelligence-v2/datapack/builder.ts`:
 
-1. Cambiar el título a **"UNA POR CADA EMPRESA DEL ALCANCE"**.
-2. Sustituir *"AL MENOS 5"* por una regla dura: **una recomendación obligatoria por cada empresa del ranking**, sin techo (si hay 6 → 6; si hay 10 → 10).
-3. Forzar el **orden por peor situación reputacional primero** (las más débiles encabezan la sección, porque son las que más lo necesitan).
-4. Añadir prohibición explícita: *"si una entidad aparece en el ranking de la sección 2, DEBE tener su propia recomendación en la sección 7"*, y *"no agrupes varias empresas en una sola recomendación"*.
+1. Añadir un mapa local UI → BD:
+   ```ts
+   const UI_TO_DB_MODEL: Record<string, string> = {
+     Gemini: "Google Gemini",
+     DeepSeek: "Deepseek",
+   };
+   function toDbModelName(m: string): string {
+     return UI_TO_DB_MODEL[m] ?? m;
+   }
+   ```
+2. En `fetchRows()` (línea 205-207), aplicar el mapeo antes del `.in()`:
+   ```ts
+   if (models && models.length > 0) {
+     q = q.in("02_model_name", models.map(toDbModelName));
+   }
+   ```
+3. Actualizar el log para imprimir tanto los nombres UI como los traducidos (debugging).
 
-Mantengo intactos los criterios (a)-(e) ya existentes (cuantificación, fuente real, prioridad, accionabilidad, anti-fabricación).
-
-## Fuera de alcance
-
-- No tocar `recommendations.ts` (esa skill es para perfil individual, no para ranking).
-- No tocar `companyAnalysis.ts`, `sectorRanking.ts` ni la lógica de orquestación.
-- No tocar UI, edge functions ni base de datos.
+No se toca nada más: ni `sectorRanking.ts` (ya lo hace), ni `normalizeModelName` (la lectura inversa funciona), ni la UI, ni la BD.
 
 ## Verificación
 
-Regenerar el mismo informe (grupos privados de salud, 6 empresas, ventana 18-abr → 17-may) y confirmar que la sección 7 contiene **6 recomendaciones**, una por empresa, ordenadas de peor a mejor RIX, con Quirónsalud incluida.
+1. Regenerar el informe de Ferrovial (2026-04-06 → 2026-05-17): sección 3 debe mostrar **6 filas** y la evolución semanal **Filas = 6**.
+2. Regenerar el informe sectorial de Grupos Hospitalarios: cada empresa expone 6 modelos.
+3. Comprobar en los logs de la edge function `[RIX-V2][datapack] model filter applied:` ahora muestra `["ChatGPT","Perplexity","Google Gemini","Deepseek","Grok","Qwen"]`.
+4. Añadir nota al .lovable/plan.md sobre el aprendizaje: cualquier filtro SQL sobre `02_model_name` debe pasar por un traductor canónico — incluir un test en `__test__` para que no se vuelva a romper en silencio.
+
+## Acción adicional recomendada (opcional, no implementada en este fix)
+
+Añadir un guard en `buildDataPack()`: si `models_coverage.with_data.length < requested.length` cuando el sweep dominical fue completo, emitir un `console.warn` claro (`models requested but missing in SQL response`). Eso convertiría futuros desajustes silenciosos en alertas visibles en logs, evitando que una regresión similar pase 6 días sin detectarse.
