@@ -60,14 +60,14 @@ Redacta 6-10 frases sobre la evolución temporal del grupo usando los deltas y s
 ## 6. Divergencias inter-modelo
 A partir de las puntuaciones por modelo del DataPack, identifica las 3 empresas con MAYOR rango (max-min) y explica POR QUÉ los modelos disienten (sesgo de fuentes, tipo de cobertura). Las divergencias > 20 pts deben listarse explícitamente con la cifra exacta y los modelos extremos (ej. "ENG: ChatGPT 78 vs Qwen 51, rango 27"). Cierra con 1 frase sobre qué dimensión (NVM/SIM/DRM/RMM/CEM/GAM/DCM) concentra más desacuerdo en el grupo.
 
-## 7. Recomendaciones estratégicas accionables (MÍNIMO 5, ESPECÍFICAS POR EMPRESA)
-Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
+## 7. Recomendaciones estratégicas accionables (UNA POR CADA EMPRESA DEL ALCANCE)
+Genera OBLIGATORIAMENTE **una recomendación por cada empresa presente en el ranking de la sección 2** (si hay 6 empresas → 6 recomendaciones; si hay 10 → 10; si hay 35 → 35). PROHIBIDO recortar a "top 5" o cualquier otro tope arbitrario: las empresas con peor situación reputacional son precisamente las que MÁS necesitan recomendación. Ordena la lista de **peor a mejor RIX** (las más débiles primero). Cada recomendación debe cumplir TODOS los criterios:
 (a) ESPECÍFICA para una empresa concreta del ranking (cita ticker y nombre).
 (b) Diagnóstico cuantificado SOLO con cifras presentes en el DataPack: métrica + valor actual exacto + brecha respecto al techo del grupo (max-min observado en las semanas analizadas).
 (c) Acción concreta vinculada a un medio/dominio real ya citado en las fuentes del DataPack (ej. "reforzar dossier para expansion.com").
 (d) Prioridad explícita (alta/media/baja) según magnitud de la brecha métrica.
 (e) ACCIONABILIDAD REAL (obligatorio): cada recomendación debe declarar de forma explícita y en una misma frase: QUIÉN actúa (área responsable: comunicación corporativa / IR / marketing / ESG / dirección general), EN QUÉ PLAZO indicativo (corto <1 mes, medio 1-3 meses, largo 3-6 meses) sin inventar fechas concretas, y QUÉ MÉTRICA DE ÉXITO se espera mover (qué submétrica del RIX debería mejorar y en qué magnitud cualitativa). Sin estos tres campos la recomendación se considera genérica y NO cumple el criterio.
-Distribuye las recomendaciones cubriendo idealmente todas las empresas del alcance, no solo el líder.
+COBERTURA OBLIGATORIA: si una entidad aparece en el ranking de la sección 2, DEBE tener su propia recomendación en esta sección. No agrupes varias empresas en una sola recomendación. No omitas ninguna por estar fuera del top.
 
 PROHIBIDO ABSOLUTO en esta sección (anti-fabricación):
 • Inventar fechas, trimestres u horizontes temporales (Q1-2027, Q4-2026, FY-2026, AGM-2027, "en 6 meses", "en 12 meses").
