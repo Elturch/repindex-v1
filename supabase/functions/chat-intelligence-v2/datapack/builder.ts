@@ -186,8 +186,22 @@ async function fetchRows(
   console.log(
     `[RIX-V2][datapack] SQL window | ticker=${entity.ticker} | from=${fromISO} | to=${toISO} | projection=${lazy ? "LIGHT" : "FULL"} | flags=${JSON.stringify(flags)}`,
   );
-  if (models && models.length > 0) {
-    console.log("[RIX-V2][datapack] model filter applied:", models);
+  // FIX 2026-05-19: traducir labels UI → nombres canónicos en BD.
+  // En rix_runs_v2 los modelos se almacenan como "Google Gemini" y "Deepseek",
+  // pero el pipeline V2 los pide como "Gemini" y "DeepSeek". Sin esta traducción
+  // el `.in("02_model_name", models)` descartaba silenciosamente esos 2 modelos
+  // (regresión introducida el 13-may-2026, commit 20f6a59).
+  const UI_TO_DB_MODEL: Record<string, string> = {
+    Gemini: "Google Gemini",
+    DeepSeek: "Deepseek",
+  };
+  const dbModels = models && models.length > 0
+    ? models.map((m) => UI_TO_DB_MODEL[m] ?? m)
+    : undefined;
+  if (dbModels) {
+    console.log(
+      `[RIX-V2][datapack] model filter applied: UI=${JSON.stringify(models)} DB=${JSON.stringify(dbModels)}`,
+    );
   }
   // PHASE 5 — Align filter to SWEEP axis (07_period_to = Sunday del barrido).
   // Snapshot puntual (from===to) → eq; periodo largo → rango; ambos sobre
@@ -202,8 +216,8 @@ async function fetchRows(
     q = isSnapshot
       ? q.eq("07_period_to", fromISO)
       : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
-    if (models && models.length > 0) {
-      q = q.in("02_model_name", models);
+    if (dbModels) {
+      q = q.in("02_model_name", dbModels);
     }
     const { data, error } = await q
       .order("07_period_to", { ascending: false })
