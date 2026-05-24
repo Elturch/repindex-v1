@@ -159,11 +159,14 @@ export default function RixViewer() {
       void listReports(userId).then(setReports);
     }
 
-    setPending({
+    const next: PendingSend = {
       question: st.autoSendQuestion,
       sessionId: st.sessionId,
       reportId: st.reportId,
-    });
+    };
+    setPending(next);
+    persistPending(next);
+    pendingSinceRef.current = Date.now();
 
     // Switch chat context to the new dedicated session.
     loadConversation(st.sessionId);
@@ -177,13 +180,77 @@ export default function RixViewer() {
   // and guarantees the user sees the loading state.
   useEffect(() => {
     if (!pending) return;
-    if (!userId) return; // wait for auth to resolve
-    if (sessionId !== pending.sessionId) return;
-    if (isLoadingHistory) return; // wait for history hydration to finish
+    if (!userId) {
+      console.warn("[RixViewer] auto-send blocked: userId not ready");
+      return;
+    }
+    if (sessionId !== pending.sessionId) {
+      console.warn(
+        "[RixViewer] auto-send blocked: sessionId mismatch",
+        { contextSession: sessionId, pendingSession: pending.sessionId },
+      );
+      return;
+    }
+    if (isLoadingHistory) {
+      console.warn("[RixViewer] auto-send blocked: history still hydrating");
+      return;
+    }
     const q = pending.question;
     setPending(null);
+    persistPending(null);
+    pendingSinceRef.current = null;
+    if (retryNudgeRef.current) { window.clearTimeout(retryNudgeRef.current); retryNudgeRef.current = null; }
+    if (errorToastRef.current) { window.clearTimeout(errorToastRef.current); errorToastRef.current = null; }
     sendMessage(q, { skipNormalization: true });
   }, [pending, sessionId, sendMessage, userId, isLoadingHistory]);
+
+  // Watchdog: if `pending` stays unresolved due to auth/session churn,
+  // (a) re-fire loadConversation after 8s, (b) surface a retry toast after 15s.
+  useEffect(() => {
+    if (!pending) return;
+    if (retryNudgeRef.current) return; // already scheduled
+
+    retryNudgeRef.current = window.setTimeout(() => {
+      retryNudgeRef.current = null;
+      // Re-assert the conversation switch in case the ChatContext drifted
+      // (auth flip-flop occasionally rotates sessionId mid-mount).
+      console.warn("[RixViewer] watchdog nudging loadConversation()", pending.sessionId);
+      loadConversation(pending.sessionId);
+    }, 8000);
+
+    errorToastRef.current = window.setTimeout(() => {
+      errorToastRef.current = null;
+      toast({
+        title: "El informe no se ha lanzado",
+        description:
+          "Hubo una interrupción al iniciar la consulta. Pulsa “Reintentar informe” para relanzarlo.",
+        variant: "destructive",
+      });
+    }, 15000);
+
+    return () => {
+      if (retryNudgeRef.current) { window.clearTimeout(retryNudgeRef.current); retryNudgeRef.current = null; }
+      if (errorToastRef.current) { window.clearTimeout(errorToastRef.current); errorToastRef.current = null; }
+    };
+  }, [pending, loadConversation]);
+
+  // Manual relaunch: rebuild `pending` from the active report and force
+  // the chat context onto its session. Surfaced as a button when the
+  // active report has no messages and we are not currently loading.
+  const handleRelaunchActive = useCallback(() => {
+    const target = reports.find((r) => r.id === activeId);
+    if (!target) return;
+    const next: PendingSend = {
+      question: target.question,
+      sessionId: target.sessionId,
+      reportId: target.id,
+    };
+    autoSentRef.current = null;
+    setPending(next);
+    persistPending(next);
+    pendingSinceRef.current = Date.now();
+    loadConversation(target.sessionId);
+  }, [reports, activeId, loadConversation]);
 
   const activeReport = useMemo(
     () => reports.find((r) => r.id === activeId) ?? null,
