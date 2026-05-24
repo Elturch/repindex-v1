@@ -66,6 +66,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
+  // Stable identity ref to ignore no-op auth events (e.g. TOKEN_REFRESHED
+  // that re-emits the same user id). Without this guard, every refresh
+  // forces a setUser(null)→setUser(user) flicker downstream which cancels
+  // in-flight effects (the RixViewer auto-send was a victim of this).
+  const stableUserIdRef = React.useRef<string | null>(null);
+
   const fetchProfile = async (userId: string) => {
     try {
       const { data: profileData, error: profileError } = await supabase
@@ -118,14 +124,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        const incomingId = session?.user?.id ?? null;
+        const prevId = stableUserIdRef.current;
+
+        // Skip identity-stable events that only rotate the access token.
+        // We still update `session` so downstream consumers get the fresh
+        // JWT, but we DO NOT touch `user`, preventing a false flip-flop.
+        const identityUnchanged =
+          prevId !== null && incomingId !== null && prevId === incomingId;
+
         setSession(session);
-        setUser(session?.user ?? null);
+        if (!identityUnchanged) {
+          stableUserIdRef.current = incomingId;
+          setUser(session?.user ?? null);
+        }
 
         // Defer profile fetch with setTimeout to avoid deadlock
         if (session?.user) {
-          setTimeout(() => {
-            fetchProfile(session.user.id);
-          }, 0);
+          if (!identityUnchanged) {
+            setTimeout(() => {
+              fetchProfile(session.user.id);
+            }, 0);
+          }
 
           // Push GTM dataLayer for login/signup events
           if (typeof window !== 'undefined' && window.dataLayer) {
@@ -161,6 +181,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         if (event === 'SIGNED_OUT') {
+          stableUserIdRef.current = null;
           setProfile(null);
           setCompany(null);
         }
@@ -176,6 +197,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
+      stableUserIdRef.current = session?.user?.id ?? null;
       if (session?.user) {
         await fetchProfile(session.user.id);
       }

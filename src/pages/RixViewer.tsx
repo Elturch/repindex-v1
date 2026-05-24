@@ -42,6 +42,44 @@ import {
   addReport,
   ReportMemoryEntry,
 } from "@/lib/reports/reportMemory";
+import { toast } from "@/hooks/use-toast";
+
+// Persist `pending` across remounts caused by auth-state churn. Without
+// this, a TOKEN_REFRESHED or transient `isAuthenticated=false→true` flip
+// during the visor mount drops the in-memory pending and the report is
+// never dispatched (root cause of the 2026-05-24 incident).
+const PENDING_STORAGE_KEY = "repindex.rixviewer.pending";
+const PENDING_MAX_AGE_MS = 2 * 60 * 1000; // 2 min — stale pendings are dropped.
+type PendingSend = { question: string; sessionId: string; reportId: string; ts?: number };
+function loadPersistedPending(): PendingSend | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.question === "string" &&
+      typeof parsed.sessionId === "string" &&
+      typeof parsed.reportId === "string"
+    ) {
+      const ts = typeof parsed.ts === "number" ? parsed.ts : 0;
+      if (Date.now() - ts > PENDING_MAX_AGE_MS) {
+        try { window.sessionStorage.removeItem(PENDING_STORAGE_KEY); } catch { /* noop */ }
+        return null;
+      }
+      return parsed as PendingSend;
+    }
+  } catch { /* noop */ }
+  return null;
+}
+function persistPending(p: PendingSend | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (p) window.sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify({ ...p, ts: Date.now() }));
+    else window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+  } catch { /* noop */ }
+}
 
 export default function RixViewer() {
   const {
@@ -88,7 +126,10 @@ export default function RixViewer() {
     question: string;
     sessionId: string;
     reportId: string;
-  } | null>(null);
+  } | null>(() => loadPersistedPending());
+  const pendingSinceRef = useRef<number | null>(null);
+  const retryNudgeRef = useRef<number | null>(null);
+  const errorToastRef = useRef<number | null>(null);
 
   const [reports, setReports] = useState<ReportMemoryEntry[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(() => getActiveId());
@@ -124,11 +165,14 @@ export default function RixViewer() {
       void listReports(userId).then(setReports);
     }
 
-    setPending({
+    const next: PendingSend = {
       question: st.autoSendQuestion,
       sessionId: st.sessionId,
       reportId: st.reportId,
-    });
+    };
+    setPending(next);
+    persistPending(next);
+    pendingSinceRef.current = Date.now();
 
     // Switch chat context to the new dedicated session.
     loadConversation(st.sessionId);
@@ -142,13 +186,77 @@ export default function RixViewer() {
   // and guarantees the user sees the loading state.
   useEffect(() => {
     if (!pending) return;
-    if (!userId) return; // wait for auth to resolve
-    if (sessionId !== pending.sessionId) return;
-    if (isLoadingHistory) return; // wait for history hydration to finish
+    if (!userId) {
+      console.warn("[RixViewer] auto-send blocked: userId not ready");
+      return;
+    }
+    if (sessionId !== pending.sessionId) {
+      console.warn(
+        "[RixViewer] auto-send blocked: sessionId mismatch",
+        { contextSession: sessionId, pendingSession: pending.sessionId },
+      );
+      return;
+    }
+    if (isLoadingHistory) {
+      console.warn("[RixViewer] auto-send blocked: history still hydrating");
+      return;
+    }
     const q = pending.question;
     setPending(null);
+    persistPending(null);
+    pendingSinceRef.current = null;
+    if (retryNudgeRef.current) { window.clearTimeout(retryNudgeRef.current); retryNudgeRef.current = null; }
+    if (errorToastRef.current) { window.clearTimeout(errorToastRef.current); errorToastRef.current = null; }
     sendMessage(q, { skipNormalization: true });
   }, [pending, sessionId, sendMessage, userId, isLoadingHistory]);
+
+  // Watchdog: if `pending` stays unresolved due to auth/session churn,
+  // (a) re-fire loadConversation after 8s, (b) surface a retry toast after 15s.
+  useEffect(() => {
+    if (!pending) return;
+    if (retryNudgeRef.current) return; // already scheduled
+
+    retryNudgeRef.current = window.setTimeout(() => {
+      retryNudgeRef.current = null;
+      // Re-assert the conversation switch in case the ChatContext drifted
+      // (auth flip-flop occasionally rotates sessionId mid-mount).
+      console.warn("[RixViewer] watchdog nudging loadConversation()", pending.sessionId);
+      loadConversation(pending.sessionId);
+    }, 8000);
+
+    errorToastRef.current = window.setTimeout(() => {
+      errorToastRef.current = null;
+      toast({
+        title: "El informe no se ha lanzado",
+        description:
+          "Hubo una interrupción al iniciar la consulta. Pulsa “Reintentar informe” para relanzarlo.",
+        variant: "destructive",
+      });
+    }, 15000);
+
+    return () => {
+      if (retryNudgeRef.current) { window.clearTimeout(retryNudgeRef.current); retryNudgeRef.current = null; }
+      if (errorToastRef.current) { window.clearTimeout(errorToastRef.current); errorToastRef.current = null; }
+    };
+  }, [pending, loadConversation]);
+
+  // Manual relaunch: rebuild `pending` from the active report and force
+  // the chat context onto its session. Surfaced as a button when the
+  // active report has no messages and we are not currently loading.
+  const handleRelaunchActive = useCallback(() => {
+    const target = reports.find((r) => r.id === activeId);
+    if (!target) return;
+    const next: PendingSend = {
+      question: target.question,
+      sessionId: target.sessionId,
+      reportId: target.id,
+    };
+    autoSentRef.current = null;
+    setPending(next);
+    persistPending(next);
+    pendingSinceRef.current = Date.now();
+    loadConversation(target.sessionId);
+  }, [reports, activeId, loadConversation]);
 
   const activeReport = useMemo(
     () => reports.find((r) => r.id === activeId) ?? null,
@@ -249,6 +357,15 @@ export default function RixViewer() {
     !pending &&
     messages.length === 0 &&
     reports.length === 0;
+
+  // Active report selected, but no messages and no in-flight work →
+  // probable failed auto-send. Show a relaunch CTA.
+  const showRelaunchActive =
+    !!activeReport &&
+    !isLoading &&
+    !isLoadingHistory &&
+    !pending &&
+    messages.length === 0;
 
   // Lightweight inline list (avoids extra component file dependency surface)
   const MemoryList = (
@@ -489,6 +606,21 @@ export default function RixViewer() {
                         {loadingMessage || "Consultando los 6 modelos de IA y consolidando la narrativa V2."}
                       </p>
                     </div>
+                  </div>
+                )}
+                {showRelaunchActive && (
+                  <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 flex flex-wrap items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        Este informe no llegó a ejecutarse
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Posible interrupción de sesión durante el lanzamiento. Puedes relanzarlo sin perder los filtros.
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={handleRelaunchActive} className="gap-1.5">
+                      <RefreshCw className="h-3.5 w-3.5" /> Reintentar informe
+                    </Button>
                   </div>
                 )}
                 <ChatMessages

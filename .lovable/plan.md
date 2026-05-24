@@ -1,52 +1,91 @@
-# Por qué los informes ahora solo muestran 4 modelos (antes 6)
+# Auditoría: informe Top 5 IBEX-35 no ejecutado (24-may-2026 ~09:41 Madrid)
 
-## Resumen para no técnicos
+## Qué he comprobado hasta ahora
 
-El sábado pasado los informes mostraban los 6 modelos porque la consulta a la base de datos **no filtraba por modelo**: traía todo lo que hubiera para esa empresa y ese período, y luego el código reconocía cada modelo internamente. El **13 de mayo (commit `20f6a59`)** se añadió un filtro al SQL para ahorrar tráfico cuando el usuario pide modelos específicos. Ese filtro se aplicó **sin traducir los nombres** entre la UI y la base de datos. Como en la BD los modelos se llaman `"Google Gemini"` y `"Deepseek"` y el pipeline V2 los pide como `"Gemini"` y `"DeepSeek"`, esos dos modelos quedan fuera silenciosamente. Resultado: cualquier informe generado después del 13 de mayo pierde 2 de los 6 modelos.
+**1. El informe SÍ se creó en BBDD** (`rix_reports`):
+- `id`: 51c584a8-c1a8-480a-a0f8-96ff3170a75b
+- `created_at`: 2026-05-24 07:41:05 UTC
+- `session_id`: a0d4df39-61f9-4991-82b3-645d17af4f84
+- `question`: *"Genera un informe ejecutivo del universo IBEX-35 limitado a las 5 mejores entre 2026-04-26 y 2026-05-24 con desglose semanal."*
 
-Es una regresión, no un cambio intencional de metodología.
+Es decir, el botón "Generar informe" funcionó, navegó a `/visor` y guardó la entrada. El fallo está **después**, en el disparo de la pregunta al agente.
 
-## Evidencia técnica
+**2. NO hay invocación de `chat-intelligence-v2` en los logs de las últimas 2-3 horas.** Solo aparecen llamadas a `rix-batch-orchestrator` (barrido W22) y `corporate-scrape-orchestrator`. Es decir: el frontend nunca llegó a llamar al edge function que genera el informe.
 
-1. **Commit responsable**: `20f6a59` — 2026-05-13 08:44 UTC, archivo `supabase/functions/chat-intelligence-v2/datapack/builder.ts`.
-2. **Antes (estado del sábado y previos)**: `fetchRows()` se llamaba sin parámetro `models` → la query sólo filtraba por `ticker` + ventana temporal. Los 6 nombres convivían sin problema porque nadie comparaba strings de modelo en SQL.
-3. **Después del 13-may**: se añadió `if (models && models.length > 0) q = q.in("02_model_name", models);` y se pasó `parsed.models` desde `buildDataPack()`. `parsed.models` viene del enum V2 (`MODEL_NAMES`) que usa los labels cortos `"Gemini"` y `"DeepSeek"`.
-4. **Mismatch con BD**: una consulta directa para Ferrovial 2026-04 → 2026-05 devuelve 6 filas por modelo con nombres `"ChatGPT"`, `"Deepseek"`, `"Google Gemini"`, `"Grok"`, `"Perplexity"`, `"Qwen"`. El `.in("02_model_name", ["ChatGPT","Perplexity","Gemini","DeepSeek","Grok","Qwen"])` matchea solo 4 → Gemini y DeepSeek se descartan a nivel SQL.
-5. **Confirmación en el informe HTML adjunto**: sección 3 "Visión por Modelo de IA" lista solo 4 filas; sección 4 "Evolución Temporal" muestra `Filas: 4` por semana.
-6. **¿Por qué `sectorRanking` no falla?**: ese skill (`sectorRanking.ts` líneas 1212-1214) hace la traducción local `m === "Gemini" ? "Google Gemini" : m === "DeepSeek" ? "Deepseek" : m` antes de su propio SQL. El `builder.ts` central no la tiene, por eso solo afecta a `companyAnalysis`, `comparison`, `modelDivergence`, `companyEvolution` (todos los que pasan por `buildDataPack`).
-7. **Por qué pasó desapercibido**: `normalizeModelName()` sí traduce al leer (`"Google Gemini" → "Gemini"`), pero ese normalizador ya no llega a ver esas filas porque el SQL las descartó antes. No hay assertion de "esperaba 6 modelos, recibí 4" en el datapack, así que no salta ningún warning.
+**3. `chat_intelligence_sessions` está vacío** para `session_id = a0d4df39…` y para las últimas 3h en general. Confirma que el pipeline nunca corrió.
 
-## Fix propuesto (1 archivo, mínimo)
+**4. Barrido W22 ya cerró sano**: 175/175 completed. No es un problema de datos.
 
-Editar `supabase/functions/chat-intelligence-v2/datapack/builder.ts`:
+**5. Console del cliente muestra un patrón anómalo de churn de auth**:
+```
+07:41:05  isAuth=true   sessionId=a0d4df39  (nuevo informe creado)
+07:41:06  isAuth=false  sessionId=a0d4df39  (sesión revocada)
+07:41:06  isAuth=true   sessionId=a0d4df39
+07:41:35  isAuth=false  ...                 (otro corte)
+07:41:35  isAuth=true
+07:41:43  isAuth=false
+07:41:43  isAuth=true
+07:42:28  isAuth=true   sessionId=573f13b7  (¡aparece un sessionId distinto!)
+07:42:29  isAuth=true   sessionId=a0d4df39
+```
 
-1. Añadir un mapa local UI → BD:
-   ```ts
-   const UI_TO_DB_MODEL: Record<string, string> = {
-     Gemini: "Google Gemini",
-     DeepSeek: "Deepseek",
-   };
-   function toDbModelName(m: string): string {
-     return UI_TO_DB_MODEL[m] ?? m;
-   }
-   ```
-2. En `fetchRows()` (línea 205-207), aplicar el mapeo antes del `.in()`:
-   ```ts
-   if (models && models.length > 0) {
-     q = q.in("02_model_name", models.map(toDbModelName));
-   }
-   ```
-3. Actualizar el log para imprimir tanto los nombres UI como los traducidos (debugging).
+## Causa raíz probable
 
-No se toca nada más: ni `sectorRanking.ts` (ya lo hace), ni `normalizeModelName` (la lectura inversa funciona), ni la UI, ni la BD.
+En `src/pages/RixViewer.tsx` el envío automático del informe se hace en **dos efectos en cascada**:
 
-## Verificación
+```ts
+// Step 1: arma el "pending" y llama loadConversation(sessionId)
+// Step 2: dispara sendMessage SOLO cuando:
+//   - pending existe
+//   - userId existe (auth resuelta)
+//   - sessionId del contexto === pending.sessionId
+//   - isLoadingHistory === false
+```
 
-1. Regenerar el informe de Ferrovial (2026-04-06 → 2026-05-17): sección 3 debe mostrar **6 filas** y la evolución semanal **Filas = 6**.
-2. Regenerar el informe sectorial de Grupos Hospitalarios: cada empresa expone 6 modelos.
-3. Comprobar en los logs de la edge function `[RIX-V2][datapack] model filter applied:` ahora muestra `["ChatGPT","Perplexity","Google Gemini","Deepseek","Grok","Qwen"]`.
-4. Añadir nota al .lovable/plan.md sobre el aprendizaje: cualquier filtro SQL sobre `02_model_name` debe pasar por un traductor canónico — incluir un test en `__test__` para que no se vuelva a romper en silencio.
+Al entrar al visor a las 07:41:05, el ChatContext tuvo **al menos 4 ciclos de `isAuthenticated: false → true`** en los siguientes 40 s. Cada flip de auth resetea `userId` y, peor, en 07:42:28 el `sessionId` del contexto saltó a un id distinto (573f13b7), nunca igualando a `pending.sessionId`. Resultado: el guard `sessionId !== pending.sessionId` quedó siempre falso y `sendMessage` **nunca se llamó** → cero requests a `chat-intelligence-v2`.
 
-## Acción adicional recomendada (opcional, no implementada en este fix)
+Adicionalmente, el Step 1 ejecuta `navigate(location.pathname, { replace: true, state: {} })` para evitar reenvíos en reload. Si el efecto se re-ejecuta tras un flip de auth, el `location.state` ya está vacío y el `pending` solo se setea una vez (protegido por `autoSentRef`), pero si en ese momento la condición de Step 2 no se cumple, **no hay reintento**.
 
-Añadir un guard en `buildDataPack()`: si `models_coverage.with_data.length < requested.length` cuando el sweep dominical fue completo, emitir un `console.warn` claro (`models requested but missing in SQL response`). Eso convertiría futuros desajustes silenciosos en alertas visibles en logs, evitando que una regresión similar pase 6 días sin detectarse.
+Por qué ayer funcionaba y hoy no: el churn de auth de hoy (probablemente refresh de token coincidente con el arranque del visor) destapa una **condición de carrera latente** que ya existía. No es un cambio reciente de lógica; es un bug de robustez del visor frente a auth inestable.
+
+## Plan de acción
+
+### 1. Diagnóstico confirmatorio (5 min, sin tocar código)
+- Pedir al usuario que vuelva a /informes, abra DevTools → Network, genere otro informe Top 5 IBEX-35 y comparta:
+  - Si aparece (o no) una request a `/functions/v1/chat-intelligence-v2`.
+  - Logs de consola con prefijo `[ChatContext]` y `[RixViewer]`.
+- En paralelo, añadir un `console.warn` temporal en RixViewer Step 2 explicando por qué no dispara (qué guard bloquea) — diagnóstico mínimo invasivo.
+
+### 2. Fix de robustez en `src/pages/RixViewer.tsx`
+- **Persistir `pending` en `sessionStorage`** con clave `rix:pending:<reportId>`, para sobrevivir a re-renders por flip de auth y al `navigate(replace, state:{})`.
+- **Reintento explícito**: si tras X segundos (p.ej. 8 s) el guard sigue bloqueado, forzar `loadConversation(pending.sessionId)` otra vez y reintentar.
+- **Toast de error visible** al usuario si pasados 15 s sigue sin haberse enviado: *"No se pudo iniciar el informe. Reintentar"* con botón que rehidrata `pending` desde sessionStorage.
+- Limpiar `sessionStorage` cuando `sendMessage` se dispara o cuando el usuario navega fuera.
+
+### 3. Fix en `ChatContext` (causa secundaria del churn)
+- Revisar por qué `onAuthStateChange` reporta `isAuthenticated: false` en medio de un `TOKEN_REFRESHED` (no debería). Probable: estamos reaccionando a eventos `SIGNED_OUT` espurios en lugar de filtrar por `event === 'INITIAL_SESSION' | 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED'`.
+- Si el flip es solo cosmético (el `session` sigue vivo), no resetear `userId` a null en `TOKEN_REFRESHED`/eventos transitorios.
+
+### 4. Recuperar el informe que el usuario quería ahora
+- Como el `rix_reports` ya existe (51c584a8…), el usuario puede simplemente abrir ese informe del listado del visor y pulsar "Reintentar" (si existe) o reformular la pregunta en el chat de esa sesión — el contexto está preservado.
+- Si no hay botón de reintento aún, lo añadimos como parte del fix (botón "Lanzar de nuevo este informe" en la cabecera del visor cuando el informe está vacío).
+
+### 5. Validación
+- Forzar manualmente un churn de auth (cerrar y abrir sesión rápido) en preview y comprobar que el informe se dispara igualmente.
+- Confirmar en logs de edge que `chat-intelligence-v2` recibe la request.
+
+## Sección técnica
+
+**Archivos a tocar**:
+- `src/pages/RixViewer.tsx` — añadir persistencia de `pending`, watchdog de reintento, toast de error, botón "Lanzar de nuevo este informe".
+- `src/contexts/AuthContext.tsx` y/o `src/contexts/ChatContext.tsx` — filtrar eventos de Supabase auth para no resetear `userId`/`sessionId` ante `TOKEN_REFRESHED`.
+- (Opcional) `src/lib/reports/reportMemory.ts` — añadir flag `dispatched_at` para saber si un informe llegó a enviarse.
+
+**No tocar**:
+- Edge functions (`chat-intelligence-v2`, `builder.ts`) — el problema es 100 % cliente.
+- Pipeline de barrido — sano (W22 cerrado, 175/175).
+- Fix de `Gemini`/`Google Gemini` ya desplegado ayer; sigue intacto.
+
+**Riesgo**: bajo. Cambios encapsulados en visor + auth context. Sin migraciones de BBDD.
+
+¿Lo lanzo así, o prefieres que primero solo añada los `console.warn` de diagnóstico para confirmar el guard exacto que bloqueó esta mañana antes de tocar la lógica?
