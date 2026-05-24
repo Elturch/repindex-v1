@@ -602,6 +602,21 @@ export default function RixViewer() {
                     </div>
                   </div>
                 )}
+                {showRelaunchActive && (
+                  <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 flex flex-wrap items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        Este informe no llegó a ejecutarse
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Posible interrupción de sesión durante el lanzamiento. Puedes relanzarlo sin perder los filtros.
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={handleRelaunchActive} className="gap-1.5">
+                      <RefreshCw className="h-3.5 w-3.5" /> Reintentar informe
+                    </Button>
+                  </div>
+                )}
                 <ChatMessages
                   messages={messages}
                   isLoading={isLoading}
