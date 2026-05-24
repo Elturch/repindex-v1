@@ -352,6 +352,15 @@ export default function RixViewer() {
     messages.length === 0 &&
     reports.length === 0;
 
+  // Active report selected, but no messages and no in-flight work →
+  // probable failed auto-send. Show a relaunch CTA.
+  const showRelaunchActive =
+    !!activeReport &&
+    !isLoading &&
+    !isLoadingHistory &&
+    !pending &&
+    messages.length === 0;
+
   // Lightweight inline list (avoids extra component file dependency surface)
   const MemoryList = (
     <aside className="flex flex-col gap-3 h-full">
