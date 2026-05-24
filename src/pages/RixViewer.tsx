@@ -120,7 +120,10 @@ export default function RixViewer() {
     question: string;
     sessionId: string;
     reportId: string;
-  } | null>(null);
+  } | null>(() => loadPersistedPending());
+  const pendingSinceRef = useRef<number | null>(null);
+  const retryNudgeRef = useRef<number | null>(null);
+  const errorToastRef = useRef<number | null>(null);
 
   const [reports, setReports] = useState<ReportMemoryEntry[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(() => getActiveId());
