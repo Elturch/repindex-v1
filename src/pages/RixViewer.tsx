@@ -49,7 +49,8 @@ import { toast } from "@/hooks/use-toast";
 // during the visor mount drops the in-memory pending and the report is
 // never dispatched (root cause of the 2026-05-24 incident).
 const PENDING_STORAGE_KEY = "repindex.rixviewer.pending";
-type PendingSend = { question: string; sessionId: string; reportId: string };
+const PENDING_MAX_AGE_MS = 2 * 60 * 1000; // 2 min — stale pendings are dropped.
+type PendingSend = { question: string; sessionId: string; reportId: string; ts?: number };
 function loadPersistedPending(): PendingSend | null {
   if (typeof window === "undefined") return null;
   try {
@@ -62,6 +63,11 @@ function loadPersistedPending(): PendingSend | null {
       typeof parsed.sessionId === "string" &&
       typeof parsed.reportId === "string"
     ) {
+      const ts = typeof parsed.ts === "number" ? parsed.ts : 0;
+      if (Date.now() - ts > PENDING_MAX_AGE_MS) {
+        try { window.sessionStorage.removeItem(PENDING_STORAGE_KEY); } catch { /* noop */ }
+        return null;
+      }
       return parsed as PendingSend;
     }
   } catch { /* noop */ }
@@ -70,7 +76,7 @@ function loadPersistedPending(): PendingSend | null {
 function persistPending(p: PendingSend | null) {
   if (typeof window === "undefined") return;
   try {
-    if (p) window.sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(p));
+    if (p) window.sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify({ ...p, ts: Date.now() }));
     else window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
   } catch { /* noop */ }
 }
