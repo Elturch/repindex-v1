@@ -42,6 +42,38 @@ import {
   addReport,
   ReportMemoryEntry,
 } from "@/lib/reports/reportMemory";
+import { toast } from "@/hooks/use-toast";
+
+// Persist `pending` across remounts caused by auth-state churn. Without
+// this, a TOKEN_REFRESHED or transient `isAuthenticated=false→true` flip
+// during the visor mount drops the in-memory pending and the report is
+// never dispatched (root cause of the 2026-05-24 incident).
+const PENDING_STORAGE_KEY = "repindex.rixviewer.pending";
+type PendingSend = { question: string; sessionId: string; reportId: string };
+function loadPersistedPending(): PendingSend | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.question === "string" &&
+      typeof parsed.sessionId === "string" &&
+      typeof parsed.reportId === "string"
+    ) {
+      return parsed as PendingSend;
+    }
+  } catch { /* noop */ }
+  return null;
+}
+function persistPending(p: PendingSend | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (p) window.sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(p));
+    else window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+  } catch { /* noop */ }
+}
 
 export default function RixViewer() {
   const {
