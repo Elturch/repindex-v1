@@ -1677,13 +1677,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setIsLoading(false);
     setIsStreaming(false);
     persistSessionId(newSessionId);
-    setSessionId(newSessionId as `${string}-${string}-${string}-${string}-${string}`);
-    setMessages([]);
-    setConversationId(null);
-    setIsStarred(false);
-    setIsLoadingHistory(true);
-    // PHASE 1.8 — reset conversational memory when switching conversation
-    lastQueryContextRef.current = null;
+    // Detect no-op: if the requested sessionId already equals the current one,
+    // setSessionId() will NOT trigger the loadHistory effect (deps unchanged),
+    // so isLoadingHistory would stay true forever and the auto-send watchdog
+    // in RixViewer would block sendMessage indefinitely. Skip the loading
+    // reset in that case so the consumer can proceed immediately.
+    setSessionId((prev) => {
+      if (prev === newSessionId) {
+        // Same session: keep messages, just make sure we're not stuck loading.
+        setIsLoadingHistory(false);
+        return prev;
+      }
+      setMessages([]);
+      setConversationId(null);
+      setIsStarred(false);
+      setIsLoadingHistory(true);
+      lastQueryContextRef.current = null;
+      return newSessionId as `${string}-${string}-${string}-${string}-${string}`;
+    });
   }, []);
 
   // Toggle star status for current conversation
