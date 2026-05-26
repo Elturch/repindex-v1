@@ -1,90 +1,22 @@
-## Auditoría completa de los dos flujos de correo
+El fallo está confirmado: el correo contiene un token válido y la función nueva lo valida bien, pero la web publicada sigue ejecutando la lógica antigua que consulta directamente la tabla con usuario anónimo. Por eso devuelve 0 filas y muestra “Enlace no válido”.
 
-### Flujo A — Modal de login con email NO registrado (el que mencionas)
+Plan de corrección:
 
-**Ruta exacta del código:**
-```text
-src/pages/Login.tsx
-   handleSubmit → useAuth().sendMagicLink(email)
-      └─ edge function `send-user-magic-link`
-          └─ user_profiles no contiene ese email
-              └─ devuelve { notRegistered: true }
-   setLoginState('not_registered')
-   Pantalla "Email no registrado" → checkbox de consentimiento
-   Click "Sí, contadme"
-      └─ edge function `save-interested-lead`
-          ├─ inserta row en `interested_leads`
-          ├─ si email corporativo:
-          │    ├─ inserta row en `lead_qualification_responses` con token UUID
-          │    └─ Resend → email con botón a
-          │         https://repindex-v1.lovable.app/cualificacion/{token}
-          └─ si NO corporativo: envía email de rechazo
-Usuario abre el enlace
-   └─ ruta /cualificacion/:token → src/pages/Qualification.tsx
-       └─ validateToken() hace:
-          supabase.from('lead_qualification_responses')
-                  .select('*, interested_leads(email)')
-                  .eq('token', token).single()
-```
+1. Publicar el frontend actualizado
+- Asegurar que `Qualification.tsx` en producción use la validación segura por función backend, no la consulta directa a la tabla.
+- Esto es necesario porque los cambios backend ya están desplegados, pero el frontend publicado en `repindex.ai` aún está desactualizado.
 
-**🔴 Bug confirmado:**
+2. Verificar el enlace real de María
+- Probar este token actual: `7adb4e39056ced99f1fae659da06f695cab52c6f385061769d940dbae409a962`.
+- Resultado esperado: debe cargar el “Formulario de Cualificación”, no “Enlace no válido”.
 
-La tabla `lead_qualification_responses` tiene RLS activado, y sus **únicas dos políticas exigen ser admin**:
-- "Admins can view qualification responses" — `has_role(auth.uid(),'admin')`
-- "Service role and admins manage qualification responses" — `has_role(auth.uid(),'admin')`
+3. Eliminar el riesgo de reenvíos rotos
+- Confirmar que ambos emisores de correo de cualificación generan enlaces a `https://repindex.ai/cualificacion/{token}`.
+- Confirmar que los tokens nuevos se crean con 7 días de validez y quedan guardados correctamente.
 
-El usuario que abre el enlace está **anónimo** → el SELECT siempre devuelve `null` → la página renderiza "Enlace no válido". El formulario nunca llega a mostrarse, por eso nunca se envía.
+4. Validación final
+- Abrir `https://repindex.ai/cualificacion/{token}` tras publicar.
+- Confirmar que el navegador llama a la función de validación, no a `lead_qualification_responses` directamente.
+- Si sigue apareciendo la consulta directa, el problema será exclusivamente que la publicación no se ha actualizado.
 
-**Evidencia incontestable en producción:**
-- 9 enlaces enviados desde abril (Cellnex ×2, Sacyr, ITP Aero, El Confidencial, Veolia, Curtichs, Trustmaker…)
-- `submitted_at = null` en **todos**, sin excepción
-- ITP Aero recibió 3 reenvíos el mismo día (12-may) — clásico "el enlace no funciona, mándamelo otra vez"
-
-**Adicional:** hay **dos rutas** distintas que insertan en `lead_qualification_responses` (`save-interested-lead` desde el login, y `send-qualification-form` desde el panel admin). Ambas generan enlaces que la página no puede validar.
-
----
-
-### Flujo B — Magic link para usuarios YA registrados
-
-`send-user-magic-link` y `/auth/callback` están correctamente implementados (auto-confirma email, extrae `hashed_token`, usa `verifyOtp` con fallbacks, mitiga prefetch corporativo). Causas probables si "no entran":
-
-- **Dominio Resend:** envía desde `no-reply@repindex.ai`. Si `repindex.ai` no está Verified en Resend (SPF/DKIM/DMARC), Mimecast/Outlook lo bloquea o reescribe el enlace.
-- **Resolución de `repindex.ai`:** el enlace siempre apunta a `https://repindex.ai/auth/callback`. Si el dominio personalizado no responde a esa ruta, el usuario ve 404. Sitio publicado real: `repindex-v1.lovable.app`.
-- **Prefetch corporativo agresivo:** algunos proxies ejecutan JS y queman el token antes del clic humano. La mitigación robusta es un botón intermedio.
-
----
-
-## Plan de implementación
-
-### 1. Desbloquear el formulario de cualificación (crítico)
-
-- Crear edge function pública `validate-qualification-token` (verify_jwt=false, service-role) que reciba `{ token }` y devuelva `{ valid, email, expired, used }` — sin exponer toda la fila.
-- Modificar `src/pages/Qualification.tsx` para invocar esa función en lugar del SELECT directo.
-- Resultado: el botón "Completar formulario" del correo abrirá realmente el formulario.
-
-### 2. Robustecer `/auth/callback` contra prefetch corporativo
-
-- En `src/pages/AuthCallback.tsx`, no disparar `verifyOtp` automáticamente al cargar. Mostrar un botón "Acceder a RepIndex" que solo dispare la verificación con click humano.
-- Coste: un clic más. Beneficio: tokens quemados por Mimecast/Defender pasan de ser un fallo silencioso a no ocurrir.
-
-### 3. Unificar el `from` y el dominio del enlace
-
-- En `save-interested-lead`, `send-qualification-form` y `send-user-magic-link` usar todos `noreply@repindex.ai` (hoy hay `info@`, `noreply@` y `no-reply@` mezclados — esto perjudica reputación de envío).
-- En los emails de cualificación, sustituir el dominio Lovable de fallback por el dominio que el usuario abrió (basado en `origin` del request al edge function), con `https://repindex.ai` como default.
-
-### 4. Validación operativa (tú, no yo)
-
-- Confirmar en Resend → Domains que `repindex.ai` aparece **Verified** con SPF/DKIM/DMARC en verde.
-- Abrir `https://repindex.ai/auth/callback?token=foo&email=foo@bar.com` en incógnito y confirmar que carga la SPA (debe ver el botón intermedio tras el fix #2).
-
-### 5. Test end-to-end tras los cambios
-
-- Email **no registrado** corporativo → recibir formulario → abrir → submit → confirmar `submitted_at` poblado en BD.
-- Email **no registrado** no corporativo → recibir email de rechazo, sin enlace roto.
-- Email **registrado** → recibir magic link → clic → botón intermedio → entrar al dashboard.
-
----
-
-## Pregunta
-
-¿Procedo con los pasos 1, 2 y 3 (cambios de código)? Los pasos 4 y 5 los harías tú después.
+Nota operativa: no hace falta tocar la base de datos para arreglar este caso. El token existe, no ha expirado y no está usado.
