@@ -97,7 +97,7 @@ const handler = async (req: Request): Promise<Response> => {
     // Determine which email to send
     if (isCorporate) {
       // Send qualification form email
-      const formUrl = `https://repindex-v1.lovable.app/cualificacion/${token}`;
+      const formUrl = `https://repindex.ai/cualificacion/${token}`;
       
       const emailResponse = await resend.emails.send({
         from: "RepIndex <noreply@repindex.ai>",
@@ -137,7 +137,7 @@ const handler = async (req: Request): Promise<Response> => {
               
               <p style="color: #888; font-size: 12px; margin: 0;">
                 RepIndex · Inteligencia de Reputación Corporativa<br>
-                <a href="https://repindex-v1.lovable.app" style="color: #1e3a5f;">repindex.ai</a>
+                <a href="https://repindex.ai" style="color: #1e3a5f;">repindex.ai</a>
               </p>
             </div>
           </body>
@@ -213,7 +213,7 @@ const handler = async (req: Request): Promise<Response> => {
               
               <p style="color: #888; font-size: 12px; margin: 0;">
                 RepIndex · Inteligencia de Reputación Corporativa<br>
-                <a href="https://repindex-v1.lovable.app" style="color: #1e3a5f;">repindex.ai</a>
+                <a href="https://repindex.ai" style="color: #1e3a5f;">repindex.ai</a>
               </p>
             </div>
           </body>
