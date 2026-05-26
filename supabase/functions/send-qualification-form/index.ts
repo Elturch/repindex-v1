@@ -100,7 +100,7 @@ const handler = async (req: Request): Promise<Response> => {
       const formUrl = `https://repindex-v1.lovable.app/cualificacion/${token}`;
       
       const emailResponse = await resend.emails.send({
-        from: "RepIndex <info@repindex.ai>",
+        from: "RepIndex <noreply@repindex.ai>",
         to: [email],
         subject: "Tu acceso a RepIndex - Un paso más",
         html: `
@@ -169,7 +169,7 @@ const handler = async (req: Request): Promise<Response> => {
     } else {
       // Send rejection email for non-corporate email
       const emailResponse = await resend.emails.send({
-        from: "RepIndex <info@repindex.ai>",
+        from: "RepIndex <noreply@repindex.ai>",
         to: [email],
         subject: "Sobre tu interés en RepIndex",
         html: `
