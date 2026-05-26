@@ -235,7 +235,7 @@ serve(async (req) => {
     const userName = profile.full_name || normalizedEmail.split('@')[0];
     
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "RepIndex <no-reply@repindex.ai>",
+      from: "RepIndex <noreply@repindex.ai>",
       to: [normalizedEmail],
       subject: "Tu acceso a RepIndex",
       html: generateMagicLinkEmail(userName, magicLink),

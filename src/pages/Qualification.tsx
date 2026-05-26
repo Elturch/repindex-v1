@@ -48,28 +48,23 @@ export default function Qualification() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('lead_qualification_responses')
-        .select('*, interested_leads(email)')
-        .eq('token', token)
-        .single();
+      const { data, error } = await supabase.functions.invoke('validate-qualification-token', {
+        body: { token },
+      });
 
-      if (error || !data) {
+      if (error || !data?.ok) {
         setStatus('error');
         return;
       }
 
-      if (data.submitted_at) {
-        setStatus('used');
+      if (!data.valid) {
+        if (data.reason === 'used') setStatus('used');
+        else if (data.reason === 'expired') setStatus('expired');
+        else setStatus('error');
         return;
       }
 
-      if (new Date(data.token_expires_at) < new Date()) {
-        setStatus('expired');
-        return;
-      }
-
-      setEmail(data.interested_leads?.email || '');
+      setEmail(data.email || '');
       setStatus('valid');
     } catch (err) {
       console.error('Error validating token:', err);

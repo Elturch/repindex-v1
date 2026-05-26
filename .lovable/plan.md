@@ -1,91 +1,90 @@
-# Auditoría: informe Top 5 IBEX-35 no ejecutado (24-may-2026 ~09:41 Madrid)
+## Auditoría completa de los dos flujos de correo
 
-## Qué he comprobado hasta ahora
+### Flujo A — Modal de login con email NO registrado (el que mencionas)
 
-**1. El informe SÍ se creó en BBDD** (`rix_reports`):
-- `id`: 51c584a8-c1a8-480a-a0f8-96ff3170a75b
-- `created_at`: 2026-05-24 07:41:05 UTC
-- `session_id`: a0d4df39-61f9-4991-82b3-645d17af4f84
-- `question`: *"Genera un informe ejecutivo del universo IBEX-35 limitado a las 5 mejores entre 2026-04-26 y 2026-05-24 con desglose semanal."*
-
-Es decir, el botón "Generar informe" funcionó, navegó a `/visor` y guardó la entrada. El fallo está **después**, en el disparo de la pregunta al agente.
-
-**2. NO hay invocación de `chat-intelligence-v2` en los logs de las últimas 2-3 horas.** Solo aparecen llamadas a `rix-batch-orchestrator` (barrido W22) y `corporate-scrape-orchestrator`. Es decir: el frontend nunca llegó a llamar al edge function que genera el informe.
-
-**3. `chat_intelligence_sessions` está vacío** para `session_id = a0d4df39…` y para las últimas 3h en general. Confirma que el pipeline nunca corrió.
-
-**4. Barrido W22 ya cerró sano**: 175/175 completed. No es un problema de datos.
-
-**5. Console del cliente muestra un patrón anómalo de churn de auth**:
-```
-07:41:05  isAuth=true   sessionId=a0d4df39  (nuevo informe creado)
-07:41:06  isAuth=false  sessionId=a0d4df39  (sesión revocada)
-07:41:06  isAuth=true   sessionId=a0d4df39
-07:41:35  isAuth=false  ...                 (otro corte)
-07:41:35  isAuth=true
-07:41:43  isAuth=false
-07:41:43  isAuth=true
-07:42:28  isAuth=true   sessionId=573f13b7  (¡aparece un sessionId distinto!)
-07:42:29  isAuth=true   sessionId=a0d4df39
+**Ruta exacta del código:**
+```text
+src/pages/Login.tsx
+   handleSubmit → useAuth().sendMagicLink(email)
+      └─ edge function `send-user-magic-link`
+          └─ user_profiles no contiene ese email
+              └─ devuelve { notRegistered: true }
+   setLoginState('not_registered')
+   Pantalla "Email no registrado" → checkbox de consentimiento
+   Click "Sí, contadme"
+      └─ edge function `save-interested-lead`
+          ├─ inserta row en `interested_leads`
+          ├─ si email corporativo:
+          │    ├─ inserta row en `lead_qualification_responses` con token UUID
+          │    └─ Resend → email con botón a
+          │         https://repindex-v1.lovable.app/cualificacion/{token}
+          └─ si NO corporativo: envía email de rechazo
+Usuario abre el enlace
+   └─ ruta /cualificacion/:token → src/pages/Qualification.tsx
+       └─ validateToken() hace:
+          supabase.from('lead_qualification_responses')
+                  .select('*, interested_leads(email)')
+                  .eq('token', token).single()
 ```
 
-## Causa raíz probable
+**🔴 Bug confirmado:**
 
-En `src/pages/RixViewer.tsx` el envío automático del informe se hace en **dos efectos en cascada**:
+La tabla `lead_qualification_responses` tiene RLS activado, y sus **únicas dos políticas exigen ser admin**:
+- "Admins can view qualification responses" — `has_role(auth.uid(),'admin')`
+- "Service role and admins manage qualification responses" — `has_role(auth.uid(),'admin')`
 
-```ts
-// Step 1: arma el "pending" y llama loadConversation(sessionId)
-// Step 2: dispara sendMessage SOLO cuando:
-//   - pending existe
-//   - userId existe (auth resuelta)
-//   - sessionId del contexto === pending.sessionId
-//   - isLoadingHistory === false
-```
+El usuario que abre el enlace está **anónimo** → el SELECT siempre devuelve `null` → la página renderiza "Enlace no válido". El formulario nunca llega a mostrarse, por eso nunca se envía.
 
-Al entrar al visor a las 07:41:05, el ChatContext tuvo **al menos 4 ciclos de `isAuthenticated: false → true`** en los siguientes 40 s. Cada flip de auth resetea `userId` y, peor, en 07:42:28 el `sessionId` del contexto saltó a un id distinto (573f13b7), nunca igualando a `pending.sessionId`. Resultado: el guard `sessionId !== pending.sessionId` quedó siempre falso y `sendMessage` **nunca se llamó** → cero requests a `chat-intelligence-v2`.
+**Evidencia incontestable en producción:**
+- 9 enlaces enviados desde abril (Cellnex ×2, Sacyr, ITP Aero, El Confidencial, Veolia, Curtichs, Trustmaker…)
+- `submitted_at = null` en **todos**, sin excepción
+- ITP Aero recibió 3 reenvíos el mismo día (12-may) — clásico "el enlace no funciona, mándamelo otra vez"
 
-Adicionalmente, el Step 1 ejecuta `navigate(location.pathname, { replace: true, state: {} })` para evitar reenvíos en reload. Si el efecto se re-ejecuta tras un flip de auth, el `location.state` ya está vacío y el `pending` solo se setea una vez (protegido por `autoSentRef`), pero si en ese momento la condición de Step 2 no se cumple, **no hay reintento**.
+**Adicional:** hay **dos rutas** distintas que insertan en `lead_qualification_responses` (`save-interested-lead` desde el login, y `send-qualification-form` desde el panel admin). Ambas generan enlaces que la página no puede validar.
 
-Por qué ayer funcionaba y hoy no: el churn de auth de hoy (probablemente refresh de token coincidente con el arranque del visor) destapa una **condición de carrera latente** que ya existía. No es un cambio reciente de lógica; es un bug de robustez del visor frente a auth inestable.
+---
 
-## Plan de acción
+### Flujo B — Magic link para usuarios YA registrados
 
-### 1. Diagnóstico confirmatorio (5 min, sin tocar código)
-- Pedir al usuario que vuelva a /informes, abra DevTools → Network, genere otro informe Top 5 IBEX-35 y comparta:
-  - Si aparece (o no) una request a `/functions/v1/chat-intelligence-v2`.
-  - Logs de consola con prefijo `[ChatContext]` y `[RixViewer]`.
-- En paralelo, añadir un `console.warn` temporal en RixViewer Step 2 explicando por qué no dispara (qué guard bloquea) — diagnóstico mínimo invasivo.
+`send-user-magic-link` y `/auth/callback` están correctamente implementados (auto-confirma email, extrae `hashed_token`, usa `verifyOtp` con fallbacks, mitiga prefetch corporativo). Causas probables si "no entran":
 
-### 2. Fix de robustez en `src/pages/RixViewer.tsx`
-- **Persistir `pending` en `sessionStorage`** con clave `rix:pending:<reportId>`, para sobrevivir a re-renders por flip de auth y al `navigate(replace, state:{})`.
-- **Reintento explícito**: si tras X segundos (p.ej. 8 s) el guard sigue bloqueado, forzar `loadConversation(pending.sessionId)` otra vez y reintentar.
-- **Toast de error visible** al usuario si pasados 15 s sigue sin haberse enviado: *"No se pudo iniciar el informe. Reintentar"* con botón que rehidrata `pending` desde sessionStorage.
-- Limpiar `sessionStorage` cuando `sendMessage` se dispara o cuando el usuario navega fuera.
+- **Dominio Resend:** envía desde `no-reply@repindex.ai`. Si `repindex.ai` no está Verified en Resend (SPF/DKIM/DMARC), Mimecast/Outlook lo bloquea o reescribe el enlace.
+- **Resolución de `repindex.ai`:** el enlace siempre apunta a `https://repindex.ai/auth/callback`. Si el dominio personalizado no responde a esa ruta, el usuario ve 404. Sitio publicado real: `repindex-v1.lovable.app`.
+- **Prefetch corporativo agresivo:** algunos proxies ejecutan JS y queman el token antes del clic humano. La mitigación robusta es un botón intermedio.
 
-### 3. Fix en `ChatContext` (causa secundaria del churn)
-- Revisar por qué `onAuthStateChange` reporta `isAuthenticated: false` en medio de un `TOKEN_REFRESHED` (no debería). Probable: estamos reaccionando a eventos `SIGNED_OUT` espurios en lugar de filtrar por `event === 'INITIAL_SESSION' | 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED'`.
-- Si el flip es solo cosmético (el `session` sigue vivo), no resetear `userId` a null en `TOKEN_REFRESHED`/eventos transitorios.
+---
 
-### 4. Recuperar el informe que el usuario quería ahora
-- Como el `rix_reports` ya existe (51c584a8…), el usuario puede simplemente abrir ese informe del listado del visor y pulsar "Reintentar" (si existe) o reformular la pregunta en el chat de esa sesión — el contexto está preservado.
-- Si no hay botón de reintento aún, lo añadimos como parte del fix (botón "Lanzar de nuevo este informe" en la cabecera del visor cuando el informe está vacío).
+## Plan de implementación
 
-### 5. Validación
-- Forzar manualmente un churn de auth (cerrar y abrir sesión rápido) en preview y comprobar que el informe se dispara igualmente.
-- Confirmar en logs de edge que `chat-intelligence-v2` recibe la request.
+### 1. Desbloquear el formulario de cualificación (crítico)
 
-## Sección técnica
+- Crear edge function pública `validate-qualification-token` (verify_jwt=false, service-role) que reciba `{ token }` y devuelva `{ valid, email, expired, used }` — sin exponer toda la fila.
+- Modificar `src/pages/Qualification.tsx` para invocar esa función en lugar del SELECT directo.
+- Resultado: el botón "Completar formulario" del correo abrirá realmente el formulario.
 
-**Archivos a tocar**:
-- `src/pages/RixViewer.tsx` — añadir persistencia de `pending`, watchdog de reintento, toast de error, botón "Lanzar de nuevo este informe".
-- `src/contexts/AuthContext.tsx` y/o `src/contexts/ChatContext.tsx` — filtrar eventos de Supabase auth para no resetear `userId`/`sessionId` ante `TOKEN_REFRESHED`.
-- (Opcional) `src/lib/reports/reportMemory.ts` — añadir flag `dispatched_at` para saber si un informe llegó a enviarse.
+### 2. Robustecer `/auth/callback` contra prefetch corporativo
 
-**No tocar**:
-- Edge functions (`chat-intelligence-v2`, `builder.ts`) — el problema es 100 % cliente.
-- Pipeline de barrido — sano (W22 cerrado, 175/175).
-- Fix de `Gemini`/`Google Gemini` ya desplegado ayer; sigue intacto.
+- En `src/pages/AuthCallback.tsx`, no disparar `verifyOtp` automáticamente al cargar. Mostrar un botón "Acceder a RepIndex" que solo dispare la verificación con click humano.
+- Coste: un clic más. Beneficio: tokens quemados por Mimecast/Defender pasan de ser un fallo silencioso a no ocurrir.
 
-**Riesgo**: bajo. Cambios encapsulados en visor + auth context. Sin migraciones de BBDD.
+### 3. Unificar el `from` y el dominio del enlace
 
-¿Lo lanzo así, o prefieres que primero solo añada los `console.warn` de diagnóstico para confirmar el guard exacto que bloqueó esta mañana antes de tocar la lógica?
+- En `save-interested-lead`, `send-qualification-form` y `send-user-magic-link` usar todos `noreply@repindex.ai` (hoy hay `info@`, `noreply@` y `no-reply@` mezclados — esto perjudica reputación de envío).
+- En los emails de cualificación, sustituir el dominio Lovable de fallback por el dominio que el usuario abrió (basado en `origin` del request al edge function), con `https://repindex.ai` como default.
+
+### 4. Validación operativa (tú, no yo)
+
+- Confirmar en Resend → Domains que `repindex.ai` aparece **Verified** con SPF/DKIM/DMARC en verde.
+- Abrir `https://repindex.ai/auth/callback?token=foo&email=foo@bar.com` en incógnito y confirmar que carga la SPA (debe ver el botón intermedio tras el fix #2).
+
+### 5. Test end-to-end tras los cambios
+
+- Email **no registrado** corporativo → recibir formulario → abrir → submit → confirmar `submitted_at` poblado en BD.
+- Email **no registrado** no corporativo → recibir email de rechazo, sin enlace roto.
+- Email **registrado** → recibir magic link → clic → botón intermedio → entrar al dashboard.
+
+---
+
+## Pregunta
+
+¿Procedo con los pasos 1, 2 y 3 (cambios de código)? Los pasos 4 y 5 los harías tú después.
