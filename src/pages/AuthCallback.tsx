@@ -5,7 +5,7 @@ import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-type State = 'verifying' | 'success' | 'expired' | 'used' | 'invalid' | 'error';
+type State = 'idle' | 'verifying' | 'success' | 'expired' | 'used' | 'invalid' | 'error';
 
 /**
  * /auth/callback?token=...&email=...
@@ -17,23 +17,30 @@ type State = 'verifying' | 'success' | 'expired' | 'used' | 'invalid' | 'error';
 const AuthCallback: React.FC = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [state, setState] = useState<State>('verifying');
+  const [state, setState] = useState<State>('idle');
   const [errorDetail, setErrorDetail] = useState<string>('');
   const ranRef = useRef(false);
 
+  const token = params.get('token') || params.get('token_hash');
+  const email = params.get('email');
+
   useEffect(() => {
+    // Only validate parameter presence on load — do NOT auto-verify.
+    // Auto-verify gets consumed by corporate prefetchers (Mimecast/Defender)
+    // and burns the single-use token before the user clicks.
+    if (!token || !email) {
+      setState('invalid');
+    }
+  }, [token, email]);
+
+  const handleVerify = async () => {
     if (ranRef.current) return;
     ranRef.current = true;
-
-    const token = params.get('token') || params.get('token_hash');
-    const email = params.get('email');
-
     if (!token || !email) {
       setState('invalid');
       return;
     }
-
-    const verify = async () => {
+    setState('verifying');
       try {
         const normalizedEmail = email.trim().toLowerCase();
 
@@ -98,10 +105,7 @@ const AuthCallback: React.FC = () => {
         setState('error');
         setErrorDetail(err instanceof Error ? err.message : 'Error inesperado');
       }
-    };
-
-    verify();
-  }, [params, navigate]);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -113,6 +117,21 @@ const AuthCallback: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-center py-6">
+          {state === 'idle' && (
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-muted-foreground text-sm">
+                Pulsa el botón para confirmar tu acceso a RepIndex
+                {email ? <> como <span className="font-medium text-foreground break-all">{email}</span></> : null}.
+              </p>
+              <Button className="w-full" onClick={handleVerify}>
+                Acceder a RepIndex
+              </Button>
+              <p className="text-xs text-muted-foreground/70">
+                Por seguridad, el enlace solo se valida cuando lo pulsas tú.
+              </p>
+            </div>
+          )}
+
           {state === 'verifying' && (
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
