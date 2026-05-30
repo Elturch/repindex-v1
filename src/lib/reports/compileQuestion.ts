@@ -1,5 +1,13 @@
-import { FilterState } from "./filterState";
+import { FilterState, toDbModelNames } from "./filterState";
 import { CompanyMeta } from "./coherenceEngine";
+
+/** Une nombres con comas y "y" antes del último (más natural para el agente). */
+function joinAnd(items: string[]): string {
+  if (items.length === 0) return "";
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} y ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+}
 
 /**
  * Compila el FilterState en una pregunta en lenguaje natural determinista
@@ -48,16 +56,18 @@ export function compileFiltersToQuestion(
 
   // Empresa(s)
   if (state.tickers.value.length > 0) {
-    const names = state.tickers.value
-      .map((t) => companies.find((c) => c.ticker === t)?.issuer_name ?? t)
-      .join(", ");
+    const names = joinAnd(
+      state.tickers.value.map(
+        (t) => companies.find((c) => c.ticker === t)?.issuer_name ?? t,
+      ),
+    );
     parts.push(`de ${names}`);
   } else if (state.subsector.value.length > 0) {
-    parts.push(`del subsector ${state.subsector.value.join(", ")}`);
+    parts.push(`del subsector ${joinAnd(state.subsector.value)}`);
   } else if (state.sector.value.length > 0) {
-    parts.push(`del sector ${state.sector.value.join(", ")}`);
+    parts.push(`del sector ${joinAnd(state.sector.value)}`);
   } else if (state.universe.value.length > 0) {
-    parts.push(`del universo ${state.universe.value.join(", ")}`);
+    parts.push(`del universo ${joinAnd(state.universe.value)}`);
   } else {
     parts.push("de todos los universos cotizados");
   }
@@ -66,13 +76,17 @@ export function compileFiltersToQuestion(
   // un único ticker explícito). Antes sólo se emitía en "ranking", lo que
   // hacía que el usuario perdiera su selección de Top N al usar otros intents.
   const singleTicker = state.tickers.value.length === 1;
-  // Sólo añadir la cláusula Top N / orden si:
-  //  - el intent es ranking (intrínseco), o
-  //  - el usuario fijó explícitamente Top N u orden.
   const userTouched =
     state.topN.origin === "user-set" || state.order.origin === "user-set";
+  // Sólo añadir la cláusula Top N / orden si:
+  //  - el intent es ranking (intrínseco), o
+  //  - el usuario fijó explícitamente Top N u orden,
+  //  y nunca en "perfil" ni "vision_general" (esta última quedaba con
+  //  narrativa contradictoria tipo "informe ejecutivo … limitado a las 10
+  //  mejores" cuando el usuario tocaba topN sin querer).
   const topNApplies =
     state.intent.value !== "perfil" &&
+    state.intent.value !== "vision_general" &&
     !singleTicker &&
     (state.intent.value === "ranking" || userTouched);
   if (topNApplies) {
@@ -102,11 +116,13 @@ export function compileFiltersToQuestion(
       quarterly: "con desglose trimestral",
     };
     parts.push(gMap[state.granularity.value] ?? "");
+  } else {
+    parts.push("como foto fija del último barrido disponible");
   }
 
   // Modelos
   if (state.models.value.length > 0 && state.models.value.length < 6) {
-    parts.push(`usando solo ${state.models.value.join(", ")}`);
+    parts.push(`usando solo ${joinAnd(toDbModelNames(state.models.value))}`);
   }
 
   // Tipo de fuente
