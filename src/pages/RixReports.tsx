@@ -42,14 +42,17 @@ export default function RixReports() {
   // re-anclar el preset por defecto (last_month) a esa fecha.
   useEffect(() => {
     if (!lastBatchDate) return;
-    if (state.window.origin !== "free") return;
+    // Re-anclar siempre que el preset no sea "custom" y la ventana no termine
+    // ya en el último barrido. Antes solo re-anclaba si origin === "free",
+    // dejando ventanas user-set desfasadas tras un nuevo barrido.
+    if (state.window.value.preset === "custom") return;
     if (state.window.value.to === lastBatchDate) return; // ya anclado
     const next = reanchorWindow(state.window.value, lastBatchDate);
     setState((prev) =>
-      setFilter(prev, "window", next, "free"),
+      setFilter(prev, "window", next, prev.window.origin),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastBatchDate]);
+  }, [lastBatchDate, state.window.value.preset, state.window.value.to]);
 
   const companies: CompanyMeta[] = useMemo(
     () =>

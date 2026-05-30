@@ -15,6 +15,7 @@ import {
   setFilter,
   IntentType,
   Universe,
+  DATA_FLOOR,
 } from "./filterState";
 
 export interface CompanyMeta {
@@ -285,15 +286,23 @@ export function runCoherence(
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // R15 — Aviso datos: cobertura mínima 2026-01-01
+  // R15 — Suelo de datos: cobertura mínima 2026-01-01. Mutamos el estado
+  //       en vez de solo avisar, para que la query final nunca incluya
+  //       fechas pre-DATA_FLOOR y el agente no invente datos.
   // ──────────────────────────────────────────────────────────────────────
-  if (next.window.value.from < "2026-01-01") {
+  if (next.window.value.from < DATA_FLOOR) {
+    next = setFilter(
+      next,
+      "window",
+      { ...next.window.value, from: DATA_FLOOR },
+      next.window.origin,
+    );
     warnings.push({
       level: "info",
       filterId: "window",
       rule: "R15",
       message:
-        "Los datos históricos comienzan el 2026-01-01. La ventana se ajustará automáticamente.",
+        "Los datos históricos comienzan el 2026-01-01. La ventana se ha ajustado automáticamente.",
     });
   }
 

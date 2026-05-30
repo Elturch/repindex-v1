@@ -120,14 +120,16 @@ export const ALL_METRICS: AxisMetric[] = [
 ];
 
 function defaultWindow(): TimeWindow {
-  // Default to last 4 weeks ending today (UTC-safe).
   const todayIso = todayISO();
   return {
     preset: "last_month",
-    from: subDaysISO(todayIso, 28),
+    from: subDaysISO(todayIso, 29),
     to: todayIso,
   };
 }
+
+/** Suelo histórico: no hay datos antes de esta fecha. */
+export const DATA_FLOOR = "2026-01-01";
 
 export function createInitialFilterState(): FilterState {
   const free = <T,>(value: T): FilterValue<T> => ({ value, origin: "free" });
