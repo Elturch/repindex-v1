@@ -1,51 +1,31 @@
 ## Cambio único
 
-**Archivo:** `supabase/functions/rix-analyze-v2/index.ts` (líneas ~546-597)
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (línea 975)
 
-**Acción:** Quitar el `await` del bloque `fetch-momentum-tips` para que no bloquee el análisis. El campo `49_reputacion_vs_precio` queda `null` en el barrido en curso — aceptado.
+**Acción:** Subir el `AbortSignal.timeout` de la llamada a `rix-analyze-v2` (acción `repair_analysis`) de `300_000` ms (5 min) a `600_000` ms (10 min).
 
-### Detalle
+### Diff
 
-El bloque actual (resumido):
 ```ts
-let momentumAnalysis: string | null = null;
-if (cotiza && precioCierre && precioCierre !== 'NC') {
-  try {
-    const momentumResponse = await fetch(`.../fetch-momentum-tips`, {...});
-    if (momentumResponse.ok) {
-      const momentumData = await momentumResponse.json();
-      // ... construye formattedAnalysis ...
-      momentumAnalysis = formattedAnalysis;
-    }
-  } catch (...) { ... }
-}
+-          signal: AbortSignal.timeout(300_000),
++          signal: AbortSignal.timeout(600_000),
 ```
 
-Pasa a fire-and-forget:
-```ts
-// Fire-and-forget: no bloquear el análisis. 49_reputacion_vs_precio
-// se rellenará null hoy; en W24 movemos esto a trigger post-análisis.
-if (cotiza && precioCierre && precioCierre !== 'NC') {
-  try {
-    const p = fetch(`.../fetch-momentum-tips`, {
-      method: 'POST',
-      headers: {...},
-      body: JSON.stringify({...}),
-      signal: AbortSignal.timeout(8000),
-    }).catch(() => {}); // swallow errors
-    // @ts-ignore EdgeRuntime is available in Deno Deploy
-    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
-      EdgeRuntime.waitUntil(p);
-    }
-  } catch { /* noop */ }
-}
-let momentumAnalysis: string | null = null; // siempre null en esta vía rápida
-```
+### Por qué
 
-Resto del fichero **sin tocar**. `updateData['49_reputacion_vs_precio']` seguirá recibiendo `momentumAnalysis` (null) o el fallback de `analysis.accion_vs_reputacion` según la lógica existente.
+Con `batch_size=2-3` y gpt-5 tardando 90-180s/fila, una invocación de `reprocess_pending` puede superar 5 min antes de devolver respuesta. El orchestrator aborta, el trigger queda como "processing" zombi y hay que pulsar "Resetear Zombis" para reanudar. Subir a 10 min cubre el peor caso real observado en los logs y deja margen.
 
-### Validación
+### Lo que NO se toca
 
-Tras deploy: cada `analyzeRecord` se acorta ~4-7s. Logs deben dejar de mostrar `Momentum tips received` durante el barrido. NULLs deberían caer notablemente más rápido en los próximos 30 min.
+- `rix-analyze-v2/index.ts` — sin cambios.
+- Plan W24 — sigue guardado para el sábado.
+- Lógica de zombie cleanup (5 min) — sin cambios; sigue protegiendo si la función realmente se cuelga, porque el zombie reset mira `started_at` del registro, no este timeout HTTP.
+- Auto-requeue, batch_size, orquestación — sin cambios.
 
-Sin migraciones. Sin cambios de UI. Sin tocar orchestrator.
+### Validación tras deploy
+
+1. Próxima invocación de `repair_analysis` debe completar sin `HTTP 504: IDLE_TIMEOUT` ni `AbortError` en logs del orchestrator.
+2. El trigger pasa de `processing` → `pending` (con `remaining > 0`) o → `completed`, sin quedarse atascado.
+3. NULLs de `49_reputacion_vs_precio` siguen bajando al mismo ritmo que ahora (este cambio no toca análisis, solo el timeout del caller).
+
+Sin migraciones. Sin cambios de UI. Un fichero, una línea.
