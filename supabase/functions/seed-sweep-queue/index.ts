@@ -76,6 +76,17 @@ Deno.serve(async (req) => {
 
     console.log(`[seed-sweep-queue] sweep=${sweepId} issuers=${issuers.length} rows=${rows.length} inserted=${inserted}`);
 
+    // 4. Marcar el flag global de barrido en curso (Área 1: aislamiento front).
+    try {
+      await supabase.rpc('set_sweep_status', {
+        p_in_progress: true,
+        p_sweep_id: sweepId,
+        p_total: rows.length,
+      });
+    } catch (e) {
+      console.warn('[seed-sweep-queue] set_sweep_status failed:', e);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       sweep_id: sweepId,
