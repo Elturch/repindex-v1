@@ -68,6 +68,7 @@ import { CorporateScrapePanel } from '@/components/admin/CorporateScrapePanel';
 import { VectorStorePanel } from '@/components/admin/VectorStorePanel';
 import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
+import { SweepQueueHealthPanel } from '@/components/admin/SweepQueueHealthPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
 import TechnicalDocPanel from '@/components/admin/TechnicalDocPanel';
@@ -3216,7 +3217,10 @@ const Admin: React.FC = () => {
 
           {/* ==================== SWEEP MONITOR V2 ==================== */}
           <TabsContent value="sweep-monitor">
-            <SweepMonitorPanel />
+            <div className="space-y-4">
+              <SweepQueueHealthPanel />
+              <SweepMonitorPanel />
+            </div>
           </TabsContent>
 
           {/* ==================== ISSUER INGEST ==================== */}

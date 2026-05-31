@@ -191,6 +191,24 @@ export type Database = {
         }
         Relationships: []
       }
+      app_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       audit_results: {
         Row: {
           auto_checks: Json
@@ -1741,6 +1759,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pipeline_alerts: {
+        Row: {
+          context: Json
+          created_at: string
+          id: string
+          kind: string
+          message: string
+          resolved_at: string | null
+          severity: string
+        }
+        Insert: {
+          context?: Json
+          created_at?: string
+          id?: string
+          kind: string
+          message: string
+          resolved_at?: string | null
+          severity?: string
+        }
+        Update: {
+          context?: Json
+          created_at?: string
+          id?: string
+          kind?: string
+          message?: string
+          resolved_at?: string | null
+          severity?: string
+        }
+        Relationships: []
       }
       pipeline_health_checks: {
         Row: {
@@ -4463,6 +4511,22 @@ export type Database = {
       }
       release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
+      set_sweep_status: {
+        Args: { p_in_progress: boolean; p_sweep_id?: string; p_total?: number }
+        Returns: undefined
+      }
+      sweep_queue_throughput: {
+        Args: { p_minutes?: number }
+        Returns: {
+          completed_window: number
+          done_total: number
+          eta_minutes: number
+          pending_total: number
+          processing_total: number
+          skipped_total: number
+          tickers_per_hour: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "manager" | "user" | "press"

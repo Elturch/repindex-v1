@@ -11,6 +11,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 // FloatingChat oculto por solicitud del usuario
 // import { FloatingChat } from "@/components/chat/FloatingChat";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SweepInProgressBanner } from "@/components/SweepInProgressBanner";
 import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
 import InsertRixResults from "./pages/InsertRixResults";
@@ -52,6 +53,7 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
             <ChatProvider>
+              <SweepInProgressBanner />
               <Routes>
                 {/* Public routes */}
                 <Route path="/" element={<Landing />} />

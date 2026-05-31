@@ -60,9 +60,35 @@ Deno.serve(async (req) => {
 
     if ((pendingWork ?? 0) === 0) {
       console.log('[rix-sweep-watchdog] no pending work in sweep_queue — idle');
+      // Si quedan items en processing los gestionará el TTL; si todo está done,
+      // limpiamos el flag global para liberar al front del modo "barrido".
+      const { count: processingLeft } = await supabase
+        .from('sweep_queue')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'processing');
+      if ((processingLeft ?? 0) === 0) {
+        try {
+          await supabase.rpc('set_sweep_status', { p_in_progress: false, p_sweep_id: null, p_total: 0 });
+        } catch (e) { console.warn('[rix-sweep-watchdog] clear flag failed:', e); }
+      }
       return new Response(JSON.stringify({ success: true, idle: true, released: releasedCount ?? 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    // 3.b Observabilidad: medir throughput de los últimos 20 min y emitir alerta si <5 tickers/h.
+    try {
+      const { data: thr } = await supabase.rpc('sweep_queue_throughput', { p_minutes: 20 });
+      const row = Array.isArray(thr) ? thr[0] : thr;
+      const rate = Number(row?.tickers_per_hour ?? 0);
+      if (rate > 0 && rate < 5) {
+        await supabase.from('pipeline_alerts').insert({
+          kind: 'sweep_low_throughput',
+          severity: 'warning',
+          message: `Throughput bajo: ${rate.toFixed(1)} tickers/h (umbral=5) últimos 20 min`,
+          context: row ?? {},
+        });
+      }
+    } catch (e) { console.warn('[rix-sweep-watchdog] throughput probe failed:', e); }
 
     // 4. Crear un trigger para drenar 6 items.
     const { data: trigger, error: trigErr } = await supabase
