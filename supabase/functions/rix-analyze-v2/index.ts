@@ -734,8 +734,43 @@ serve(async (req) => {
 
     // === MODE 1: Reprocess pending records (surgical repair) ===
     if (action === 'reprocess_pending') {
-      console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${batch_size} pending records... only_models=${JSON.stringify(only_models)} exclude_models=${JSON.stringify(exclude_models)}`);
-      
+      // HOTFIX: in REPROCESS mode, always drain MAX_BATCH_SIZE records and ignore only_models.
+      const reprocessBatchSize = MAX_BATCH_SIZE;
+      console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${reprocessBatchSize} pending records (ignoring only_models=${JSON.stringify(only_models)}) exclude_models=${JSON.stringify(exclude_models)}`);
+
+      // HOTFIX: release zombie locks older than 30 minutes before scanning.
+      try {
+        const STALE_LOCK_MS = 30 * 60 * 1000;
+        const staleCutoffIso = new Date(Date.now() - STALE_LOCK_MS).toISOString();
+        const { data: lockedRows, error: lockedErr } = await supabase
+          .from('rix_runs_v2')
+          .select('id, 17_flags')
+          .is('analysis_completed_at', null)
+          .not('17_flags', 'is', null);
+        if (lockedErr) {
+          console.warn('[rix-analyze-v2] Stale-lock sweep query failed:', lockedErr.message);
+        } else if (Array.isArray(lockedRows)) {
+          let released = 0;
+          for (const row of lockedRows) {
+            const flags = Array.isArray((row as any)['17_flags']) ? (row as any)['17_flags'] : [];
+            const lockFlag = flags.find((f: any) => typeof f === 'object' && f !== null && f?.analysis_lock);
+            if (!lockFlag) continue;
+            const lockIso = lockFlag.analysis_lock;
+            if (typeof lockIso !== 'string') continue;
+            if (lockIso > staleCutoffIso) continue; // still fresh
+            const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock));
+            const { error: relErr } = await supabase
+              .from('rix_runs_v2')
+              .update({ '17_flags': cleaned })
+              .eq('id', (row as any).id);
+            if (!relErr) released++;
+          }
+          if (released > 0) console.log(`[rix-analyze-v2] Released ${released} zombie lock(s) older than 30min`);
+        }
+      } catch (e) {
+        console.warn('[rix-analyze-v2] Stale-lock sweep exception:', (e as Error).message);
+      }
+
       // CRITICAL FIX: Get the active week first (most recent period with data)
       const { data: latestWeek } = await supabase
         .from('rix_runs_v2')
@@ -755,7 +790,7 @@ serve(async (req) => {
         .not('search_completed_at', 'is', null)
         .eq('06_period_from', activePeriod) // Only process current week's records
         .order('created_at', { ascending: true })
-        .limit(batch_size);
+        .limit(reprocessBatchSize);
 
       // REPROCESS must drain the oldest pending records across all models; ignore only_models here.
       if (Array.isArray(exclude_models) && exclude_models.length > 0) {
