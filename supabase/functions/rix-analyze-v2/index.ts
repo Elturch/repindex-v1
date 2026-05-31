@@ -739,15 +739,23 @@ serve(async (req) => {
       // - 1 invocación = 1 registro modelo-ticker.
       // - Reserva atómica vía RPC claim_next_rix_analysis_record (FOR UPDATE SKIP LOCKED).
       // - Si la invocación cae por 504, solo pierde ese registro; el lock se libera por TTL.
+      // COMMIT 1 (robustez): TTL=300s (> 150s del 504 plataforma), try/finally para
+      // garantizar release del lock pase lo que pase. Soporta sweep_queue_id opcional:
+      // si viene, marca complete/fail en la nueva cola al terminar.
+      const LOCK_TIMEOUT_MS = 300_000;
+      const sweepQueueId: string | null = (body && typeof body.sweep_queue_id === 'string') ? body.sweep_queue_id : null;
       const workerId = crypto.randomUUID().slice(0, 8);
       console.log(`[rix-analyze-v2] PER-RECORD MODE worker=${workerId}`);
 
       const { data: claimed, error: claimErr } = await supabase.rpc(
         'claim_next_rix_analysis_record',
-        { p_worker_id: workerId, p_lock_ttl_seconds: 180 },
+        { p_worker_id: workerId, p_lock_ttl_seconds: Math.floor(LOCK_TIMEOUT_MS / 1000) },
       );
       if (claimErr) {
         console.error('[rix-analyze-v2] claim RPC error:', claimErr);
+        if (sweepQueueId) {
+          await supabase.rpc('fail_sweep_queue_item', { p_id: sweepQueueId, p_error: `claim_failed: ${claimErr.message ?? 'unknown'}` }).catch(() => {});
+        }
         return new Response(
           JSON.stringify({ success: false, error: 'claim_failed', details: claimErr }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -762,6 +770,10 @@ serve(async (req) => {
           .is('09_rix_score', null)
           .not('search_completed_at', 'is', null);
         console.log(`[rix-analyze-v2] No record claimed (all locked or done). Remaining=${remaining ?? 0}`);
+        if (sweepQueueId) {
+          // No hay trabajo para este ticker → completar item de la cola (evita reintentos infinitos).
+          await supabase.rpc('complete_sweep_queue_item', { p_id: sweepQueueId }).catch(() => {});
+        }
         return new Response(
           JSON.stringify({
             success: true,
@@ -788,6 +800,18 @@ serve(async (req) => {
         .maybeSingle();
       if (fetchErr || !fullRecord) {
         console.error('[rix-analyze-v2] Could not load claimed record:', fetchErr);
+        // Liberar lock antes de salir
+        try {
+          const { data: cur } = await supabase.from('rix_runs_v2').select('17_flags').eq('id', recordId).maybeSingle();
+          const flags = Array.isArray((cur as any)?.['17_flags']) ? (cur as any)['17_flags'] : [];
+          const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock && f?.worker === workerId));
+          if (cleaned.length !== flags.length) {
+            await supabase.from('rix_runs_v2').update({ '17_flags': cleaned }).eq('id', recordId);
+          }
+        } catch { /* noop */ }
+        if (sweepQueueId) {
+          await supabase.rpc('fail_sweep_queue_item', { p_id: sweepQueueId, p_error: 'load_failed' }).catch(() => {});
+        }
         return new Response(
           JSON.stringify({ success: false, error: 'load_failed' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -799,28 +823,42 @@ serve(async (req) => {
       let analysisResult: any = null;
       let analysisError: string | null = null;
       try {
-        analysisResult = await analyzeRecord(supabase, fullRecord);
-        processedOk = true;
-      } catch (e: any) {
-        analysisError = e?.message ?? String(e);
-        console.error(`[rix-analyze-v2] analyzeRecord error for ${recordId}:`, analysisError);
-      }
-
-      // Always release our lock (success path: analyzeRecord may already have cleared it;
-      // failure path: must drop it so next worker can retry).
-      try {
-        const { data: cur } = await supabase
-          .from('rix_runs_v2')
-          .select('17_flags, analysis_completed_at')
-          .eq('id', recordId)
-          .maybeSingle();
-        const flags = Array.isArray((cur as any)?.['17_flags']) ? (cur as any)['17_flags'] : [];
-        const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock && f?.worker === workerId));
-        if (cleaned.length !== flags.length) {
-          await supabase.from('rix_runs_v2').update({ '17_flags': cleaned }).eq('id', recordId);
+        try {
+          analysisResult = await analyzeRecord(supabase, fullRecord);
+          processedOk = true;
+        } catch (e: any) {
+          analysisError = e?.name === 'AbortError'
+            ? `AbortError: ${e?.message ?? 'timeout'}`
+            : (e?.message ?? String(e));
+          console.error(`[rix-analyze-v2] analyzeRecord error for ${recordId}:`, analysisError);
         }
-      } catch (e) {
-        console.warn('[rix-analyze-v2] lock-release exception:', (e as Error).message);
+      } finally {
+        // CLEANUP GARANTIZADO: release lock + actualizar sweep_queue si procede.
+        try {
+          const { data: cur } = await supabase
+            .from('rix_runs_v2')
+            .select('17_flags, analysis_completed_at')
+            .eq('id', recordId)
+            .maybeSingle();
+          const flags = Array.isArray((cur as any)?.['17_flags']) ? (cur as any)['17_flags'] : [];
+          const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock && f?.worker === workerId));
+          if (cleaned.length !== flags.length) {
+            await supabase.from('rix_runs_v2').update({ '17_flags': cleaned }).eq('id', recordId);
+          }
+        } catch (e) {
+          console.warn('[rix-analyze-v2] lock-release exception:', (e as Error).message);
+        }
+        if (sweepQueueId) {
+          try {
+            if (processedOk) {
+              await supabase.rpc('complete_sweep_queue_item', { p_id: sweepQueueId });
+            } else {
+              await supabase.rpc('fail_sweep_queue_item', { p_id: sweepQueueId, p_error: analysisError ?? 'unknown' });
+            }
+          } catch (e) {
+            console.warn('[rix-analyze-v2] sweep_queue update failed:', (e as Error).message);
+          }
+        }
       }
 
       const elapsed = Date.now() - t0;
