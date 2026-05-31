@@ -941,7 +941,7 @@ async function processCronTriggers(
     const pb = PRIORITY[b.action] ?? 999;
     if (pa !== pb) return pa - pb;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  }).slice(0, 5);
+  }).slice(0, 12);
 
   console.log(`[cron_triggers] Found ${triggerPool.length} pending triggers; processing ${triggers.length} (prioritized, parallel)`);
 
