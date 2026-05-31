@@ -905,7 +905,7 @@ async function processCronTriggers(
     .select('*')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
-    .limit(15);
+    .limit(30);
 
   if (error || !triggerPool || triggerPool.length === 0) {
     return results;
