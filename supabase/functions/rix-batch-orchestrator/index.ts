@@ -969,32 +969,106 @@ async function processCronTriggers(
         console.log(`[cron_triggers] Dispatching repair_analysis trigger ${trigger.id} (fire-and-forget)`);
         const tParams = (trigger.params as any) || {};
 
-        // FIRE-AND-FORGET: lanzamos la invocación a rix-analyze-v2 sin esperar
-        // a que termine. Así el orchestrator nunca llega al 504 de 150s y los
-        // triggers no quedan colgados en "processing". El worker hace su trabajo
-        // de forma asíncrona y libera sus locks al terminar. El watchdog repuebla
-        // la cola si hace falta más trabajo.
-        const dispatchPromise = fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceKey}`,
-          },
-          body: JSON.stringify({
-            action: 'reprocess_pending',
-            batch_size: tParams.batch_size || 1,
-            only_models: tParams.only_models,
-            exclude_models: tParams.exclude_models,
-          }),
-        }).catch((e) => {
-          console.warn(`[cron_triggers] dispatch error (ignored, fire-and-forget): ${(e as Error).message}`);
-        });
-        // No await: dejamos correr en background sin bloquear el orchestrator.
-        // EdgeRuntime.waitUntil mantiene viva la promesa hasta que termine.
+        // ────────────────────────────────────────────────────────────────────
+        // MODO sweep_queue_drain (Commit 2): si el trigger pide drenar la cola,
+        // reclamamos N items de sweep_queue (default 6) y disparamos una invocación
+        // de rix-analyze-v2 por cada uno, en paralelo y fire-and-forget. Cada item
+        // lleva su sweep_queue_id para que rix-analyze-v2 marque complete/fail.
+        // ────────────────────────────────────────────────────────────────────
+        const isQueueDrain = (tParams.mode === 'sweep_queue_drain');
+        const dispatchPromises: Promise<unknown>[] = [];
+
+        if (isQueueDrain) {
+          // 1. Liberar locks expirados antes de reclamar.
+          await supabase.rpc('release_expired_sweep_locks').catch((e) => {
+            console.warn(`[sweep_queue_drain] release expired error: ${(e as Error).message}`);
+          });
+
+          // 2. Determinar sweep_id activo (con trabajo pendiente).
+          const { data: activeRow } = await supabase
+            .from('sweep_queue')
+            .select('sweep_id')
+            .eq('status', 'pending')
+            .order('sweep_id', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const drainSweepId: string | null = (activeRow as any)?.sweep_id ?? null;
+
+          if (!drainSweepId) {
+            console.log(`[sweep_queue_drain] no pending sweep_queue items`);
+          } else {
+            const batch = Math.min(Math.max(Number(tParams.batch) || 6, 1), 6);
+            const workerPrefix = `drain-${trigger.id.slice(0, 6)}`;
+
+            // 3. Reclamar hasta `batch` items secuencialmente (rápido, son updates SKIP LOCKED).
+            for (let i = 0; i < batch; i++) {
+              const { data: claimedQ, error: claimQErr } = await supabase.rpc('claim_next_sweep_queue_item', {
+                p_sweep_id: drainSweepId,
+                p_worker_id: `${workerPrefix}-${i}`,
+                p_lock_ttl_seconds: 300,
+              });
+              if (claimQErr) {
+                console.warn(`[sweep_queue_drain] claim error i=${i}: ${claimQErr.message}`);
+                break;
+              }
+              const row = Array.isArray(claimedQ) && claimedQ.length > 0 ? claimedQ[0] : null;
+              if (!row) break; // cola vacía o todo lockeado
+
+              const queueId = row.id;
+              const ticker = row.ticker;
+              const model = row.model_name;
+              console.log(`[sweep_queue_drain] dispatching qid=${queueId} ticker=${ticker} model=${model}`);
+
+              const p = fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceKey}`,
+                },
+                body: JSON.stringify({
+                  action: 'reprocess_pending',
+                  batch_size: 1,
+                  sweep_queue_id: queueId,
+                  only_models: model ? [model] : undefined,
+                }),
+                // keepalive permite que la conexión sobreviva al return del orchestrator
+                keepalive: true,
+              }).catch((e) => {
+                console.warn(`[sweep_queue_drain] dispatch error qid=${queueId}: ${(e as Error).message}`);
+                // Liberar el lock del item para que el siguiente ciclo lo reintente.
+                return supabase.rpc('fail_sweep_queue_item', { p_id: queueId, p_error: `dispatch_error: ${(e as Error).message}` }).catch(() => {});
+              });
+              dispatchPromises.push(p);
+            }
+          }
+        } else {
+          // ──── PATH LEGACY: 1 trigger = 1 invocación analyze (per-record) ────
+          const dispatchPromise = fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              action: 'reprocess_pending',
+              batch_size: tParams.batch_size || 1,
+              only_models: tParams.only_models,
+              exclude_models: tParams.exclude_models,
+            }),
+            keepalive: true,
+          }).catch((e) => {
+            console.warn(`[cron_triggers] dispatch error (ignored, fire-and-forget): ${(e as Error).message}`);
+          });
+          dispatchPromises.push(dispatchPromise);
+        }
+
+        // Mantener vivas las promesas en background sin bloquear el response.
         // @ts-ignore — EdgeRuntime existe en runtime Supabase
         if (typeof EdgeRuntime !== 'undefined' && (EdgeRuntime as any).waitUntil) {
-          // @ts-ignore
-          (EdgeRuntime as any).waitUntil(dispatchPromise);
+          for (const p of dispatchPromises) {
+            // @ts-ignore
+            (EdgeRuntime as any).waitUntil(p);
+          }
         }
 
         // Marcar inmediatamente como completed (despachado). El trigger es una
@@ -1004,12 +1078,18 @@ async function processCronTriggers(
           .update({
             status: 'completed',
             processed_at: new Date().toISOString(),
-            result: { dispatched: true, fire_and_forget: true, ts: new Date().toISOString() },
+            result: {
+              dispatched: true,
+              fire_and_forget: true,
+              mode: isQueueDrain ? 'sweep_queue_drain' : 'legacy_per_record',
+              dispatched_count: dispatchPromises.length,
+              ts: new Date().toISOString(),
+            },
           })
           .eq('id', trigger.id);
 
-        results.push({ id: trigger.id, action: trigger.action, success: true, result: { dispatched: true } });
-        console.log(`[cron_triggers] Trigger ${trigger.id} dispatched (fire-and-forget)`);
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: { dispatched: dispatchPromises.length } });
+        console.log(`[cron_triggers] Trigger ${trigger.id} dispatched ${dispatchPromises.length} (mode=${isQueueDrain ? 'sweep_queue_drain' : 'legacy'})`);
 
       } else if (trigger.action === 'auto_populate_vectors') {
         // ============================================================
