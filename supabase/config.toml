@@ -128,3 +128,9 @@ verify_jwt = false
 
 [functions.stress-matrix-report]
 verify_jwt = false
+
+[functions.seed-sweep-queue]
+verify_jwt = false
+
+[functions.rix-sweep-watchdog]
+verify_jwt = false

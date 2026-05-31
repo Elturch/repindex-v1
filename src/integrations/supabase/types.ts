@@ -4386,6 +4386,7 @@ export type Database = {
           attempts: number
           id: string
           issuer_name: string
+          model_name: string
           ticker: string
         }[]
       }
