@@ -757,10 +757,7 @@ serve(async (req) => {
         .order('created_at', { ascending: true })
         .limit(batch_size);
 
-      // P1: filtros de aislamiento de modelo (Qwen vs resto)
-      if (Array.isArray(only_models) && only_models.length > 0) {
-        pendingQuery = pendingQuery.in('02_model_name', only_models);
-      }
+      // REPROCESS must drain the oldest pending records across all models; ignore only_models here.
       if (Array.isArray(exclude_models) && exclude_models.length > 0) {
         // .not('02_model_name', 'in', '(...)' ) — sintaxis postgrest
         const list = exclude_models.map((m: string) => `"${m}"`).join(',');
