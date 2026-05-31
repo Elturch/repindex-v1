@@ -543,15 +543,20 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
     flags.push('sim_bajo');
   }
 
-  // Fetch momentum tips for listed companies with valid prices
+  // Fetch momentum tips for listed companies with valid prices.
+  // 2026-05-31: HARD TIMEOUT 4s — esta llamada bloqueaba el analyze ~4-7s
+  // por fila × 1050 filas/barrido = ~70-90 min extra. Si Perplexity tarda
+  // más, abandonamos y dejamos `49_reputacion_vs_precio` con el fallback
+  // de `analysis.accion_vs_reputacion`. La calidad del campo no es crítica
+  // para el cierre del barrido.
   let momentumAnalysis: string | null = null;
   if (cotiza && precioCierre && precioCierre !== 'NC') {
     try {
       console.log(`[rix-analyze-v2] Fetching momentum tips for ${record['05_ticker']}...`);
-      
+
       const momentumSupabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const momentumServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      
+
       const momentumResponse = await fetch(`${momentumSupabaseUrl}/functions/v1/fetch-momentum-tips`, {
         method: 'POST',
         headers: {
@@ -565,6 +570,7 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
           minimo_52_semanas: minimo52s,
           rix_score: finalRixScore,
         }),
+        signal: AbortSignal.timeout(4000),
       });
 
       if (momentumResponse.ok) {
@@ -585,7 +591,8 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
         }
       }
     } catch (momentumError: any) {
-      console.warn(`[rix-analyze-v2] Error fetching momentum tips:`, momentumError.message);
+      // Timeout o error → fallback silencioso, no bloquea barrido.
+      console.warn(`[rix-analyze-v2] Momentum skipped for ${record['05_ticker']}: ${momentumError?.message ?? 'error'}`);
     }
   }
 
