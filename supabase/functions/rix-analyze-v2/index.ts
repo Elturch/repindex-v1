@@ -544,20 +544,17 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
   }
 
   // Fetch momentum tips for listed companies with valid prices.
-  // 2026-05-31: HARD TIMEOUT 4s — esta llamada bloqueaba el analyze ~4-7s
-  // por fila × 1050 filas/barrido = ~70-90 min extra. Si Perplexity tarda
-  // más, abandonamos y dejamos `49_reputacion_vs_precio` con el fallback
-  // de `analysis.accion_vs_reputacion`. La calidad del campo no es crítica
-  // para el cierre del barrido.
-  let momentumAnalysis: string | null = null;
+  // 2026-05-31 (hotfix barrido en curso): FIRE-AND-FORGET. La llamada a
+  // fetch-momentum-tips bloqueaba el analyze ~4-7s/fila. Lanzamos la
+  // promesa sin await; `49_reputacion_vs_precio` quedará null hoy y se
+  // rellenará vía trigger post-análisis en W24.
+  const momentumAnalysis: string | null = null;
   if (cotiza && precioCierre && precioCierre !== 'NC') {
     try {
-      console.log(`[rix-analyze-v2] Fetching momentum tips for ${record['05_ticker']}...`);
-
       const momentumSupabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const momentumServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-      const momentumResponse = await fetch(`${momentumSupabaseUrl}/functions/v1/fetch-momentum-tips`, {
+      const momentumPromise = fetch(`${momentumSupabaseUrl}/functions/v1/fetch-momentum-tips`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${momentumServiceKey}`,
@@ -570,30 +567,16 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
           minimo_52_semanas: minimo52s,
           rix_score: finalRixScore,
         }),
-        signal: AbortSignal.timeout(4000),
-      });
+        signal: AbortSignal.timeout(8000),
+      }).catch(() => { /* swallow: no bloquea barrido */ });
 
-      if (momentumResponse.ok) {
-        const momentumData = await momentumResponse.json();
-        if (momentumData.success && momentumData.momentum_analysis) {
-          let formattedAnalysis = momentumData.momentum_analysis;
-          if (momentumData.tips && momentumData.tips.length > 0) {
-            formattedAnalysis += '\n\n📊 **Tips verificados:**\n';
-            momentumData.tips.forEach((tip: string, idx: number) => {
-              formattedAnalysis += `${idx + 1}. ${tip}\n`;
-            });
-          }
-          if (momentumData.sources && momentumData.sources.length > 0) {
-            formattedAnalysis += `\n📰 Fuentes: ${momentumData.sources.join(', ')}`;
-          }
-          momentumAnalysis = formattedAnalysis;
-          console.log(`[rix-analyze-v2] Momentum tips received for ${record['05_ticker']}`);
-        }
+      // Mantener viva la promesa más allá del request si el runtime lo soporta.
+      // @ts-ignore EdgeRuntime existe en Supabase/Deno Deploy
+      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(momentumPromise);
       }
-    } catch (momentumError: any) {
-      // Timeout o error → fallback silencioso, no bloquea barrido.
-      console.warn(`[rix-analyze-v2] Momentum skipped for ${record['05_ticker']}: ${momentumError?.message ?? 'error'}`);
-    }
+    } catch { /* noop */ }
   }
 
   // Map to database columns
