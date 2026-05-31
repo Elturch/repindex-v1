@@ -3378,6 +3378,54 @@ export type Database = {
         }
         Relationships: []
       }
+      sweep_queue: {
+        Row: {
+          attempts: number
+          completed_at: string | null
+          created_at: string
+          id: string
+          issuer_name: string | null
+          last_error: string | null
+          lock_expires_at: string | null
+          locked_at: string | null
+          status: string
+          sweep_id: string
+          ticker: string
+          updated_at: string
+          worker_id: string | null
+        }
+        Insert: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          issuer_name?: string | null
+          last_error?: string | null
+          lock_expires_at?: string | null
+          locked_at?: string | null
+          status?: string
+          sweep_id: string
+          ticker: string
+          updated_at?: string
+          worker_id?: string | null
+        }
+        Update: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          issuer_name?: string | null
+          last_error?: string | null
+          lock_expires_at?: string | null
+          locked_at?: string | null
+          status?: string
+          sweep_id?: string
+          ticker?: string
+          updated_at?: string
+          worker_id?: string | null
+        }
+        Relationships: []
+      }
       top_drivers: {
         Row: {
           delta_contrib_abs: number
@@ -4328,6 +4376,20 @@ export type Database = {
           ticker: string
         }[]
       }
+      claim_next_sweep_queue_item: {
+        Args: {
+          p_lock_ttl_seconds?: number
+          p_sweep_id: string
+          p_worker_id: string
+        }
+        Returns: {
+          attempts: number
+          id: string
+          issuer_name: string
+          ticker: string
+        }[]
+      }
+      complete_sweep_queue_item: { Args: { p_id: string }; Returns: undefined }
       count_fresh_rix_analysis_locks: {
         Args: { p_ttl_seconds?: number }
         Returns: number
@@ -4340,6 +4402,10 @@ export type Database = {
       expand_entity_graph_with_scores: {
         Args: { p_depth?: number; p_ticker: string; p_weeks?: number }
         Returns: Json
+      }
+      fail_sweep_queue_item: {
+        Args: { p_error: string; p_id: string }
+        Returns: string
       }
       fuzzy_match_issuers: {
         Args: { brand_in: string; floor_in?: number; limit_in?: number }
@@ -4394,6 +4460,7 @@ export type Database = {
         Args: { batch_date?: string; price_text: string; ticker?: string }
         Returns: number
       }
+      release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
     }
     Enums: {
