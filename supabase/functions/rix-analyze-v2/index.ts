@@ -721,10 +721,11 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, record_id, batch_size: requested_batch_size = 10, only_models, exclude_models } = body;
-    // HOTFIX 504: cap batch_size at 15 to avoid Edge Function timeout (~530 pending records can't fit in one invocation)
-    // The orchestrator re-queues automatically until all records are processed.
-    const MAX_BATCH_SIZE = 15;
+    const { action, record_id, batch_size: requested_batch_size = 1, only_models, exclude_models } = body;
+    // HOTFIX W23: BATCH_SIZE=1 por invocación.
+    // Un timeout 504 pierde solo 1 ticker (no 15). La concurrencia real se logra
+    // lanzando varias invocaciones desde el orchestrator (Promise.allSettled).
+    const MAX_BATCH_SIZE = 1;
     const batch_size = Math.min(requested_batch_size, MAX_BATCH_SIZE);
     
     // Initialize Supabase
@@ -734,7 +735,7 @@ serve(async (req) => {
 
     // === MODE 1: Reprocess pending records (surgical repair) ===
     if (action === 'reprocess_pending') {
-      // HOTFIX: in REPROCESS mode, always drain MAX_BATCH_SIZE records and ignore only_models.
+      // HOTFIX W23: 1 ticker por invocación; los 6 modelos siguen en paralelo intra-ticker.
       const reprocessBatchSize = MAX_BATCH_SIZE;
       console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${reprocessBatchSize} pending records (ignoring only_models=${JSON.stringify(only_models)}) exclude_models=${JSON.stringify(exclude_models)}`);
 
