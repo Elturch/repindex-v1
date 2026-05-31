@@ -735,271 +735,110 @@ serve(async (req) => {
 
     // === MODE 1: Reprocess pending records (surgical repair) ===
     if (action === 'reprocess_pending') {
-      // HOTFIX W23: 1 ticker por invocación; los 6 modelos siguen en paralelo intra-ticker.
-      const reprocessBatchSize = MAX_BATCH_SIZE;
-      console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${reprocessBatchSize} pending records (ignoring only_models=${JSON.stringify(only_models)}) exclude_models=${JSON.stringify(exclude_models)}`);
-
-      // HOTFIX: release zombie locks older than 30 minutes before scanning.
-      try {
-        const STALE_LOCK_MS = 30 * 60 * 1000;
-        const staleCutoffIso = new Date(Date.now() - STALE_LOCK_MS).toISOString();
-        const { data: lockedRows, error: lockedErr } = await supabase
-          .from('rix_runs_v2')
-          .select('id, 17_flags')
-          .is('analysis_completed_at', null)
-          .not('17_flags', 'is', null);
-        if (lockedErr) {
-          console.warn('[rix-analyze-v2] Stale-lock sweep query failed:', lockedErr.message);
-        } else if (Array.isArray(lockedRows)) {
-          let released = 0;
-          for (const row of lockedRows) {
-            const flags = Array.isArray((row as any)['17_flags']) ? (row as any)['17_flags'] : [];
-            const lockFlag = flags.find((f: any) => typeof f === 'object' && f !== null && f?.analysis_lock);
-            if (!lockFlag) continue;
-            const lockIso = lockFlag.analysis_lock;
-            if (typeof lockIso !== 'string') continue;
-            if (lockIso > staleCutoffIso) continue; // still fresh
-            const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock));
-            const { error: relErr } = await supabase
-              .from('rix_runs_v2')
-              .update({ '17_flags': cleaned })
-              .eq('id', (row as any).id);
-            if (!relErr) released++;
-          }
-          if (released > 0) console.log(`[rix-analyze-v2] Released ${released} zombie lock(s) older than 30min`);
-        }
-      } catch (e) {
-        console.warn('[rix-analyze-v2] Stale-lock sweep exception:', (e as Error).message);
-      }
-
-      // CRITICAL FIX: Get the active week first (most recent period with data)
-      const { data: latestWeek } = await supabase
-        .from('rix_runs_v2')
-        .select('06_period_from')
-        .order('06_period_from', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      const activePeriod = latestWeek?.['06_period_from'];
-      console.log(`[rix-analyze-v2] Active period detected: ${activePeriod}`);
-      
-      // Find records with search completed but analysis pending - FILTERED BY ACTIVE WEEK
-      // HOTFIX W23: trae un POOL amplio de candidatos (no solo 1) para que
-      // varias invocaciones concurrentes del orchestrator escojan tickers
-      // DISTINTOS. Si todas pidieran LIMIT 1, todas elegirían el mismo
-      // record y solo 1 trabajaría (las otras 4 harían skip por lock).
-      const CANDIDATE_POOL_SIZE = 40;
-      let pendingQuery = supabase
-        .from('rix_runs_v2')
-        .select('*')
-        .is('analysis_completed_at', null)
-        .not('search_completed_at', 'is', null)
-        .eq('06_period_from', activePeriod) // Only process current week's records
-        .order('created_at', { ascending: true })
-        .limit(CANDIDATE_POOL_SIZE);
-
-      // REPROCESS must drain the oldest pending records across all models; ignore only_models here.
-      if (Array.isArray(exclude_models) && exclude_models.length > 0) {
-        // .not('02_model_name', 'in', '(...)' ) — sintaxis postgrest
-        const list = exclude_models.map((m: string) => `"${m}"`).join(',');
-        pendingQuery = pendingQuery.not('02_model_name', 'in', `(${list})`);
-      }
-
-      const { data: pendingRecords, error: fetchError } = await pendingQuery;
-
-      if (fetchError) {
-        console.error('[rix-analyze-v2] Error fetching pending records:', fetchError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to fetch pending records', details: fetchError }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      if (!pendingRecords || pendingRecords.length === 0) {
-        console.log('[rix-analyze-v2] No pending records found - all complete!');
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            message: 'No pending records found - all analyses are complete!',
-            processed: 0,
-            remaining: 0,
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      console.log(`[rix-analyze-v2] Found ${pendingRecords.length} pending records to process`);
-
-      const results: any[] = [];
-      const errors: any[] = [];
-      const skipped: any[] = [];
-      const analysisStartTime = new Date().toISOString();
-      const LOCK_TIMEOUT_MS = 300000; // 300s (5 min) - mayor que el 504 de la plataforma + buffer.
-
-      // === ATOMIC TICKER RESERVATION ===
-      // Agrupar por ticker, ordenar por nº de modelos pendientes (desc) y
-      // recorrer probando cada ticker hasta reservar UNO atómicamente.
-      // La reserva atómica usa UPDATE con condición "no hay analysis_lock
-      // fresco en 17_flags" filtrando por sweep_id ficticio (worker_id) común.
-      const recordsByTicker = new Map<string, any[]>();
-      for (const r of pendingRecords) {
-        const t = r['05_ticker'] ?? '__unknown__';
-        if (!recordsByTicker.has(t)) recordsByTicker.set(t, []);
-        recordsByTicker.get(t)!.push(r);
-      }
-
-      const tickerEntries = Array.from(recordsByTicker.entries());
-      tickerEntries.sort((a, b) => {
-        const diff = b[1].length - a[1].length;
-        if (diff !== 0) return diff;
-        return Math.random() - 0.5;
-      });
-      // Shuffle el top-10 para diversificar entre invocaciones concurrentes.
-      const top = tickerEntries.slice(0, 10).sort(() => Math.random() - 0.5);
-
+      // ARQUITECTURA PER-RECORD (2026-05-31):
+      // - 1 invocación = 1 registro modelo-ticker.
+      // - Reserva atómica vía RPC claim_next_rix_analysis_record (FOR UPDATE SKIP LOCKED).
+      // - Si la invocación cae por 504, solo pierde ese registro; el lock se libera por TTL.
       const workerId = crypto.randomUUID().slice(0, 8);
-      const chosenMap = new Map<string, any[]>();
+      console.log(`[rix-analyze-v2] PER-RECORD MODE worker=${workerId}`);
 
-      // Intenta reservar el primer ticker disponible. Una reserva exitosa
-      // = al menos 1 fila del ticker pasó de "sin lock fresco" a "lock=mío".
-      for (const [ticker, group] of top) {
-        const ids = group.map((r) => r.id);
-        // Releer estado actual de 17_flags para chequear locks frescos in-line.
-        const { data: freshRows, error: freshErr } = await supabase
-          .from('rix_runs_v2')
-          .select('id, 02_model_name, 17_flags')
-          .in('id', ids)
-          .is('analysis_completed_at', null);
-        if (freshErr || !freshRows || freshRows.length === 0) continue;
-
-        const reservedRows: any[] = [];
-        for (const row of freshRows) {
-          const flags = Array.isArray((row as any)['17_flags']) ? (row as any)['17_flags'] : [];
-          const lockFlag = flags.find((f: any) => typeof f === 'object' && f !== null && f?.analysis_lock);
-          if (lockFlag) {
-            const lockTime = new Date(lockFlag.analysis_lock).getTime();
-            if (!isNaN(lockTime) && Date.now() - lockTime < LOCK_TIMEOUT_MS) {
-              continue; // lock fresco → otro worker lo tiene
-            }
-          }
-          const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock));
-          const newFlags = [...cleaned, { analysis_lock: analysisStartTime, worker: workerId }];
-          // UPDATE con guarda: solo si analysis_completed_at sigue NULL y
-          // (no hay lock O el lock previo coincide con lo que vimos).
-          const { data: upd, error: updErr } = await supabase
-            .from('rix_runs_v2')
-            .update({ '17_flags': newFlags })
-            .eq('id', (row as any).id)
-            .is('analysis_completed_at', null)
-            .select('id, 02_model_name, 17_flags')
-            .maybeSingle();
-          if (!updErr && upd) {
-            // Confirmar que el lock que figura es nuestro (anti-race).
-            const updFlags = Array.isArray((upd as any)['17_flags']) ? (upd as any)['17_flags'] : [];
-            const mine = updFlags.find((f: any) => f?.analysis_lock === analysisStartTime && f?.worker === workerId);
-            if (mine) {
-              const fullRecord = group.find((r) => r.id === (row as any).id);
-              if (fullRecord) reservedRows.push({ ...fullRecord, '17_flags': updFlags });
-            }
-          }
-        }
-
-        if (reservedRows.length > 0) {
-          chosenMap.set(ticker, reservedRows);
-          console.log(`[rix-analyze-v2] Reserved ticker=${ticker} models=${reservedRows.length} worker=${workerId}`);
-          break;
-        }
+      const { data: claimed, error: claimErr } = await supabase.rpc(
+        'claim_next_rix_analysis_record',
+        { p_worker_id: workerId, p_lock_ttl_seconds: 180 },
+      );
+      if (claimErr) {
+        console.error('[rix-analyze-v2] claim RPC error:', claimErr);
+        return new Response(
+          JSON.stringify({ success: false, error: 'claim_failed', details: claimErr }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
       }
-
-      if (chosenMap.size === 0) {
-        console.log(`[rix-analyze-v2] No ticker could be reserved (all locked by peers). Returning fast.`);
+      const claimedRow = Array.isArray(claimed) && claimed.length > 0 ? claimed[0] : null;
+      if (!claimedRow) {
         const { count: remaining } = await supabase
           .from('rix_runs_v2')
           .select('*', { count: 'exact', head: true })
           .is('analysis_completed_at', null)
-          .not('search_completed_at', 'is', null)
-          .eq('06_period_from', activePeriod);
+          .is('09_rix_score', null)
+          .not('search_completed_at', 'is', null);
+        console.log(`[rix-analyze-v2] No record claimed (all locked or done). Remaining=${remaining ?? 0}`);
         return new Response(
           JSON.stringify({
             success: true,
-            mode: 'reprocess_pending',
+            mode: 'per_record',
             processed: 0,
-            skipped: pendingRecords.length,
-            errors: 0,
+            skipped: 1,
             remaining: remaining ?? 0,
-            note: 'no-ticker-reserved',
+            note: 'no-record-claimed',
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
 
-      const processOne = async (record: any) => {
-        const recordId = record.id;
-        const ticker = record['05_ticker'];
-        const modelName = record['02_model_name'];
-        try {
-          // Lock ya reservado atómicamente arriba; procesamos directamente.
-          console.log(`[rix-analyze-v2] Processing: ${ticker} - ${modelName} (reserved, parallel)`);
-          const result = await analyzeRecord(supabase, record);
-          results.push(result);
-        } catch (error: any) {
-          console.error(`[rix-analyze-v2] Error processing ${recordId}:`, error?.message ?? error);
-          errors.push({
-            record_id: recordId,
-            ticker,
-            model: modelName,
-            error: error?.message ?? String(error),
-          });
+      const recordId = claimedRow.id;
+      const ticker = claimedRow.ticker;
+      const modelName = claimedRow.model_name;
+      console.log(`[rix-analyze-v2] Claimed record id=${recordId} ticker=${ticker} model=${modelName} worker=${workerId}`);
 
-          // Release lock on error
-          const rawFlagsNow = record['17_flags'];
-          const currentFlags: any[] = Array.isArray(rawFlagsNow) ? rawFlagsNow : [];
-          const cleanedFlagsOnError = currentFlags.filter(
-            (f) => !(typeof f === 'object' && f !== null && f?.analysis_lock),
-          );
-          await supabase
-            .from('rix_runs_v2')
-            .update({ '17_flags': cleanedFlagsOnError })
-            .eq('id', recordId);
-        }
-      };
-
-      // Process tickers sequentially; for each ticker fan out the 6 model rows in parallel.
-      // HOTFIX W23: usar chosenMap (1 ticker elegido al azar del pool) en lugar del map completo.
-      for (const [ticker, group] of chosenMap.entries()) {
-        console.log(
-          `[rix-analyze-v2] Fan-out ticker=${ticker} models=${group.length} (parallel)`,
-        );
-        const tickerStart = Date.now();
-        await Promise.allSettled(group.map((r) => processOne(r)));
-        console.log(
-          `[rix-analyze-v2] Ticker ${ticker} done in ${Date.now() - tickerStart}ms`,
-        );
-      }
-      
-      // Count remaining - FILTERED BY ACTIVE WEEK (consistent with processing)
-      const { count: remaining } = await supabase
+      // Fetch full row needed by analyzeRecord
+      const { data: fullRecord, error: fetchErr } = await supabase
         .from('rix_runs_v2')
-        .select('*', { count: 'exact', head: true })
-        .is('analysis_completed_at', null)
-        .not('search_completed_at', 'is', null)
-        .eq('06_period_from', activePeriod);
+        .select('*')
+        .eq('id', recordId)
+        .maybeSingle();
+      if (fetchErr || !fullRecord) {
+        console.error('[rix-analyze-v2] Could not load claimed record:', fetchErr);
+        return new Response(
+          JSON.stringify({ success: false, error: 'load_failed' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
 
-      console.log(`[rix-analyze-v2] Batch complete. Processed: ${results.length}, Skipped: ${skipped.length}, Errors: ${errors.length}, Remaining: ${remaining}`);
+      const t0 = Date.now();
+      let processedOk = false;
+      let analysisResult: any = null;
+      let analysisError: string | null = null;
+      try {
+        analysisResult = await analyzeRecord(supabase, fullRecord);
+        processedOk = true;
+      } catch (e: any) {
+        analysisError = e?.message ?? String(e);
+        console.error(`[rix-analyze-v2] analyzeRecord error for ${recordId}:`, analysisError);
+      }
+
+      // Always release our lock (success path: analyzeRecord may already have cleared it;
+      // failure path: must drop it so next worker can retry).
+      try {
+        const { data: cur } = await supabase
+          .from('rix_runs_v2')
+          .select('17_flags, analysis_completed_at')
+          .eq('id', recordId)
+          .maybeSingle();
+        const flags = Array.isArray((cur as any)?.['17_flags']) ? (cur as any)['17_flags'] : [];
+        const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock && f?.worker === workerId));
+        if (cleaned.length !== flags.length) {
+          await supabase.from('rix_runs_v2').update({ '17_flags': cleaned }).eq('id', recordId);
+        }
+      } catch (e) {
+        console.warn('[rix-analyze-v2] lock-release exception:', (e as Error).message);
+      }
+
+      const elapsed = Date.now() - t0;
+      console.log(`[rix-analyze-v2] Batch complete. Processed: ${processedOk ? 1 : 0}, Errors: ${processedOk ? 0 : 1}, elapsed=${elapsed}ms ticker=${ticker} model=${modelName}`);
 
       return new Response(
         JSON.stringify({
           success: true,
-          mode: 'reprocess_pending',
-          processed: results.length,
-          skipped: skipped.length,
-          errors: errors.length,
-          remaining: remaining || 0,
-          results,
-          skipped_details: skipped.length > 0 ? skipped : undefined,
-          error_details: errors.length > 0 ? errors : undefined,
+          mode: 'per_record',
+          processed: processedOk ? 1 : 0,
+          errors: processedOk ? 0 : 1,
+          worker: workerId,
+          record: { id: recordId, ticker, model: modelName },
+          elapsed_ms: elapsed,
+          result: analysisResult,
+          error: analysisError,
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 

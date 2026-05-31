@@ -905,7 +905,7 @@ async function processCronTriggers(
     .select('*')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
-    .limit(15);
+    .limit(30);
 
   if (error || !triggerPool || triggerPool.length === 0) {
     return results;
@@ -941,7 +941,7 @@ async function processCronTriggers(
     const pb = PRIORITY[b.action] ?? 999;
     if (pa !== pb) return pa - pb;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  }).slice(0, 5);
+  }).slice(0, 12);
 
   console.log(`[cron_triggers] Found ${triggerPool.length} pending triggers; processing ${triggers.length} (prioritized, parallel)`);
 
@@ -2531,40 +2531,37 @@ const {
         
           // TRIGGER 2: Hay registros analizables → repair_analysis (puede correr EN PARALELO)
         if (analyzableCount && analyzableCount > 0) {
-          // BLINDAJE DEFINITIVO W23 (2026-05-31):
-          // - 1 trigger = 1 ticker (los 6 modelos se procesan intra-invocación
-          //   en paralelo por rix-analyze-v2 con fan-out por modelo).
-          // - batch_size=1 (un ticker por invocación; cabe en IDLE_TIMEOUT 150s).
-          // - HARD CAP: si ya hay >= 3 triggers pending/processing, NO crear
-          //   ninguno nuevo. El orchestrator procesa hasta 5 en paralelo, así
-          //   que basta con mantener 3-5 vivos para saturar la cola sin tormenta.
-          const { count: liveCount, error: countErr } = await supabase
-            .from('cron_triggers')
-            .select('id', { count: 'exact', head: true })
-            .eq('action', 'repair_analysis')
-            .in('status', ['pending', 'processing']);
-          if (countErr) {
-            console.warn(`[${triggerMode}] repair_analysis cap check failed:`, countErr.message);
+          // ARQUITECTURA PER-RECORD (2026-05-31):
+          // - 1 trigger = 1 registro (1 modelo de 1 ticker).
+          // - El cap se mide por LOCKS FRESCOS REALES en rix_runs_v2 (no por triggers,
+          //   porque los triggers se marcan completed en cuanto se despachan).
+          // - Objetivo: mantener hasta MAX_IN_FLIGHT análisis vivos en paralelo.
+          const MAX_IN_FLIGHT = 12;
+          const { data: liveLocksData, error: liveErr } = await supabase.rpc(
+            'count_fresh_rix_analysis_locks',
+            { p_ttl_seconds: 180 },
+          );
+          if (liveErr) {
+            console.warn(`[${triggerMode}] live-lock count failed:`, liveErr.message);
           }
-          const liveTriggers = liveCount ?? 0;
-          if (liveTriggers >= 3) {
-            console.log(`[${triggerMode}] repair_analysis CAP: ${liveTriggers} triggers ya activos (>=3) → no se crean más`);
+          const liveInFlight = typeof liveLocksData === 'number' ? liveLocksData : 0;
+          const headroom = Math.max(0, MAX_IN_FLIGHT - liveInFlight);
+          if (headroom === 0) {
+            console.log(`[${triggerMode}] repair_analysis CAP (locks): ${liveInFlight} vivos >= ${MAX_IN_FLIGHT} → no se crean`);
           } else {
-            const toCreate = Math.min(5 - liveTriggers, 5);
+            // No saturar la cola; crear como mucho 'headroom' triggers.
+            const toCreate = Math.min(headroom, analyzableCount);
             const toInsert = Array.from({ length: toCreate }, () => ({
               action: 'repair_analysis' as const,
-              // batch_size=1 → 1 ticker por invocación (6 modelos en paralelo intra-ticker).
-              // Sin only_models/exclude_models: el worker elige al azar un ticker
-              // con modelos pendientes del pool (diversifica entre invocaciones).
-              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 1 },
+              params: { sweep_id: sweepId, count: analyzableCount, per_record: true },
               status: 'pending' as const,
             }));
             const { error: insertError } = await supabase.from('cron_triggers').insert(toInsert);
             if (insertError) {
               console.error(`[${triggerMode}] Failed inserting repair_analysis triggers:`, insertError);
             } else {
-              for (let i = 0; i < toInsert.length; i++) triggersInserted.push('repair_analysis_ticker');
-              console.log(`[${triggerMode}] Inserted ${toInsert.length} per-ticker repair_analysis triggers (live=${liveTriggers}) for ${analyzableCount} analyzable records`);
+              for (let i = 0; i < toInsert.length; i++) triggersInserted.push('repair_analysis_per_record');
+              console.log(`[${triggerMode}] Inserted ${toInsert.length} per-record repair_analysis triggers (live_locks=${liveInFlight}, max=${MAX_IN_FLIGHT}) for ${analyzableCount} analyzable records`);
             }
           }
         }

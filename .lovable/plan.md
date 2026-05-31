@@ -1,117 +1,61 @@
-## Diagnóstico actualizado
+Tienes razón. La hipótesis anterior fue demasiado optimista.
 
-El sistema sí avanza, pero muy por debajo de la promesa de 30 minutos.
+Diagnóstico real observado ahora:
 
-Datos vivos observados:
+- W23 sigue con 322 registros pendientes y 84 tickers incompletos.
+- El ritmo reciente es mejor que antes, pero no suficiente: 81 registros completados en 30 minutos.
+- `rix-analyze-v2` sigue devolviendo 504 cuando una invocación tarda más de 150s.
+- Hay `shutdown` masivos en Edge Runtime.
+- El “fire-and-forget” no elimina el límite real de plataforma: el worker sigue muriendo si excede 150s.
+- El sistema creó 25 triggers `repair_analysis` en pocos minutos, aunque ya no quedan activos. Eso demuestra que el cap sobre `pending/processing` no representa trabajo real en curso, porque los triggers se marcan `completed` inmediatamente.
+- El batch size lógico dice 1 ticker, pero los logs muestran `Processed: 2`, `3`, `4`. Esto ocurre porque el worker procesa modelos del mismo ticker en paralelo y varios modelos terminan antes del timeout, pero otros quedan colgados o mueren.
+- Hay locks en `17_flags` de invocaciones antiguas. El desbloqueo actual de 30 minutos es demasiado largo para una plataforma que corta a 150s.
 
-- W23: 688 completados, 361 pendientes.
-- Últimos 30 min: 63 completados. Ritmo insuficiente.
-- `cron_triggers`: 3 `pending` + 2 `processing` activos.
-- Logs: varias invocaciones del orchestrator procesan los mismos IDs de trigger.
-- Logs de `rix-analyze-v2`: `Processed: 0, Skipped: 3-5`, es decir, colisiones de locks.
-- Analytics: `rix-batch-orchestrator` también cae en 504 a 150s porque espera síncronamente a `rix-analyze-v2`.
+Conclusión profesional:
 
-Conclusión: el blindaje anti-tormenta existe, pero la arquitectura sigue mal para cerrar W23 rápido.
+El problema principal ya no es solo la tormenta de triggers. Es que se está intentando procesar hasta 6 análisis por invocación dentro de una Edge Function con límite efectivo de 150s. Como varios modelos tardan 120-150s, una invocación por ticker completo no es fiable.
 
-## Causa raíz
+Plan correctivo:
 
-Hay tres fallos operativos juntos:
+1. Cambiar la unidad de trabajo real
+   - Dejar de procesar 1 ticker completo por invocación.
+   - Procesar 1 único registro modelo-ticker por invocación.
+   - Esto reduce el trabajo máximo por invocación a una sola llamada GPT-5 de análisis.
+   - Si un modelo tarda demasiado, solo se pierde ese registro, no todo el ticker.
 
-1. **Claim de triggers no atómico**
-   - El orchestrator selecciona triggers `pending`.
-   - Luego los marca `processing` sin condición `status='pending'`.
-   - Varias instancias pueden reclamar y ejecutar el mismo trigger.
+2. Hacer la reserva realmente atómica a nivel registro
+   - Crear una función SQL `claim_next_rix_analysis_record` con `FOR UPDATE SKIP LOCKED`.
+   - La función seleccionará exactamente 1 registro pendiente de W23 con respuesta cruda disponible y sin score.
+   - Marcará el lock en `17_flags` dentro de la misma transacción.
+   - Esto elimina carreras entre workers y evita que varios workers lean el mismo pool.
 
-2. **Selección de ticker no reservada antes del fan-out**
-   - `rix-analyze-v2` elige ticker al azar desde un pool.
-   - No reserva el ticker entero de forma atómica.
-   - Varias invocaciones eligen el mismo ticker y hacen `SKIP locked`.
+3. Ajustar `rix-analyze-v2`
+   - En modo `reprocess_pending`, llamar a `claim_next_rix_analysis_record`.
+   - Procesar solo ese registro.
+   - Eliminar el fan-out intra-ticker de 6 modelos.
+   - Reducir lock stale a 3 minutos, coherente con el timeout real.
+   - Al terminar, limpiar el `analysis_lock` del registro procesado.
 
-3. **El orchestrator espera al worker**
-   - Aunque el worker tarde 90-150s, el orchestrator queda abierto.
-   - Si procesa varios triggers, el propio orchestrator llega al 504.
-   - Eso deja triggers en estados ambiguos.
+4. Ajustar `rix-batch-orchestrator`
+   - Mantener concurrencia, pero cada trigger representa 1 registro, no 1 ticker.
+   - Subir concurrencia controlada a 10-15 workers, porque cada worker solo procesa una llamada.
+   - Sustituir el cap actual por cap de locks activos recientes en `rix_runs_v2`, no por triggers `pending/processing`.
+   - No crear más triggers si hay, por ejemplo, 15 locks frescos.
+   - Crear solo los triggers necesarios para llenar ese cupo.
 
-## Plan de implementación
+5. Parar la cola antes del cambio
+   - Purgar `repair_analysis` pendientes/procesando.
+   - Liberar locks de `17_flags` anteriores a 3 minutos en W23.
+   - No tocar UI.
 
-### 1. Parar la cola fantasma antes del cambio
+6. Validación posterior
+   - Confirmar que ya no hay `Processed: 2/3/4` en `rix-analyze-v2`; debe ser `Processed: 1` o timeout de 1 registro.
+   - Confirmar que no hay ráfagas de 25 triggers en pocos minutos.
+   - Confirmar que los 504, si existen, afectan solo a 1 registro.
+   - Medir registros completados por 10 minutos y proyectar ETA con datos reales, no con supuestos.
 
-Aplicar migración operativa:
+Resultado esperado realista:
 
-- Marcar como `failed` todos los `repair_analysis` en `pending` o `processing`.
-- Mensaje: `manual-purge-fire-and-forget-fix`.
-- Liberar locks de análisis de W23 con más de 3 minutos, si existen.
-
-### 2. Cambiar `rix-batch-orchestrator` a fire-and-forget real
-
-Para `repair_analysis`:
-
-- Reclamar triggers de forma atómica:
-  - `UPDATE ... WHERE id=? AND status='pending'`.
-  - Si no devuelve fila, la instancia lo ignora.
-- Invocar `rix-analyze-v2` sin esperar el resultado completo.
-- Marcar el trigger como `completed/dispatched` inmediatamente después de enviar la petición.
-- No re-encolar el mismo trigger según `remaining`.
-- El watchdog se encargará de crear nuevos triggers si hacen falta.
-
-Resultado: el orchestrator deja de consumir 150s y no deja triggers colgados por esperar al análisis.
-
-### 3. Cambiar `rix-analyze-v2` a claim atómico por ticker
-
-Sustituir la selección aleatoria débil por reserva real:
-
-- Elegir hasta 20 tickers candidatos con registros pendientes.
-- Intentar reservar un ticker completo actualizando sus filas sin `analysis_lock` fresco.
-- Añadir un `worker_id` común para ese ticker.
-- Releer solo las filas que este worker ha reservado.
-- Procesar solo esas filas.
-- Si no reserva nada, devolver rápido con `skipped` y sin bloquear.
-
-Esto evita que cinco invocaciones trabajen sobre LLYC o ART2 a la vez.
-
-### 4. Ajustar el modelo de triggers
-
-Mantener:
-
-- `batch_size=1`.
-- Máximo 5 triggers vivos.
-- Cap anti-tormenta si hay 3 o más vivos.
-
-Cambiar:
-
-- Los triggers dejan de ser “trabajos largos”.
-- Pasan a ser “señales de despacho”.
-- Si una señal ya fue despachada, no se reutiliza.
-
-### 5. Sembrar 5 triggers limpios después del deploy
-
-Tras desplegar ambos cambios juntos:
-
-- Insertar 5 `repair_analysis` limpios con `batch_size=1`.
-- Lanzar una invocación del orchestrator.
-- El watchdog continuará rellenando hasta 5 mientras haya pendientes.
-
-### 6. Validación post-deploy
-
-Comprobar en DB/logs:
-
-- `cron_triggers` no acumula `processing` antiguos.
-- No aparecen los mismos trigger IDs procesados varias veces.
-- `rix-analyze-v2` muestra 5 tickers distintos por ventana.
-- Desaparecen los `Processed: 0, Skipped: 5` repetidos.
-- `function_edge_logs` del orchestrator pasa de 504 a 200 rápido.
-- W23 sube a una velocidad cercana a 5 tickers por 90-150s.
-
-## Resultado esperado
-
-Con 361 registros pendientes, si cada ticker arrastra varios modelos, el cierre debería acelerarse mucho.
-
-La garantía real ya no depende de reintentos ni de azar. Depende de reservas atómicas y dispatch corto.
-
-## Archivos afectados
-
-- `supabase/functions/rix-batch-orchestrator/index.ts`
-- `supabase/functions/rix-analyze-v2/index.ts`
-- Una migración SQL operativa para purga y liberación de locks.
-
-No se tocará UI.
+- No voy a prometer 30 minutos.
+- Con 322 pendientes y tiempos de 100-150s por registro, incluso con 10-15 workers el límite real dependerá de concurrencia efectiva del Edge Runtime y del proveedor AI.
+- El objetivo inmediato es estabilizar throughput, eliminar trabajo fantasma y que cada timeout pierda como máximo 1 registro.
