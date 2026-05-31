@@ -2560,7 +2560,11 @@ const {
           // registro por invocación → cabe holgado en IDLE_TIMEOUT 150s incluso
           // para Qwen (~195s no cabría con batch=2 pero sí con batch=1). Total:
           // hasta 6 invocaciones en paralelo por ciclo de CRON.
-          const ALL_MODELS = ['ChatGPT', 'Perplexity', 'Gemini', 'DeepSeek', 'Grok', 'Qwen'] as const;
+          // CANONICAL names: must match exactly rix_runs_v2."02_model_name"
+          // ('Google Gemini' not 'Gemini'; 'Deepseek' not 'DeepSeek').
+          // rix-analyze-v2 filtra con .in('02_model_name', only_models) → naming
+          // incorrecto = 0 pending matches = trigger drena en 1s sin trabajar.
+          const ALL_MODELS = ['ChatGPT', 'Perplexity', 'Google Gemini', 'Deepseek', 'Grok', 'Qwen'] as const;
           const { data: pendingNow } = await supabase
             .from('cron_triggers')
             .select('id, params')
