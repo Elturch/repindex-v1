@@ -249,10 +249,10 @@ ${qualitativeContext}
     // =========================================================================
     // PASO 3: Generar noticias con Gemini 3 Pro via Google AI Studio
     // =========================================================================
-    console.log('Generating premium news with gemini-3-pro-preview via Google AI Studio...');
+    console.log('Generating premium news with gemini-2.5-pro via Google AI Studio...');
     
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -446,7 +446,7 @@ ${qualitativeContext}
       news: newsData,
       storiesCount: (newsData.stories?.length || 0) + 1,
       briefNewsCount: newsData.briefNews?.length || 0,
-      model: 'gemini-3-pro-preview'
+      model: 'gemini-2.5-pro'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

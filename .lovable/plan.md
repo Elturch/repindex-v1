@@ -1,57 +1,46 @@
-## Auditoría — Crear informe (post barridos recientes)
+## Auditoría barrido 2026-W23 (hoy, 31-may-2026)
 
-Reviso `RixReports.tsx`, `filterState.ts`, `coherenceEngine.ts`, `compileQuestion.ts` y `FilterPanel.tsx`. Confirmo en BD que el último barrido canónico es **2026-05-24** (175 tickers × 6 modelos × 10 semanas, sin huecos). El backend está sano, los fallos están en el front del compilador.
+### Estado real
 
-### Anomalías detectadas
+- **Captura (raw responses):** OK. 1049 filas en `rix_runs_v2` para 175 emisores × 6 modelos. `sweep_progress` = 175 completed / 0 failed / 0 pending.
+- **Análisis (RIX scoring):** **BLOQUEADO**. 573 de 1049 filas con `09_rix_score = NULL`. Distribución de NULLs por modelo:
+  - ChatGPT 116, Grok 109, Gemini 102, Deepseek 99, Perplexity 83, Qwen 64.
+- **Cobertura Perplexity:** 174/175 (falta `FCC-PRIV` — FCC). Probablemente fallo puntual de la API; reanalizable.
+- **Newsroom auto:** 3/3 intentos fallidos con `Gemini API error 404: model "gemini-3-pro-preview" is no longer available`.
 
-**A1 — Ventana inicial desfasada (causa principal de "informe vacío / fechas raras").**
-`createInitialFilterState()` arranca con `to = todayISO()` (hoy = 2026-05-30). El `useEffect` solo re-ancla si `origin === "free"` y aún no se ha tocado. Si el usuario pulsa cualquier preset (7d/30d/90d/YTD) **antes** de que `useLatestBatchDate` resuelva, el preset usa `todayISO()` como ancla y queda fijado en `2026-05-30` con `origin: "user-set"`, sin re-ancla automática posterior. El informe acaba con narrativa "entre 2026-05-02 y 2026-05-30" cuando no hay datos después de 2026-05-24.
+### Diagnóstico
 
-**A2 — Inconsistencia de longitud `last_month` (28 vs 29 días).**
-`defaultWindow()` → `subDaysISO(today, 28)`. `reanchorWindow('last_month')` → `subDaysISO(anchor, 29)`. El botón "Actualizar al último barrido" siempre aparece aunque el preset esté correctamente anclado, porque la ventana inicial y la re-anclada nunca coinciden bit a bit.
+**P1 — `rix-analyze-v2` no avanza.** El loop de `cron_triggers` (`repair_analysis`) procesa 1–2 filas por invocación y se cae con `HTTP 504 IDLE_TIMEOUT (150 s)` (visible en logs `rix-batch-orchestrator`). Cada llamada toma ~75–150 s en gpt-5 por respuesta de 6–17 KB → no le da tiempo a 2 filas por trigger. A este ritmo, 573 filas tardarán >24 h y compiten con el CRON dominical que arranca pronto.
 
-**A3 — R15 promete ajuste y solo emite warning.**
-`coherenceEngine.ts` línea 290: si `window.from < "2026-01-01"` muestra "se ajustará automáticamente", pero no muta el estado. La query final incluye fechas pre-2026 y el agente puede inventar datos en ese hueco (viola la doctrina temporal y `data-availability-floor`).
+**P2 — Newsroom roto por modelo retirado.** `supabase/functions/generate-news-story/index.ts` referencia `gemini-3-pro-preview` (líneas 252, 255, 449) que Google ya descatalogó. Fallo determinista, no transitorio.
 
-**A4 — Nombres de modelo mal mapeados en la pregunta compilada.**
-`compileQuestion.ts` línea 109 emite `"usando solo ChatGPT, Gemini, DeepSeek"` con labels de UI. La BD guarda `"Google Gemini"` y `"Deepseek"`. Ya existe `toDbModelNames()` en `filterState.ts` pero no se usa aquí — el agente puede no resolver el thesaurus y dejar fuera modelos.
+**P3 — FCC-PRIV sin respuesta Perplexity.** 1 hueco aislado, no bloquea reporting pero contamina rankings que filtren por Perplexity.
 
-**A5 — `topN`/`order` se cuelan en "visión general" si el usuario los tocó.**
-`compileQuestion` añade "limitado a las X mejores" cuando `userTouched`, incluso en `vision_general`. La narrativa queda contradictoria ("informe ejecutivo … limitado a las 10 mejores"). El `hiddenForIntent('vision_general')` no los oculta, así que el usuario los toca sin querer al venir desde otro intent.
+### Plan de acción
 
-**A6 — Subsectores y sectores se imprimen sin etiquetar y con `", "`.**
-`"del sector A, B"` o `"del subsector X, Y"` con dos o más entradas confunde al parser. Faltan separadores tipo `"y"` y un wrapping defensivo cuando el nombre contiene comas.
+1. **Acelerar `rix-analyze-v2`** para drenar las 573 filas antes del barrido dominical:
+   - Subir el tamaño de lote por trigger de 1–2 a 4–6 registros (mantener concurrencia interna baja para no saturar gpt-5).
+   - Subir el timeout efectivo del loop: cuando `remaining > 0` y la invocación lleva <120 s, hacer un segundo paso antes de re-encolar, en lugar de re-encolar tras una sola fila.
+   - Verificación: tras 10 min, `SELECT COUNT(*) FILTER (WHERE 09_rix_score IS NULL)` debe caer de forma monótona.
 
-### Cambios propuestos (todo front, sin tocar agente ni BD)
+2. **Arreglar newsroom (P2).** Sustituir `gemini-3-pro-preview` por `gemini-2.5-pro` (vigente) en las 3 referencias de `generate-news-story/index.ts`. Re-disparar `auto_generate_newsroom` manualmente y verificar 200 OK.
 
-1. **`src/lib/reports/filterState.ts`**
-   - Unificar `defaultWindow()` para que `last_month` reste 29 días (alineado con `reanchorWindow`). Aplica también a la ventana inicial.
-   - Añadir constante `DATA_FLOOR = "2026-01-01"` y exportarla.
+3. **Reparar FCC-PRIV Perplexity (P3).** Encolar un `repair_search` puntual para `ticker=FCC-PRIV, model=Perplexity, sweep=2026-W23`. Si vuelve a fallar, marcarlo como hueco aceptado (semana pasada también tuvo 1 hueco).
 
-2. **`src/pages/RixReports.tsx`**
-   - El `useEffect` de re-ancla debe re-anclar también cuando `origin === "user-set"` siempre que el `preset` no sea `"custom"` y `to !== lastBatchDate`. Garantiza que cualquier preset siga al último barrido al cargar.
+4. **Verificación final** antes del barrido dominical:
+   - 0 filas con `09_rix_score IS NULL` para `batch_execution_date='2026-05-31'`.
+   - 6 modelos × 175 emisores = 1050 filas (o 1049 si FCC-PRIV/Perplexity queda excluido).
+   - Newsroom de la semana generado y `cron_triggers` sin `failed` recientes.
 
-3. **`src/lib/reports/coherenceEngine.ts` (R15 real)**
-   - Si `window.value.from < DATA_FLOOR`, **mutar** el estado a `from = DATA_FLOOR` (manteniendo `origin`), no solo avisar. Mantener el warning informativo.
+### Detalles técnicos
 
-4. **`src/lib/reports/compileQuestion.ts`**
-   - Importar `toDbModelNames` y usarlo al emitir "usando solo …".
-   - Suprimir la cláusula `topN/order` cuando `intent === "vision_general"` aunque haya `userTouched` (gana el intent).
-   - Para sectores/subsectores múltiples: unir con `", "` salvo el último con `" y "`. Si solo hay 1, sin coma.
-   - Si `granularity === "snapshot"`, añadir `"como foto fija del último barrido"` para que el agente no asuma desglose semanal por defecto.
+- No tocar la lógica del orchestrator (`rix-batch-orchestrator`) ni el `sundayResolver`: la captura va bien.
+- No tocar `rix_runs_v2` directamente; todo via edge functions / triggers.
+- `gemini-2.5-pro` ya se usa en otros pipelines del proyecto (ingestion), no se necesita nuevo secret.
+- El IDLE_TIMEOUT de 150 s es límite de plataforma; la solución es procesar más por invocación, no pedir más tiempo.
 
-5. **`src/components/reports/FilterPanel.tsx`**
-   - El botón "Actualizar al último barrido" solo debe aparecer si la diferencia entre `to` y `lastBatchDate` es real (más de 0 días). Ajuste cosmético dependiente del fix A2.
+### Fuera de alcance
 
-### Fuera de alcance (no se toca)
-
-- Backend RIX, agente V2, esquema BD, edge functions de barrido. El watchdog muestra `175 completed, 0 failed` para 2026-W22; el próximo barrido encontrará el sistema limpio.
-- No se modifica el contrato persistido de informes ya guardados (`reportMemory`). Los informes antiguos rehidratan filtros tal cual y el usuario puede pulsar "Actualizar al último barrido" para re-anclar.
-
-### Verificación tras implementar
-
-- Cargar `/informes` con red lenta simulada y pulsar `30d` antes de que llegue `lastBatchDate`: la ventana debe acabar en `2026-05-24` automáticamente.
-- Elegir 2 modelos (Gemini + DeepSeek): la pregunta compilada debe decir `"Google Gemini, Deepseek"`.
-- Fijar fecha manual `2025-12-15`: la query final debe arrancar en `2026-01-01`.
-- Visión general con `topN` tocado: no debe aparecer "limitado a las X mejores".
-- Ranking 2 sectores: "del sector A y B" (no "A, B").
+- Cambios en frontend "Crear informe" (ya parcheados en el turno anterior).
+- Refactor del sistema de `cron_triggers` (sólo ajuste de batch size).
+- Cambios de modelo en `rix-analyze-v2` (gpt-5 sigue).
