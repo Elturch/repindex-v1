@@ -1,46 +1,55 @@
-## Auditoría barrido 2026-W23 (hoy, 31-may-2026)
+## Diagnóstico — por qué el barrido va 5× más lento que hace 7 días
 
-### Estado real
+### Datos comparados (rix_runs_v2)
 
-- **Captura (raw responses):** OK. 1049 filas en `rix_runs_v2` para 175 emisores × 6 modelos. `sweep_progress` = 175 completed / 0 failed / 0 pending.
-- **Análisis (RIX scoring):** **BLOQUEADO**. 573 de 1049 filas con `09_rix_score = NULL`. Distribución de NULLs por modelo:
-  - ChatGPT 116, Grok 109, Gemini 102, Deepseek 99, Perplexity 83, Qwen 64.
-- **Cobertura Perplexity:** 174/175 (falta `FCC-PRIV` — FCC). Probablemente fallo puntual de la API; reanalizable.
-- **Newsroom auto:** 3/3 intentos fallidos con `Gemini API error 404: model "gemini-3-pro-preview" is no longer available`.
+| Fecha | Filas | Duración | Throughput | Avg seg/fila (end-to-end) |
+|---|---|---|---|---|
+| 2026-05-31 (hoy) | 1049 (539 NULL) | 6h 47m (sigue corriendo) | ~75 filas/h | ChatGPT 5014s · Qwen 6441s · Grok 4438s |
+| 2026-05-24 | 1050 | 2h 41m | 391 filas/h | ChatGPT 188s · Qwen 462s · Grok 118s |
+| 2026-05-17 | 1050 | 3h 09m | 333 filas/h | ChatGPT 377s · Qwen 126s · Grok 181s |
+| 2026-05-10 | 1050 | 2h 38m | 399 filas/h | — |
 
-### Diagnóstico
+El tamaño de las respuestas brutas por modelo es **idéntico** entre semanas (ChatGPT ~6.2KB, Gemini ~19KB, Perplexity ~37-48KB, etc.). No es un problema de payload.
 
-**P1 — `rix-analyze-v2` no avanza.** El loop de `cron_triggers` (`repair_analysis`) procesa 1–2 filas por invocación y se cae con `HTTP 504 IDLE_TIMEOUT (150 s)` (visible en logs `rix-batch-orchestrator`). Cada llamada toma ~75–150 s en gpt-5 por respuesta de 6–17 KB → no le da tiempo a 2 filas por trigger. A este ritmo, 573 filas tardarán >24 h y compiten con el CRON dominical que arranca pronto.
+### Causa raíz — 3 factores combinados
 
-**P2 — Newsroom roto por modelo retirado.** `supabase/functions/generate-news-story/index.ts` referencia `gemini-3-pro-preview` (líneas 252, 255, 449) que Google ya descatalogó. Fallo determinista, no transitorio.
+**1. `batch_size:1` hardcoded en los triggers `repair_analysis` (causa principal).**
+Inspección de `cron_triggers` activos hoy:
+```
+params: { batch_size:1, only_models:[ChatGPT], sweep_id:2026-W23 }
+params: { batch_size:1, only_models:[Gemini],  sweep_id:2026-W23 }
+…
+```
+Cada invocación de `rix-analyze-v2` procesa **1 fila** (~130-160s en gpt-5) y se re-encola. Con 6 triggers paralelos × 1 fila / 150s → techo teórico **144 filas/h** (coincide con los 75 observados, descontando ghost triggers y cierres).
 
-**P3 — FCC-PRIV sin respuesta Perplexity.** 1 hueco aislado, no bloquea reporting pero contamina rankings que filtren por Perplexity.
+La semana pasada los triggers no tenían `only_models` per-modelo + `batch_size:1`. Procesaban en bloque, así que un solo invoke drenaba 5-10 filas antes del IDLE_TIMEOUT.
 
-### Plan de acción
+**2. Triggers per-modelo (6) en vez de un pool único.**
+Patch reciente del orchestrator dividió `ALL_MODELS` en 6 triggers separados (uno por modelo) para evitar starvation. Efecto colateral: paralelismo limitado a 6 y filas atascadas si un modelo es lento. Hasta la corrección de esta mañana, 2 de ellos (`Gemini`/`DeepSeek`) ni siquiera matcheaban nombre canónico en DB y devolvían "0 pending" → 2 triggers desperdiciados durante horas.
 
-1. **Acelerar `rix-analyze-v2`** para drenar las 573 filas antes del barrido dominical:
-   - Subir el tamaño de lote por trigger de 1–2 a 4–6 registros (mantener concurrencia interna baja para no saturar gpt-5).
-   - Subir el timeout efectivo del loop: cuando `remaining > 0` y la invocación lleva <120 s, hacer un segundo paso antes de re-encolar, en lugar de re-encolar tras una sola fila.
-   - Verificación: tras 10 min, `SELECT COUNT(*) FILTER (WHERE 09_rix_score IS NULL)` debe caer de forma monótona.
+**3. `fetch-momentum-tips` añadido dentro de `rix-analyze-v2` (nuevo).**
+Líneas 546-588 de `rix-analyze-v2/index.ts`: por cada fila analizada se hace una llamada HTTP server-to-server a `fetch-momentum-tips`, que a su vez llama a Perplexity (~4-5s observados en logs). Multiplicado por 1050 filas = **~70-90 min adicionales** sobre el coste base. No existía en barridos anteriores.
 
-2. **Arreglar newsroom (P2).** Sustituir `gemini-3-pro-preview` por `gemini-2.5-pro` (vigente) en las 3 referencias de `generate-news-story/index.ts`. Re-disparar `auto_generate_newsroom` manualmente y verificar 200 OK.
+### Plan de acción (orden recomendado)
 
-3. **Reparar FCC-PRIV Perplexity (P3).** Encolar un `repair_search` puntual para `ticker=FCC-PRIV, model=Perplexity, sweep=2026-W23`. Si vuelve a fallar, marcarlo como hueco aceptado (semana pasada también tuvo 1 hueco).
+1. **Subir `batch_size` por trigger de 1 → 4** en `rix-batch-orchestrator`. El default de la propia función ya es 2 (`tParams.batch_size || 2`); el problema está en quien encola con `batch_size:1`. Buscar el sitio donde se crean los triggers per-modelo y eliminar el override, o forzar mínimo 4. Verificación: tras 10 min, NULLs deben bajar ≥40 (vs ~10 actual).
 
-4. **Verificación final** antes del barrido dominical:
+2. **Hacer `fetch-momentum-tips` no-bloqueante** (fire-and-forget con escritura asíncrona del campo `49_reputacion_vs_precio`) o moverlo a un trigger post-análisis aparte. Recorta ~5s por fila × 1050 = ~90 min.
+
+3. **Reducir granularidad de triggers per-modelo** a 2-3 pools (rápidos vs lentos: ChatGPT+Grok+Perplexity / Gemini+Deepseek+Qwen) en vez de 6. Mantiene anti-starvation pero recupera paralelismo de batch.
+
+4. **Validación final** (igual que el plan previo):
    - 0 filas con `09_rix_score IS NULL` para `batch_execution_date='2026-05-31'`.
-   - 6 modelos × 175 emisores = 1050 filas (o 1049 si FCC-PRIV/Perplexity queda excluido).
-   - Newsroom de la semana generado y `cron_triggers` sin `failed` recientes.
-
-### Detalles técnicos
-
-- No tocar la lógica del orchestrator (`rix-batch-orchestrator`) ni el `sundayResolver`: la captura va bien.
-- No tocar `rix_runs_v2` directamente; todo via edge functions / triggers.
-- `gemini-2.5-pro` ya se usa en otros pipelines del proyecto (ingestion), no se necesita nuevo secret.
-- El IDLE_TIMEOUT de 150 s es límite de plataforma; la solución es procesar más por invocación, no pedir más tiempo.
+   - Duración total comparable a 2026-05-24 (~3h).
+   - Ningún `repair_analysis` con `batch_size:1` en `cron_triggers` futuros.
 
 ### Fuera de alcance
 
-- Cambios en frontend "Crear informe" (ya parcheados en el turno anterior).
-- Refactor del sistema de `cron_triggers` (sólo ajuste de batch size).
-- Cambios de modelo en `rix-analyze-v2` (gpt-5 sigue).
+- Cambiar el modelo `gpt-5` por uno más rápido (riesgo de calidad, fuera de tu doctrina actual).
+- Tocar la captura (orchestrator de búsqueda funciona bien: 175/175 completed).
+- Refactor del sistema de cron_triggers.
+
+### Notas técnicas
+
+- `signal: AbortSignal.timeout(300_000)` en orchestrator permite hasta 5 min por invocación → cabe sobradamente un `batch_size:4` (4 × 150s = 600s NO, pero la propia plataforma corta a 150s IDLE_TIMEOUT igualmente; el resto se re-encola y no se pierde trabajo).
+- Mejor combinación: `batch_size:3` + paralelismo interno (Promise.all dentro de `rix-analyze-v2` no existe hoy — análisis serial). Si quieres más, hay que paralelizar también dentro del worker (fuera de este plan).
