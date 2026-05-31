@@ -2566,8 +2566,29 @@ const {
             .select('id, params')
             .eq('action', 'repair_analysis')
             .in('status', ['pending', 'processing']);
+          // UPGRADE STEP: cancelar triggers en formato antiguo (sin only_models de
+          // 1 modelo, o con exclude_models). Esto desbloquea la inserción de
+          // triggers por-modelo en este mismo ciclo. La invocación en curso (si
+          // estaba processing) seguirá hasta terminar; al volver, encontrará el
+          // estado 'completed' y no re-encolará.
+          const obsoleteIds: string[] = [];
+          for (const t of (pendingNow ?? [])) {
+            const p = (t.params as any) ?? {};
+            const om = (p.only_models ?? []) as string[];
+            const em = (p.exclude_models ?? []) as string[];
+            const isPerModel = om.length === 1 && em.length === 0;
+            if (!isPerModel) obsoleteIds.push(t.id as string);
+          }
+          if (obsoleteIds.length > 0) {
+            await supabase
+              .from('cron_triggers')
+              .update({ status: 'completed', processed_at: new Date().toISOString(), result: { obsoleted_by: 'per_model_upgrade' } })
+              .in('id', obsoleteIds);
+            console.log(`[${triggerMode}] Obsoleted ${obsoleteIds.length} legacy-format repair_analysis triggers (replaced by per-model)`);
+          }
           const covered = new Set<string>();
           for (const t of (pendingNow ?? [])) {
+            if (obsoleteIds.includes(t.id as string)) continue;
             const p = (t.params as any) ?? {};
             const om = (p.only_models ?? []) as string[];
             const em = (p.exclude_models ?? []) as string[];
