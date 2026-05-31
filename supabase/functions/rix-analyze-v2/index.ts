@@ -849,6 +849,24 @@ serve(async (req) => {
         recordsByTicker.get(t)!.push(r);
       }
 
+      // HOTFIX W23: con BATCH_SIZE=1 ticker, escogemos UN ticker al azar del
+      // pool para que invocaciones concurrentes elijan tickers distintos y
+      // no choquen todas en el primer record de la cola. Prioriza tickers
+      // con más modelos pendientes (procesa más trabajo por invocación).
+      const tickerEntries = Array.from(recordsByTicker.entries());
+      // Orden: primero más modelos pendientes; ante empate, aleatorio.
+      tickerEntries.sort((a, b) => {
+        const diff = b[1].length - a[1].length;
+        if (diff !== 0) return diff;
+        return Math.random() - 0.5;
+      });
+      // Coge top-N (donde N = max(5, batch_size)) y elige uno al azar para
+      // diversificar entre invocaciones concurrentes.
+      const topN = tickerEntries.slice(0, Math.max(5, batch_size));
+      const chosen = topN[Math.floor(Math.random() * topN.length)];
+      const chosenMap = new Map<string, any[]>();
+      if (chosen) chosenMap.set(chosen[0], chosen[1]);
+
       const processOne = async (record: any) => {
         const recordId = record.id;
         const ticker = record['05_ticker'];
