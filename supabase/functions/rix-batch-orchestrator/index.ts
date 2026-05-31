@@ -1541,7 +1541,7 @@ async function processCronTriggers(
 
           results.push({ id: trigger.id, action: trigger.action, success: true, result: { processed: 0, remaining: 0, results: [] } });
           console.log(`[cron_triggers] repair_search trigger ${trigger.id} completed: nothing to repair`);
-          continue;
+          return;
         }
         
         // Take batch and process
