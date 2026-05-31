@@ -721,10 +721,11 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, record_id, batch_size: requested_batch_size = 10, only_models, exclude_models } = body;
-    // HOTFIX 504: cap batch_size at 15 to avoid Edge Function timeout (~530 pending records can't fit in one invocation)
-    // The orchestrator re-queues automatically until all records are processed.
-    const MAX_BATCH_SIZE = 15;
+    const { action, record_id, batch_size: requested_batch_size = 1, only_models, exclude_models } = body;
+    // HOTFIX W23: BATCH_SIZE=1 por invocación.
+    // Un timeout 504 pierde solo 1 ticker (no 15). La concurrencia real se logra
+    // lanzando varias invocaciones desde el orchestrator (Promise.allSettled).
+    const MAX_BATCH_SIZE = 1;
     const batch_size = Math.min(requested_batch_size, MAX_BATCH_SIZE);
     
     // Initialize Supabase
@@ -734,7 +735,7 @@ serve(async (req) => {
 
     // === MODE 1: Reprocess pending records (surgical repair) ===
     if (action === 'reprocess_pending') {
-      // HOTFIX: in REPROCESS mode, always drain MAX_BATCH_SIZE records and ignore only_models.
+      // HOTFIX W23: 1 ticker por invocación; los 6 modelos siguen en paralelo intra-ticker.
       const reprocessBatchSize = MAX_BATCH_SIZE;
       console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${reprocessBatchSize} pending records (ignoring only_models=${JSON.stringify(only_models)}) exclude_models=${JSON.stringify(exclude_models)}`);
 
@@ -783,6 +784,11 @@ serve(async (req) => {
       console.log(`[rix-analyze-v2] Active period detected: ${activePeriod}`);
       
       // Find records with search completed but analysis pending - FILTERED BY ACTIVE WEEK
+      // HOTFIX W23: trae un POOL amplio de candidatos (no solo 1) para que
+      // varias invocaciones concurrentes del orchestrator escojan tickers
+      // DISTINTOS. Si todas pidieran LIMIT 1, todas elegirían el mismo
+      // record y solo 1 trabajaría (las otras 4 harían skip por lock).
+      const CANDIDATE_POOL_SIZE = 40;
       let pendingQuery = supabase
         .from('rix_runs_v2')
         .select('*')
@@ -790,7 +796,7 @@ serve(async (req) => {
         .not('search_completed_at', 'is', null)
         .eq('06_period_from', activePeriod) // Only process current week's records
         .order('created_at', { ascending: true })
-        .limit(reprocessBatchSize);
+        .limit(CANDIDATE_POOL_SIZE);
 
       // REPROCESS must drain the oldest pending records across all models; ignore only_models here.
       if (Array.isArray(exclude_models) && exclude_models.length > 0) {
@@ -828,7 +834,7 @@ serve(async (req) => {
       const errors: any[] = [];
       const skipped: any[] = [];
       const analysisStartTime = new Date().toISOString();
-      const LOCK_TIMEOUT_MS = 120000; // 2 minutes - if a record is locked longer, it's stale
+      const LOCK_TIMEOUT_MS = 200000; // 200s - mayor que el 504 de la plataforma (150s), evita robos prematuros de lock.
 
       // === PARALLEL-BY-TICKER ===
       // Group records by ticker so the 6 AI models for the same company are
@@ -842,6 +848,24 @@ serve(async (req) => {
         if (!recordsByTicker.has(t)) recordsByTicker.set(t, []);
         recordsByTicker.get(t)!.push(r);
       }
+
+      // HOTFIX W23: con BATCH_SIZE=1 ticker, escogemos UN ticker al azar del
+      // pool para que invocaciones concurrentes elijan tickers distintos y
+      // no choquen todas en el primer record de la cola. Prioriza tickers
+      // con más modelos pendientes (procesa más trabajo por invocación).
+      const tickerEntries = Array.from(recordsByTicker.entries());
+      // Orden: primero más modelos pendientes; ante empate, aleatorio.
+      tickerEntries.sort((a, b) => {
+        const diff = b[1].length - a[1].length;
+        if (diff !== 0) return diff;
+        return Math.random() - 0.5;
+      });
+      // Coge top-N (donde N = max(5, batch_size)) y elige uno al azar para
+      // diversificar entre invocaciones concurrentes.
+      const topN = tickerEntries.slice(0, Math.max(5, batch_size));
+      const chosen = topN[Math.floor(Math.random() * topN.length)];
+      const chosenMap = new Map<string, any[]>();
+      if (chosen) chosenMap.set(chosen[0], chosen[1]);
 
       const processOne = async (record: any) => {
         const recordId = record.id;
@@ -916,7 +940,8 @@ serve(async (req) => {
       };
 
       // Process tickers sequentially; for each ticker fan out the 6 model rows in parallel.
-      for (const [ticker, group] of recordsByTicker.entries()) {
+      // HOTFIX W23: usar chosenMap (1 ticker elegido al azar del pool) en lugar del map completo.
+      for (const [ticker, group] of chosenMap.entries()) {
         console.log(
           `[rix-analyze-v2] Fan-out ticker=${ticker} models=${group.length} (parallel)`,
         );

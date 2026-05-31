@@ -943,9 +943,13 @@ async function processCronTriggers(
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   }).slice(0, 5);
 
-  console.log(`[cron_triggers] Found ${triggerPool.length} pending triggers; processing ${triggers.length} (prioritized)`);
+  console.log(`[cron_triggers] Found ${triggerPool.length} pending triggers; processing ${triggers.length} (prioritized, parallel)`);
 
-  for (const trigger of triggers as CronTrigger[]) {
+  // HOTFIX W23: procesar los triggers seleccionados EN PARALELO (Promise.allSettled).
+  // Concurrencia tope = 5 (ya viene del slice anterior). Cada invocación a
+  // rix-analyze-v2 procesa 1 ticker, por lo que 5 invocaciones simultáneas =
+  // 5 tickers en paralelo (30 análisis en vuelo con 6 modelos cada uno).
+  await Promise.allSettled((triggers as CronTrigger[]).map(async (trigger) => {
     // Marcar como processing
     await supabase
       .from('cron_triggers')
@@ -1537,7 +1541,7 @@ async function processCronTriggers(
 
           results.push({ id: trigger.id, action: trigger.action, success: true, result: { processed: 0, remaining: 0, results: [] } });
           console.log(`[cron_triggers] repair_search trigger ${trigger.id} completed: nothing to repair`);
-          continue;
+          return;
         }
         
         // Take batch and process
@@ -1958,7 +1962,7 @@ async function processCronTriggers(
         results.push({ id: trigger.id, action: trigger.action, success: false, error: errorMsg });
       }
     }
-  }
+  }));
 
   return results;
 }
