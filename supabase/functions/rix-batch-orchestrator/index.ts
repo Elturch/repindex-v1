@@ -1962,7 +1962,7 @@ async function processCronTriggers(
         results.push({ id: trigger.id, action: trigger.action, success: false, error: errorMsg });
       }
     }
-  }
+  }));
 
   return results;
 }
