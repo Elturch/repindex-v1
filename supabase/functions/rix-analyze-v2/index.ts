@@ -829,7 +829,7 @@ serve(async (req) => {
       const errors: any[] = [];
       const skipped: any[] = [];
       const analysisStartTime = new Date().toISOString();
-      const LOCK_TIMEOUT_MS = 120000; // 2 minutes - if a record is locked longer, it's stale
+      const LOCK_TIMEOUT_MS = 200000; // 200s - mayor que el 504 de la plataforma (150s), evita robos prematuros de lock.
 
       // === PARALLEL-BY-TICKER ===
       // Group records by ticker so the 6 AI models for the same company are
