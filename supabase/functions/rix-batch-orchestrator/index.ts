@@ -950,18 +950,31 @@ async function processCronTriggers(
   // rix-analyze-v2 procesa 1 ticker, por lo que 5 invocaciones simultáneas =
   // 5 tickers en paralelo (30 análisis en vuelo con 6 modelos cada uno).
   await Promise.allSettled((triggers as CronTrigger[]).map(async (trigger) => {
-    // Marcar como processing
-    await supabase
+    // ATOMIC CLAIM: solo procesa quien gane el UPDATE de pending→processing.
+    // Esto impide que varias instancias del orchestrator ejecuten el mismo trigger.
+    const { data: claimed, error: claimErr } = await supabase
       .from('cron_triggers')
       .update({ status: 'processing' })
-      .eq('id', trigger.id);
+      .eq('id', trigger.id)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (claimErr || !claimed) {
+      console.log(`[cron_triggers] Trigger ${trigger.id} already claimed by another instance, skipping`);
+      return;
+    }
 
     try {
       if (trigger.action === 'repair_analysis') {
-        console.log(`[cron_triggers] Processing repair_analysis trigger ${trigger.id}`);
+        console.log(`[cron_triggers] Dispatching repair_analysis trigger ${trigger.id} (fire-and-forget)`);
         const tParams = (trigger.params as any) || {};
-        // Llamada server-to-server a rix-analyze-v2 (sin extensiones bloqueando)
-        const response = await fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
+
+        // FIRE-AND-FORGET: lanzamos la invocación a rix-analyze-v2 sin esperar
+        // a que termine. Así el orchestrator nunca llega al 504 de 150s y los
+        // triggers no quedan colgados en "processing". El worker hace su trabajo
+        // de forma asíncrona y libera sus locks al terminar. El watchdog repuebla
+        // la cola si hace falta más trabajo.
+        const dispatchPromise = fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -969,74 +982,34 @@ async function processCronTriggers(
           },
           body: JSON.stringify({
             action: 'reprocess_pending',
-            batch_size: tParams.batch_size || 2,
-            // P1: propagar filtros de modelo al worker
+            batch_size: tParams.batch_size || 1,
             only_models: tParams.only_models,
             exclude_models: tParams.exclude_models,
           }),
-          // Evita dejar el trigger en "processing" por timeout de la plataforma
-          // (si el análisis GPT-5 se alarga demasiado).
-          signal: AbortSignal.timeout(600_000),
+        }).catch((e) => {
+          console.warn(`[cron_triggers] dispatch error (ignored, fire-and-forget): ${(e as Error).message}`);
         });
-
-        const responseText = await response.text();
-        let data: { remaining?: number; processed?: number; errors?: number; skipped?: number } = {};
-        try {
-          data = JSON.parse(responseText);
-        } catch {
-          data = { remaining: 0 };
+        // No await: dejamos correr en background sin bloquear el orchestrator.
+        // EdgeRuntime.waitUntil mantiene viva la promesa hasta que termine.
+        // @ts-ignore — EdgeRuntime existe en runtime Supabase
+        if (typeof EdgeRuntime !== 'undefined' && (EdgeRuntime as any).waitUntil) {
+          // @ts-ignore
+          (EdgeRuntime as any).waitUntil(dispatchPromise);
         }
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${responseText}`);
-        }
+        // Marcar inmediatamente como completed (despachado). El trigger es una
+        // SEÑAL DE DESPACHO, no un trabajo largo. El watchdog repuebla la cola.
+        await supabase
+          .from('cron_triggers')
+          .update({
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: { dispatched: true, fire_and_forget: true, ts: new Date().toISOString() },
+          })
+          .eq('id', trigger.id);
 
-        // ═══════════════════════════════════════════════════════════════════
-        // CRITICAL FIX: AUTO-REQUEUE si quedan registros por procesar
-        // Esto hace que repair_analysis se comporte igual que repair_search
-        // ═══════════════════════════════════════════════════════════════════
-        const remaining = data.remaining ?? 0;
-        
-        if (remaining > 0) {
-          // Todavía quedan registros por analizar → volver a pending para el siguiente ciclo
-          console.log(`[cron_triggers] repair_analysis: ${data.processed || 0} processed, ${remaining} remaining → re-queueing`);
-          
-          await supabase
-            .from('cron_triggers')
-            .update({ 
-              status: 'pending',  // <-- CLAVE: vuelve a pending
-              processed_at: null,
-              result: {
-                last_batch: {
-                  processed: data.processed || 0,
-                  errors: data.errors || 0,
-                  skipped: data.skipped || 0,
-                  timestamp: new Date().toISOString(),
-                },
-                remaining,
-                remaining_estimate: remaining,
-              }
-            })
-            .eq('id', trigger.id);
-          
-          results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, requeued: true } });
-        } else {
-          // No quedan registros → marcar como completado
-          console.log(`[cron_triggers] repair_analysis: all done! (${data.processed || 0} processed, 0 remaining)`);
-          
-          await supabase
-            .from('cron_triggers')
-            .update({ 
-              status: 'completed',
-              processed_at: new Date().toISOString(),
-              result: data as Record<string, unknown>
-            })
-            .eq('id', trigger.id);
-
-          results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
-        }
-        
-        console.log(`[cron_triggers] Trigger ${trigger.id} handled (remaining: ${remaining})`);
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: { dispatched: true } });
+        console.log(`[cron_triggers] Trigger ${trigger.id} dispatched (fire-and-forget)`);
 
       } else if (trigger.action === 'auto_populate_vectors') {
         // ============================================================
