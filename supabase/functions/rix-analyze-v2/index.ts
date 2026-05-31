@@ -834,7 +834,7 @@ serve(async (req) => {
       const errors: any[] = [];
       const skipped: any[] = [];
       const analysisStartTime = new Date().toISOString();
-      const LOCK_TIMEOUT_MS = 200000; // 200s - mayor que el 504 de la plataforma (150s), evita robos prematuros de lock.
+      const LOCK_TIMEOUT_MS = 300000; // 300s (5 min) - mayor que el 504 de la plataforma (150s) + buffer; evita robos prematuros de lock para análisis lentos (GPT-5/Qwen).
 
       // === PARALLEL-BY-TICKER ===
       // Group records by ticker so the 6 AI models for the same company are
