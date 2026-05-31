@@ -784,6 +784,11 @@ serve(async (req) => {
       console.log(`[rix-analyze-v2] Active period detected: ${activePeriod}`);
       
       // Find records with search completed but analysis pending - FILTERED BY ACTIVE WEEK
+      // HOTFIX W23: trae un POOL amplio de candidatos (no solo 1) para que
+      // varias invocaciones concurrentes del orchestrator escojan tickers
+      // DISTINTOS. Si todas pidieran LIMIT 1, todas elegirían el mismo
+      // record y solo 1 trabajaría (las otras 4 harían skip por lock).
+      const CANDIDATE_POOL_SIZE = 40;
       let pendingQuery = supabase
         .from('rix_runs_v2')
         .select('*')
@@ -791,7 +796,7 @@ serve(async (req) => {
         .not('search_completed_at', 'is', null)
         .eq('06_period_from', activePeriod) // Only process current week's records
         .order('created_at', { ascending: true })
-        .limit(reprocessBatchSize);
+        .limit(CANDIDATE_POOL_SIZE);
 
       // REPROCESS must drain the oldest pending records across all models; ignore only_models here.
       if (Array.isArray(exclude_models) && exclude_models.length > 0) {
