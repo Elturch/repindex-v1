@@ -940,7 +940,8 @@ serve(async (req) => {
       };
 
       // Process tickers sequentially; for each ticker fan out the 6 model rows in parallel.
-      for (const [ticker, group] of recordsByTicker.entries()) {
+      // HOTFIX W23: usar chosenMap (1 ticker elegido al azar del pool) en lugar del map completo.
+      for (const [ticker, group] of chosenMap.entries()) {
         console.log(
           `[rix-analyze-v2] Fan-out ticker=${ticker} models=${group.length} (parallel)`,
         );
