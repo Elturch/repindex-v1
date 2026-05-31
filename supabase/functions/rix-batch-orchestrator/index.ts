@@ -2568,8 +2568,15 @@ const {
             .in('status', ['pending', 'processing']);
           const covered = new Set<string>();
           for (const t of (pendingNow ?? [])) {
-            const om = ((t.params as any)?.only_models ?? []) as string[];
-            for (const m of om) covered.add(m);
+            const p = (t.params as any) ?? {};
+            const om = (p.only_models ?? []) as string[];
+            const em = (p.exclude_models ?? []) as string[];
+            if (om.length > 0) {
+              for (const m of om) covered.add(m);
+            } else {
+              // Trigger sin only_models cubre todos los modelos salvo los excluidos
+              for (const m of ALL_MODELS) if (!em.includes(m)) covered.add(m);
+            }
           }
           const toInsert = ALL_MODELS
             .filter((m) => !covered.has(m))
