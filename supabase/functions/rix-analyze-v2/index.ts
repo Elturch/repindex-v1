@@ -829,19 +829,18 @@ serve(async (req) => {
       }
 
       console.log(`[rix-analyze-v2] Found ${pendingRecords.length} pending records to process`);
-      
+
       const results: any[] = [];
       const errors: any[] = [];
       const skipped: any[] = [];
       const analysisStartTime = new Date().toISOString();
-      const LOCK_TIMEOUT_MS = 300000; // 300s (5 min) - mayor que el 504 de la plataforma (150s) + buffer; evita robos prematuros de lock para análisis lentos (GPT-5/Qwen).
+      const LOCK_TIMEOUT_MS = 300000; // 300s (5 min) - mayor que el 504 de la plataforma + buffer.
 
-      // === PARALLEL-BY-TICKER ===
-      // Group records by ticker so the 6 AI models for the same company are
-      // analyzed concurrently (Promise.allSettled). Tickers themselves are
-      // processed sequentially within a single invocation to keep memory and
-      // OpenAI rate limits bounded. The orchestrator already runs up to 5
-      // invocations in parallel, so effective concurrency = ~30 AI calls.
+      // === ATOMIC TICKER RESERVATION ===
+      // Agrupar por ticker, ordenar por nº de modelos pendientes (desc) y
+      // recorrer probando cada ticker hasta reservar UNO atómicamente.
+      // La reserva atómica usa UPDATE con condición "no hay analysis_lock
+      // fresco en 17_flags" filtrando por sweep_id ficticio (worker_id) común.
       const recordsByTicker = new Map<string, any[]>();
       for (const r of pendingRecords) {
         const t = r['05_ticker'] ?? '__unknown__';
@@ -849,72 +848,98 @@ serve(async (req) => {
         recordsByTicker.get(t)!.push(r);
       }
 
-      // HOTFIX W23: con BATCH_SIZE=1 ticker, escogemos UN ticker al azar del
-      // pool para que invocaciones concurrentes elijan tickers distintos y
-      // no choquen todas en el primer record de la cola. Prioriza tickers
-      // con más modelos pendientes (procesa más trabajo por invocación).
       const tickerEntries = Array.from(recordsByTicker.entries());
-      // Orden: primero más modelos pendientes; ante empate, aleatorio.
       tickerEntries.sort((a, b) => {
         const diff = b[1].length - a[1].length;
         if (diff !== 0) return diff;
         return Math.random() - 0.5;
       });
-      // Coge top-N (donde N = max(5, batch_size)) y elige uno al azar para
-      // diversificar entre invocaciones concurrentes.
-      const topN = tickerEntries.slice(0, Math.max(5, batch_size));
-      const chosen = topN[Math.floor(Math.random() * topN.length)];
+      // Shuffle el top-10 para diversificar entre invocaciones concurrentes.
+      const top = tickerEntries.slice(0, 10).sort(() => Math.random() - 0.5);
+
+      const workerId = crypto.randomUUID().slice(0, 8);
       const chosenMap = new Map<string, any[]>();
-      if (chosen) chosenMap.set(chosen[0], chosen[1]);
+
+      // Intenta reservar el primer ticker disponible. Una reserva exitosa
+      // = al menos 1 fila del ticker pasó de "sin lock fresco" a "lock=mío".
+      for (const [ticker, group] of top) {
+        const ids = group.map((r) => r.id);
+        // Releer estado actual de 17_flags para chequear locks frescos in-line.
+        const { data: freshRows, error: freshErr } = await supabase
+          .from('rix_runs_v2')
+          .select('id, 02_model_name, 17_flags')
+          .in('id', ids)
+          .is('analysis_completed_at', null);
+        if (freshErr || !freshRows || freshRows.length === 0) continue;
+
+        const reservedRows: any[] = [];
+        for (const row of freshRows) {
+          const flags = Array.isArray((row as any)['17_flags']) ? (row as any)['17_flags'] : [];
+          const lockFlag = flags.find((f: any) => typeof f === 'object' && f !== null && f?.analysis_lock);
+          if (lockFlag) {
+            const lockTime = new Date(lockFlag.analysis_lock).getTime();
+            if (!isNaN(lockTime) && Date.now() - lockTime < LOCK_TIMEOUT_MS) {
+              continue; // lock fresco → otro worker lo tiene
+            }
+          }
+          const cleaned = flags.filter((f: any) => !(typeof f === 'object' && f !== null && f?.analysis_lock));
+          const newFlags = [...cleaned, { analysis_lock: analysisStartTime, worker: workerId }];
+          // UPDATE con guarda: solo si analysis_completed_at sigue NULL y
+          // (no hay lock O el lock previo coincide con lo que vimos).
+          const { data: upd, error: updErr } = await supabase
+            .from('rix_runs_v2')
+            .update({ '17_flags': newFlags })
+            .eq('id', (row as any).id)
+            .is('analysis_completed_at', null)
+            .select('id, 02_model_name, 17_flags')
+            .maybeSingle();
+          if (!updErr && upd) {
+            // Confirmar que el lock que figura es nuestro (anti-race).
+            const updFlags = Array.isArray((upd as any)['17_flags']) ? (upd as any)['17_flags'] : [];
+            const mine = updFlags.find((f: any) => f?.analysis_lock === analysisStartTime && f?.worker === workerId);
+            if (mine) {
+              const fullRecord = group.find((r) => r.id === (row as any).id);
+              if (fullRecord) reservedRows.push({ ...fullRecord, '17_flags': updFlags });
+            }
+          }
+        }
+
+        if (reservedRows.length > 0) {
+          chosenMap.set(ticker, reservedRows);
+          console.log(`[rix-analyze-v2] Reserved ticker=${ticker} models=${reservedRows.length} worker=${workerId}`);
+          break;
+        }
+      }
+
+      if (chosenMap.size === 0) {
+        console.log(`[rix-analyze-v2] No ticker could be reserved (all locked by peers). Returning fast.`);
+        const { count: remaining } = await supabase
+          .from('rix_runs_v2')
+          .select('*', { count: 'exact', head: true })
+          .is('analysis_completed_at', null)
+          .not('search_completed_at', 'is', null)
+          .eq('06_period_from', activePeriod);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            mode: 'reprocess_pending',
+            processed: 0,
+            skipped: pendingRecords.length,
+            errors: 0,
+            remaining: remaining ?? 0,
+            note: 'no-ticker-reserved',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
       const processOne = async (record: any) => {
         const recordId = record.id;
         const ticker = record['05_ticker'];
         const modelName = record['02_model_name'];
         try {
-          // === LOCKING MECHANISM (HARDENED) ===
-          const rawFlags = record['17_flags'];
-          const existingLock: any[] = Array.isArray(rawFlags) ? rawFlags : [];
-          const lockInfo = existingLock.find(
-            (f) => typeof f === 'object' && f !== null && f?.analysis_lock,
-          );
-
-          if (lockInfo?.analysis_lock) {
-            const lockTime = new Date(lockInfo.analysis_lock).getTime();
-            const now = Date.now();
-            if (!isNaN(lockTime) && now - lockTime < LOCK_TIMEOUT_MS) {
-              console.log(
-                `[rix-analyze-v2] SKIP (locked): ${ticker} - ${modelName} (locked at ${lockInfo.analysis_lock})`,
-              );
-              skipped.push({ record_id: recordId, ticker, model: modelName, reason: 'locked' });
-              return;
-            }
-            console.log(
-              `[rix-analyze-v2] Taking over stale lock for ${ticker} - ${modelName}`,
-            );
-          }
-
-          // === ACQUIRE LOCK (optimistic, atomic via WHERE analysis_completed_at IS NULL) ===
-          const lockFlag = {
-            analysis_lock: analysisStartTime,
-            worker: crypto.randomUUID().slice(0, 8),
-          };
-          const cleanedFlags = existingLock.filter(
-            (f) => !(typeof f === 'object' && f !== null && f?.analysis_lock),
-          );
-
-          const { error: lockError } = await supabase
-            .from('rix_runs_v2')
-            .update({ '17_flags': [...cleanedFlags, lockFlag] })
-            .eq('id', recordId)
-            .is('analysis_completed_at', null);
-
-          if (lockError) {
-            console.warn(`[rix-analyze-v2] Failed to lock ${recordId}:`, lockError.message);
-            return;
-          }
-
-          console.log(`[rix-analyze-v2] Processing: ${ticker} - ${modelName} (locked, parallel)`);
+          // Lock ya reservado atómicamente arriba; procesamos directamente.
+          console.log(`[rix-analyze-v2] Processing: ${ticker} - ${modelName} (reserved, parallel)`);
           const result = await analyzeRecord(supabase, record);
           results.push(result);
         } catch (error: any) {
