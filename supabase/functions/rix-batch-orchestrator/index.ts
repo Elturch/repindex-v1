@@ -2554,40 +2554,40 @@ const {
         
           // TRIGGER 2: Hay registros analizables → repair_analysis (puede correr EN PARALELO)
         if (analyzableCount && analyzableCount > 0) {
-          const { data: existingTrigger } = await supabase
+          // PARALELIZACIÓN POR MODELO (2026-05-31):
+          // En lugar de 2 triggers serializados (no-Qwen batch=2 + Qwen batch=1),
+          // mantenemos 1 trigger por modelo siempre vivo. Cada uno procesa 1
+          // registro por invocación → cabe holgado en IDLE_TIMEOUT 150s incluso
+          // para Qwen (~195s no cabría con batch=2 pero sí con batch=1). Total:
+          // hasta 6 invocaciones en paralelo por ciclo de CRON.
+          const ALL_MODELS = ['ChatGPT', 'Perplexity', 'Gemini', 'DeepSeek', 'Grok', 'Qwen'] as const;
+          const { data: pendingNow } = await supabase
             .from('cron_triggers')
-            .select('id, status')
+            .select('id, params')
             .eq('action', 'repair_analysis')
-            .in('status', ['pending', 'processing'])
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          
-          if (!existingTrigger) {
-            // P1: aislamos Qwen (~195s) en su propio trigger con batch_size=1
-            // para que su única llamada quede dentro del IDLE_TIMEOUT 150s del
-            // runtime Edge Supabase (no configurable). Los otros 5 modelos
-            // siguen en batch_size=2 (≤120s).
-            const { error: insertError } = await supabase.from('cron_triggers').insert([
-              {
-                action: 'repair_analysis',
-                params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2, exclude_models: ['Qwen'] },
-                status: 'pending',
-              },
-              {
-                action: 'repair_analysis',
-                params: { sweep_id: sweepId, count: analyzableCount, batch_size: 1, only_models: ['Qwen'] },
-                status: 'pending',
-              },
-            ]);
-            if (insertError) {
-              console.error(`[${triggerMode}] Failed inserting repair_analysis trigger:`, insertError);
-            } else {
-              triggersInserted.push('repair_analysis_no_qwen', 'repair_analysis_qwen_only');
-              console.log(`[${triggerMode}] Inserted 2 repair_analysis triggers (Qwen aislado) for ${analyzableCount} analyzable records`);
-            }
+            .in('status', ['pending', 'processing']);
+          const covered = new Set<string>();
+          for (const t of (pendingNow ?? [])) {
+            const om = ((t.params as any)?.only_models ?? []) as string[];
+            for (const m of om) covered.add(m);
+          }
+          const toInsert = ALL_MODELS
+            .filter((m) => !covered.has(m))
+            .map((m) => ({
+              action: 'repair_analysis',
+              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 1, only_models: [m] },
+              status: 'pending' as const,
+            }));
+          if (toInsert.length === 0) {
+            console.log(`[${triggerMode}] repair_analysis: all 6 model triggers already pending/processing`);
           } else {
-            console.log(`[${triggerMode}] repair_analysis trigger already pending (id: ${existingTrigger.id})`);
+            const { error: insertError } = await supabase.from('cron_triggers').insert(toInsert);
+            if (insertError) {
+              console.error(`[${triggerMode}] Failed inserting repair_analysis triggers:`, insertError);
+            } else {
+              for (const t of toInsert) triggersInserted.push(`repair_analysis_${(t.params as any).only_models[0]}`);
+              console.log(`[${triggerMode}] Inserted ${toInsert.length} per-model repair_analysis triggers (covered=${Array.from(covered).join(',') || 'none'}) for ${analyzableCount} analyzable records`);
+            }
           }
         }
         
