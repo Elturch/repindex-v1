@@ -4309,6 +4309,17 @@ export type Database = {
           sql_generado: string
         }[]
       }
+      claim_next_rix_analysis_record: {
+        Args: { p_lock_ttl_seconds?: number; p_worker_id: string }
+        Returns: {
+          batch_execution_date: string
+          id: string
+          model_name: string
+          period_from: string
+          period_to: string
+          ticker: string
+        }[]
+      }
       claim_next_sweep_company: {
         Args: { p_sweep_id: string; p_worker_id: number }
         Returns: {
@@ -4316,6 +4327,10 @@ export type Database = {
           issuer_name: string
           ticker: string
         }[]
+      }
+      count_fresh_rix_analysis_locks: {
+        Args: { p_ttl_seconds?: number }
+        Returns: number
       }
       execute_sql: { Args: { sql_query: string }; Returns: Json }
       expand_entity_graph: {
