@@ -1,84 +1,117 @@
+## Diagnóstico actualizado
 
-# Plan v2: cerrar W23 rápido + blindar W24 (con concurrencia real)
+El sistema sí avanza, pero muy por debajo de la promesa de 30 minutos.
 
-## Corrección aplicada
+Datos vivos observados:
 
-`batch_size=1` **secuencial** = 447 × 130 s ≈ 16 h. Inaceptable.
-`batch_size=1` **+ 5 invocaciones concurrentes del orchestrator** = 447 / 5 / 60 ≈ **~20 min reales** para vaciar la cola. Aceptable.
+- W23: 688 completados, 361 pendientes.
+- Últimos 30 min: 63 completados. Ritmo insuficiente.
+- `cron_triggers`: 3 `pending` + 2 `processing` activos.
+- Logs: varias invocaciones del orchestrator procesan los mismos IDs de trigger.
+- Logs de `rix-analyze-v2`: `Processed: 0, Skipped: 3-5`, es decir, colisiones de locks.
+- Analytics: `rix-batch-orchestrator` también cae en 504 a 150s porque espera síncronamente a `rix-analyze-v2`.
 
-La clave: una invocación = un ticker = 6 modelos en paralelo internamente. Cinco invocaciones a la vez = **30 análisis en vuelo**, con riesgo de timeout acotado a 1 ticker si una invocación cae a los 150 s.
+Conclusión: el blindaje anti-tormenta existe, pero la arquitectura sigue mal para cerrar W23 rápido.
 
----
+## Causa raíz
 
-## Parte A — Desbloqueo inmediato de W23
+Hay tres fallos operativos juntos:
 
-Ejecutar en este orden, sin saltar pasos:
+1. **Claim de triggers no atómico**
+   - El orchestrator selecciona triggers `pending`.
+   - Luego los marca `processing` sin condición `status='pending'`.
+   - Varias instancias pueden reclamar y ejecutar el mismo trigger.
 
-1. **Pausar el watchdog** (cron que invoca `rix-batch-orchestrator?trigger=watchdog`) durante la maniobra para que no inyecte triggers nuevos.
-2. **Purgar la cola**: en `cron_triggers`, marcar como `failed` (con `error_message='manual_purge_w23'`) los 5 `pending` + 1 `processing` de `repair_analysis`. Dejar la cola en cero.
-3. **Liberar locks zombi** en `rix_runs_v2`:
-   - Filtro: `sweep_id='2026-W23'` AND `analysis_completed_at IS NULL` AND `(17_flags->>'analysis_locked_at')::timestamptz < now() - interval '3 minutes'`.
-   - Acción: borrar las claves `analysis_lock` y `analysis_locked_at` de `17_flags`.
-4. **Parche puntual `rix-analyze-v2`**:
-   - `BATCH_SIZE = 1` (1 ticker por invocación; los 6 modelos siguen en paralelo intra-ticker).
-   - `LOCK_TIMEOUT_MS = 200_000` (mayor que 150 s del 504, holgura razonable).
-   - Selección del ticker prioriza el que tenga más modelos pendientes.
-5. **Parche `rix-batch-orchestrator`** (rama `repair_analysis`):
-   - Procesar los triggers `pending` con `Promise.allSettled` y concurrencia **5** (no `for...of await`).
-   - Cap absoluto: 5 invocaciones simultáneas, sin importar cuántos triggers haya.
-6. **Sembrar 5 triggers `repair_analysis` iniciales** y desencadenar 1 invocación del orchestrator → arranca el procesamiento concurrente.
-7. **Re-activar el watchdog** con la lógica corregida (ver B3-B4 abajo).
-8. **Monitoreo 20 min**: cola debería bajar 447 → <50 sin 504 en cadena. Si OK, W23 cerrado.
+2. **Selección de ticker no reservada antes del fan-out**
+   - `rix-analyze-v2` elige ticker al azar desde un pool.
+   - No reserva el ticker entero de forma atómica.
+   - Varias invocaciones eligen el mismo ticker y hacen `SKIP locked`.
 
----
+3. **El orchestrator espera al worker**
+   - Aunque el worker tarde 90-150s, el orchestrator queda abierto.
+   - Si procesa varios triggers, el propio orchestrator llega al 504.
+   - Eso deja triggers en estados ambiguos.
 
-## Parte B — Cambios permanentes para W24+
+## Plan de implementación
 
-### B1. `rix-analyze-v2`
-- `BATCH_SIZE = 1` por defecto (un timeout solo cuesta 1 ticker, no 15).
-- `LOCK_TIMEOUT_MS = 200_000`.
-- Selección "ticker con más pendientes primero".
-- Release-on-error ya existente, sin cambios.
+### 1. Parar la cola fantasma antes del cambio
 
-### B2. `rix-batch-orchestrator` — concurrencia real
-- Rama `repair_analysis`: `Promise.allSettled` con **concurrencia 5** (semáforo simple o `Promise.all` sobre slices de 5).
-- Importante: cada invocación dispara un único ticker, así que 5 invocaciones = 5 tickers distintos en paralelo, sin colisión de locks.
+Aplicar migración operativa:
 
-### B3. Deduplicación de triggers (anti-tormenta)
-- Antes de crear un nuevo `repair_analysis`, el watchdog verifica: si ya hay ≥3 `pending` o `processing` del mismo `action` para el sweep activo → **no crea más**.
-- Antes de procesar, deduplicar por `(sweep_id, action)` y marcar como `failed` los excedentes.
+- Marcar como `failed` todos los `repair_analysis` en `pending` o `processing`.
+- Mensaje: `manual-purge-fire-and-forget-fix`.
+- Liberar locks de análisis de W23 con más de 3 minutos, si existen.
 
-### B4. Watchdog menos agresivo
-- Frecuencia: cada **3 min** en lugar de cada 1 min (suficiente con concurrencia 5).
-- No re-emitir triggers mientras la cola tenga ≥3 pendientes vivos.
+### 2. Cambiar `rix-batch-orchestrator` a fire-and-forget real
 
-### B5. Observabilidad mínima
-- En `sweep_progress`: contador `triggers_repair_count` y `last_504_at`.
-- Banner en `/admin` si `triggers_repair_count > 10` en sweep activo → señal de tormenta.
+Para `repair_analysis`:
 
----
+- Reclamar triggers de forma atómica:
+  - `UPDATE ... WHERE id=? AND status='pending'`.
+  - Si no devuelve fila, la instancia lo ignora.
+- Invocar `rix-analyze-v2` sin esperar el resultado completo.
+- Marcar el trigger como `completed/dispatched` inmediatamente después de enviar la petición.
+- No re-encolar el mismo trigger según `remaining`.
+- El watchdog se encargará de crear nuevos triggers si hacen falta.
 
-## Aritmética esperada
+Resultado: el orchestrator deja de consumir 150s y no deja triggers colgados por esperar al análisis.
 
-- **W23 actual**: 447 pendientes, 7 881 s/registro promedio (cola atascada).
-- **Tras Parte A**: 5 invocaciones × 1 ticker × ~130 s = ~26 s/registro efectivo (5 en paralelo) → **~20-25 min** para vaciar.
-- **W24 estable**: ~175 tickers, 6 modelos cada uno = ~175 invocaciones × 130 s / 5 concurrencia = **~75 min** total de análisis, sin tormentas.
+### 3. Cambiar `rix-analyze-v2` a claim atómico por ticker
 
----
+Sustituir la selección aleatoria débil por reserva real:
 
-## Detalles técnicos
+- Elegir hasta 20 tickers candidatos con registros pendientes.
+- Intentar reservar un ticker completo actualizando sus filas sin `analysis_lock` fresco.
+- Añadir un `worker_id` común para ese ticker.
+- Releer solo las filas que este worker ha reservado.
+- Procesar solo esas filas.
+- Si no reserva nada, devolver rápido con `skipped` y sin bloquear.
 
-- **Archivos a tocar**: `supabase/functions/rix-analyze-v2/index.ts`, `supabase/functions/rix-batch-orchestrator/index.ts`. Sin migraciones de schema obligatorias (B5 opcional).
-- **Sin tocar**: prompts, modelos, métricas, scoring, vector store, chat.
-- **Rollback**: cada constante es un cambio de 1 línea; revertir en <5 min.
-- **Validación post-W24**: cero 504 en cadena, mediana espera <150 s, `triggers_repair_count` <5.
+Esto evita que cinco invocaciones trabajen sobre LLYC o ART2 a la vez.
 
----
+### 4. Ajustar el modelo de triggers
 
-## Riesgos y mitigación
+Mantener:
 
-- **Rate limit OpenAI**: 30 llamadas concurrentes (5 invocaciones × 6 modelos). GPT-5 tier 4+ admite >5 000 RPM. Margen 100×.
-- **Edge function concurrency limit Supabase**: 5 invocaciones del mismo function es seguro (límite plataforma >20).
-- **Race en selección de ticker**: el `UPDATE ... WHERE analysis_completed_at IS NULL` ya es atómico optimista; si dos invocaciones eligen el mismo ticker, la segunda hace SKIP limpio y termina rápido, sin gasto de IA.
+- `batch_size=1`.
+- Máximo 5 triggers vivos.
+- Cap anti-tormenta si hay 3 o más vivos.
 
-¿Apruebas y paso a build con Parte A?
+Cambiar:
+
+- Los triggers dejan de ser “trabajos largos”.
+- Pasan a ser “señales de despacho”.
+- Si una señal ya fue despachada, no se reutiliza.
+
+### 5. Sembrar 5 triggers limpios después del deploy
+
+Tras desplegar ambos cambios juntos:
+
+- Insertar 5 `repair_analysis` limpios con `batch_size=1`.
+- Lanzar una invocación del orchestrator.
+- El watchdog continuará rellenando hasta 5 mientras haya pendientes.
+
+### 6. Validación post-deploy
+
+Comprobar en DB/logs:
+
+- `cron_triggers` no acumula `processing` antiguos.
+- No aparecen los mismos trigger IDs procesados varias veces.
+- `rix-analyze-v2` muestra 5 tickers distintos por ventana.
+- Desaparecen los `Processed: 0, Skipped: 5` repetidos.
+- `function_edge_logs` del orchestrator pasa de 504 a 200 rápido.
+- W23 sube a una velocidad cercana a 5 tickers por 90-150s.
+
+## Resultado esperado
+
+Con 361 registros pendientes, si cada ticker arrastra varios modelos, el cierre debería acelerarse mucho.
+
+La garantía real ya no depende de reintentos ni de azar. Depende de reservas atómicas y dispatch corto.
+
+## Archivos afectados
+
+- `supabase/functions/rix-batch-orchestrator/index.ts`
+- `supabase/functions/rix-analyze-v2/index.ts`
+- Una migración SQL operativa para purga y liberación de locks.
+
+No se tocará UI.
