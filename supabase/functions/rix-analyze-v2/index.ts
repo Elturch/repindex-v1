@@ -721,7 +721,11 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, record_id, batch_size = 10, only_models, exclude_models } = body;
+    const { action, record_id, batch_size: requested_batch_size = 10, only_models, exclude_models } = body;
+    // HOTFIX 504: cap batch_size at 15 to avoid Edge Function timeout (~530 pending records can't fit in one invocation)
+    // The orchestrator re-queues automatically until all records are processed.
+    const MAX_BATCH_SIZE = 15;
+    const batch_size = Math.min(requested_batch_size, MAX_BATCH_SIZE);
     
     // Initialize Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
