@@ -829,76 +829,102 @@ serve(async (req) => {
       const skipped: any[] = [];
       const analysisStartTime = new Date().toISOString();
       const LOCK_TIMEOUT_MS = 120000; // 2 minutes - if a record is locked longer, it's stale
-      
-      // Process each record sequentially (to avoid rate limits)
-      for (const record of pendingRecords) {
+
+      // === PARALLEL-BY-TICKER ===
+      // Group records by ticker so the 6 AI models for the same company are
+      // analyzed concurrently (Promise.allSettled). Tickers themselves are
+      // processed sequentially within a single invocation to keep memory and
+      // OpenAI rate limits bounded. The orchestrator already runs up to 5
+      // invocations in parallel, so effective concurrency = ~30 AI calls.
+      const recordsByTicker = new Map<string, any[]>();
+      for (const r of pendingRecords) {
+        const t = r['05_ticker'] ?? '__unknown__';
+        if (!recordsByTicker.has(t)) recordsByTicker.set(t, []);
+        recordsByTicker.get(t)!.push(r);
+      }
+
+      const processOne = async (record: any) => {
+        const recordId = record.id;
+        const ticker = record['05_ticker'];
+        const modelName = record['02_model_name'];
         try {
-          const recordId = record.id;
-          const ticker = record['05_ticker'];
-          const modelName = record['02_model_name'];
-          
           // === LOCKING MECHANISM (HARDENED) ===
-          // Check if this record is already being processed by another invocation
-          // DEFENSIVE: Handle 17_flags as any type (array, object, or null)
           const rawFlags = record['17_flags'];
           const existingLock: any[] = Array.isArray(rawFlags) ? rawFlags : [];
-          
-          const lockInfo = existingLock.find(f => typeof f === 'object' && f !== null && f?.analysis_lock);
-          
+          const lockInfo = existingLock.find(
+            (f) => typeof f === 'object' && f !== null && f?.analysis_lock,
+          );
+
           if (lockInfo?.analysis_lock) {
             const lockTime = new Date(lockInfo.analysis_lock).getTime();
             const now = Date.now();
-            
-            // If lock is less than 2 minutes old, skip this record
             if (!isNaN(lockTime) && now - lockTime < LOCK_TIMEOUT_MS) {
-              console.log(`[rix-analyze-v2] SKIP (locked): ${ticker} - ${modelName} (locked at ${lockInfo.analysis_lock})`);
+              console.log(
+                `[rix-analyze-v2] SKIP (locked): ${ticker} - ${modelName} (locked at ${lockInfo.analysis_lock})`,
+              );
               skipped.push({ record_id: recordId, ticker, model: modelName, reason: 'locked' });
-              continue;
+              return;
             }
-            // Lock is stale, we'll take it over
-            console.log(`[rix-analyze-v2] Taking over stale lock for ${ticker} - ${modelName}`);
+            console.log(
+              `[rix-analyze-v2] Taking over stale lock for ${ticker} - ${modelName}`,
+            );
           }
-          
-          // === ACQUIRE LOCK (HARDENED) ===
-          const lockFlag = { analysis_lock: analysisStartTime, worker: crypto.randomUUID().slice(0, 8) };
-          const cleanedFlags = existingLock.filter(f => !(typeof f === 'object' && f !== null && f?.analysis_lock));
-          
+
+          // === ACQUIRE LOCK (optimistic, atomic via WHERE analysis_completed_at IS NULL) ===
+          const lockFlag = {
+            analysis_lock: analysisStartTime,
+            worker: crypto.randomUUID().slice(0, 8),
+          };
+          const cleanedFlags = existingLock.filter(
+            (f) => !(typeof f === 'object' && f !== null && f?.analysis_lock),
+          );
+
           const { error: lockError } = await supabase
             .from('rix_runs_v2')
             .update({ '17_flags': [...cleanedFlags, lockFlag] })
             .eq('id', recordId)
-            .is('analysis_completed_at', null); // Only lock if still pending
-          
+            .is('analysis_completed_at', null);
+
           if (lockError) {
             console.warn(`[rix-analyze-v2] Failed to lock ${recordId}:`, lockError.message);
-            continue;
+            return;
           }
-          
-          console.log(`[rix-analyze-v2] Processing: ${ticker} - ${modelName} (locked)`);
+
+          console.log(`[rix-analyze-v2] Processing: ${ticker} - ${modelName} (locked, parallel)`);
           const result = await analyzeRecord(supabase, record);
           results.push(result);
-          
-          // Small delay between records to avoid rate limits
-          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error: any) {
-          console.error(`[rix-analyze-v2] Error processing ${record.id}:`, error.message);
+          console.error(`[rix-analyze-v2] Error processing ${recordId}:`, error?.message ?? error);
           errors.push({
-            record_id: record.id,
-            ticker: record['05_ticker'],
-            model: record['02_model_name'],
-            error: error.message,
+            record_id: recordId,
+            ticker,
+            model: modelName,
+            error: error?.message ?? String(error),
           });
-          
-          // Release lock on error (HARDENED: re-read current flags to avoid corruption)
+
+          // Release lock on error
           const rawFlagsNow = record['17_flags'];
           const currentFlags: any[] = Array.isArray(rawFlagsNow) ? rawFlagsNow : [];
-          const cleanedFlagsOnError = currentFlags.filter(f => !(typeof f === 'object' && f !== null && f?.analysis_lock));
-          
+          const cleanedFlagsOnError = currentFlags.filter(
+            (f) => !(typeof f === 'object' && f !== null && f?.analysis_lock),
+          );
           await supabase
             .from('rix_runs_v2')
             .update({ '17_flags': cleanedFlagsOnError })
-            .eq('id', record.id);
+            .eq('id', recordId);
         }
+      };
+
+      // Process tickers sequentially; for each ticker fan out the 6 model rows in parallel.
+      for (const [ticker, group] of recordsByTicker.entries()) {
+        console.log(
+          `[rix-analyze-v2] Fan-out ticker=${ticker} models=${group.length} (parallel)`,
+        );
+        const tickerStart = Date.now();
+        await Promise.allSettled(group.map((r) => processOne(r)));
+        console.log(
+          `[rix-analyze-v2] Ticker ${ticker} done in ${Date.now() - tickerStart}ms`,
+        );
       }
       
       // Count remaining - FILTERED BY ACTIVE WEEK (consistent with processing)
