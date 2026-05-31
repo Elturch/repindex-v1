@@ -2580,8 +2580,12 @@ const {
             const p = (t.params as any) ?? {};
             const om = (p.only_models ?? []) as string[];
             const em = (p.exclude_models ?? []) as string[];
+            const bs = Number(p.batch_size ?? 0);
             const isPerModel = om.length === 1 && em.length === 0;
-            if (!isPerModel) obsoleteIds.push(t.id as string);
+            // Obsolete legacy (non per-model) AND per-model con batch_size<4
+            // (2026-05-31: throughput fix — subimos batch a 4 para drenar
+            // 5x más rápido respetando IDLE_TIMEOUT 150s).
+            if (!isPerModel || bs < 4) obsoleteIds.push(t.id as string);
           }
           if (obsoleteIds.length > 0) {
             await supabase
@@ -2607,7 +2611,10 @@ const {
             .filter((m) => !covered.has(m))
             .map((m) => ({
               action: 'repair_analysis',
-              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 1, only_models: [m] },
+              // batch_size:4 — el worker procesa secuencial, pero re-aprovecha
+              // la invocación hasta IDLE_TIMEOUT 150s antes de re-encolar.
+              // 4 × ~35-150s analyze + early-exit interno = throughput x3-4.
+              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 4, only_models: [m] },
               status: 'pending' as const,
             }));
           if (toInsert.length === 0) {
