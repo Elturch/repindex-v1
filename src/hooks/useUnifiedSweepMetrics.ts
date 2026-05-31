@@ -202,7 +202,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       // Step 2: Get the most recent week start (single value, very fast)
       const { data: latestRecord, error: latestError } = await supabase
         .from('rix_runs_v2')
-        .select('06_period_from')
+        .select('06_period_from, 07_period_to')
         .not('06_period_from', 'is', null)
         .order('06_period_from', { ascending: false })
         .limit(1)
@@ -226,12 +226,34 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       
       const recordCount = weekRecordCount || 0;
       
-      // Derive sweepId using ISO 8601 week calculation (date-fns handles edge cases correctly)
-      const weekDate = new Date(weekStart + 'T00:00:00');
-      const isoWeek = getISOWeek(weekDate);
-      const isoYear = getISOWeekYear(weekDate);
-      const derivedSweepId = `${isoYear}-W${String(isoWeek).padStart(2, '0')}`;
-      
+      // Derive sweepId from sweep_progress (authoritative source).
+      // RULE: el sweep activo = sweep_progress.sweep_id cuyo started_at::date = MAX(07_period_to)
+      // de rix_runs_v2 (= domingo de inicio del barrido = period_from + 7 días).
+      // El cálculo ISO desde period_from era incorrecto porque la fecha period_from
+      // pertenece a la semana ISO anterior al sweep que la generó.
+      const periodTo = (latestRecord as any)?.['07_period_to'] as string | undefined;
+      let derivedSweepId: string | null = null;
+      if (periodTo) {
+        const dayStart = `${periodTo}T00:00:00Z`;
+        const dayEnd = `${periodTo}T23:59:59.999Z`;
+        const { data: sweepRow } = await supabase
+          .from('sweep_progress')
+          .select('sweep_id, started_at')
+          .gte('started_at', dayStart)
+          .lte('started_at', dayEnd)
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        derivedSweepId = (sweepRow as any)?.sweep_id ?? null;
+      }
+      // Fallback: ISO 8601 calc desde period_from (comportamiento previo) si no hay match.
+      if (!derivedSweepId) {
+        const weekDate = new Date(weekStart + 'T00:00:00');
+        const isoWeek = getISOWeek(weekDate);
+        const isoYear = getISOWeekYear(weekDate);
+        derivedSweepId = `${isoYear}-W${String(isoWeek).padStart(2, '0')}`;
+      }
+
       const sweepId = forcedSweepId || derivedSweepId;
       
       console.log(`[useUnifiedSweepMetrics] Active week: ${weekStart} (${recordCount} records EXACT count), sweepId: ${sweepId}, total V2: ${totalV2Count}`);
