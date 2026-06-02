@@ -794,7 +794,7 @@ function renderRankingTable(
   orderHint: OrderHint = "desc",
 ): string {
   // Mejora 10 — columna TENDENCIA (símbolo) entre los modelos y Obs.
-  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Tend.", "Obs."];
+  const head = ["#", "Empresa", "RIX min–max (periodo)", "Consenso semanal (peor semana)", ...models, "Tend.", "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
@@ -823,12 +823,17 @@ function renderRankingTable(
         : "mayor RIX máximo del periodo; desempate por suelo RIX más alto";
   const footnote = [
     `*Criterio de ordenación: ${orderLabel}. ${coverage.weeksCount} ${unit} ${verb}${partialSuffix}.*`,
-    `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs en el periodo. NO se promedia entre IAs.*`,
-    `*Dispersión entre IAs = cuánto se ponen de acuerdo los 6 modelos en una misma semana: alto = acuerdo (≤10 pts), medio (≤20), bajo = desacuerdo (>20). Mide consenso, NO calidad reputacional: una empresa con dispersión "alto" y RIX bajo significa que las 6 IAs coinciden en una lectura negativa.*`,
+    `*RIX min–max (periodo) = mínimo–máximo de las puntuaciones individuales de las 6 IAs a lo largo de las semanas del periodo. Mide volatilidad inter-semanal del grupo de modelos. NO se promedia entre IAs.*`,
+    `*Consenso semanal (peor semana) = cuánto se ponen de acuerdo los 6 modelos dentro de UNA misma semana (cohesión intra-semanal), reportado en su peor lectura del periodo: alto = acuerdo (≤10 pts), medio (≤20), bajo = desacuerdo (>20). Mide consenso, NO calidad reputacional: "alto" con RIX bajo significa que las 6 IAs coinciden en una lectura negativa.*`,
+    `*Diferencia clave: «Consenso semanal» = cohesión intra-semanal entre IAs; «RIX min–max» = volatilidad inter-semanal del grupo.*`,
     `*Tend. = tendencia primera vs última semana del periodo (midpoint del rango RIX semanal): ↑ delta ≥ +3 pts · ↓ delta ≤ -3 · → en [-2, +2] · n/d con menos de 2 semanas con dato.*`,
   ].join("\n");
+  const title =
+    orderHint === "divergence"
+      ? "**Ranking por consenso entre IAs (con desglose por modelo)**"
+      : "**Ranking del grupo (por RIX máximo del periodo)**";
   return [
-    "**Ranking por consenso entre IAs (con desglose por modelo)**",
+    title,
     "",
     `| ${head.join(" | ")} |`,
     `| ${sep} |`,
@@ -1482,7 +1487,7 @@ export const sectorRankingSkill: Skill = {
       const before = finalContent;
       // 1) Reemplazar footnote viejo en cursiva (variantes con/sin "Fecha de cálculo: HOY").
       const OLD_FOOTNOTE_RE = /\*RIX medio\s*=\s*promedio[^*\n]*?(?:HOY[^*\n]*?)?\*/gi;
-      const canonicalFootnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs durante las semanas observadas. NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
+      const canonicalFootnote = `*RIX min–max (periodo) = mínimo–máximo de las puntuaciones individuales de las 6 IAs durante las semanas observadas. NO se promedia entre IAs. Consenso semanal (peor semana): alto (≤10 pts dispersión intra-semanal) · medio (≤20) · bajo (>20).*`;
       finalContent = finalContent.replace(OLD_FOOTNOTE_RE, canonicalFootnote);
       // 2) Safety net: literal "Fecha de cálculo: \"HOY\"" sin envolver.
       finalContent = finalContent.replace(/Fecha de cálculo:\s*"?HOY"?\.?/gi, "");
