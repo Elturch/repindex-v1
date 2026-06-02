@@ -15,7 +15,7 @@ const INTENTS: { id: IntentType; label: string; icon: any; hint: string }[] = [
   { id: "comparativa", label: "Comparativa", icon: GitCompare, hint: "Enfrenta 2+ entidades" },
   { id: "evolucion", label: "Evolución", icon: TrendingUp, hint: "Serie temporal" },
   { id: "divergencia", label: "Divergencia", icon: Sparkles, hint: "Disenso entre IAs" },
-  { id: "perfil", label: "Perfil", icon: User, hint: "Análisis individual" },
+  { id: "perfil", label: "Perfil", icon: User, hint: "Análisis 360º de UNA empresa vs. sus competidores" },
 ];
 
 interface Props {
