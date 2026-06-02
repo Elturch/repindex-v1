@@ -196,7 +196,7 @@ export function renderCompetitiveContextTable(ctx: CompetitiveContext, entityTic
   return [
     header,
     "",
-    "| Ranking | Empresa | RIX rango | Δ inter-modelo (avg) | Consenso |",
+    "| Ranking | Empresa | RIX min–max (periodo) | Δ inter-modelo (avg) | Consenso semanal |",
     "|---|---|---|---|---|",
     body,
   ].join("\n");
