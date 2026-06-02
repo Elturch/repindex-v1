@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { features } from "@/lib/featureFlags";
 import {
   FilterState,
   setFilter,
@@ -616,28 +617,30 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
         </FilterBlock>
       )}
 
-      <FilterBlock
-        title="Tipo de fuente"
-        origin={state.sourceTier.origin}
-        defaultOpen={false}
-      >
-        <Select
-          value={state.sourceTier.value}
-          onValueChange={(v: SourceTier) =>
-            setState(setFilter(state, "sourceTier", v))
-          }
+      {features.sourceTypeFilter && (
+        <FilterBlock
+          title="Tipo de fuente"
+          origin={state.sourceTier.origin}
+          defaultOpen={false}
         >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas las fuentes</SelectItem>
-            <SelectItem value="regulatory">Regulatorias</SelectItem>
-            <SelectItem value="media">Medios</SelectItem>
-            <SelectItem value="owned">Propias</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterBlock>
+          <Select
+            value={state.sourceTier.value}
+            onValueChange={(v: SourceTier) =>
+              setState(setFilter(state, "sourceTier", v))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las fuentes</SelectItem>
+              <SelectItem value="regulatory">Regulatorias</SelectItem>
+              <SelectItem value="media">Medios</SelectItem>
+              <SelectItem value="owned">Propias</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterBlock>
+      )}
     </div>
   );
 }
