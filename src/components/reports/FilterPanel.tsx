@@ -283,37 +283,51 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
         {competitorSuggestions.length > 0 && (
           <div className="mt-2 rounded-md border border-border bg-muted/40 p-2">
             <p className="text-[11px] text-muted-foreground mb-1.5">
-              Competencia directa verificada de tu selección:
+              Competencia directa verificada de tu selección — pulsa para añadir/quitar:
             </p>
-            <div className="flex flex-wrap gap-1 mb-2">
+            <div className="flex flex-wrap gap-2 mb-2">
               {competitorSuggestions.map((t) => {
                 const c = byTicker.get(t);
+                const active = state.tickers.value.includes(t);
                 return (
-                  <span
+                  <button
                     key={t}
-                    className="px-1.5 py-0.5 rounded text-[11px] border border-border bg-card text-foreground"
+                    type="button"
+                    onClick={() => {
+                      const next = active
+                        ? state.tickers.value.filter((x) => x !== t)
+                        : [...state.tickers.value, t];
+                      setState(setFilter(state, "tickers", next));
+                    }}
                     title={c?.issuer_name ?? t}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-card hover:bg-accent border-border text-foreground",
+                    )}
                   >
-                    {c?.issuer_name ?? t}{" "}
-                    <span className="text-muted-foreground">({t})</span>
-                  </span>
+                    <span>{active ? "✓" : "+"}</span>
+                    <span>{c?.issuer_name ?? t}</span>
+                    <span className={active ? "opacity-80" : "text-muted-foreground"}>({t})</span>
+                  </button>
                 );
               })}
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                setState(
-                  setFilter(state, "tickers", [
-                    ...state.tickers.value,
-                    ...competitorSuggestions,
-                  ]),
-                )
-              }
-              className="px-2 py-0.5 rounded text-xs border border-primary bg-primary text-primary-foreground hover:opacity-90"
-            >
-              + Añadir competencia directa ({competitorSuggestions.length})
-            </button>
+            {competitorSuggestions.some((t) => !state.tickers.value.includes(t)) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const merged = Array.from(
+                    new Set([...state.tickers.value, ...competitorSuggestions]),
+                  );
+                  setState(setFilter(state, "tickers", merged));
+                }}
+                className="px-2 py-0.5 rounded text-[11px] border border-border bg-card text-muted-foreground hover:bg-accent"
+              >
+                Añadir todos
+              </button>
+            )}
           </div>
         )}
       </FilterBlock>
