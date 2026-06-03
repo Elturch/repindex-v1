@@ -458,6 +458,59 @@ export function StressTestsPanel() {
             <Button
               variant="outline"
               type="button"
+              onClick={async () => {
+                setAutofilling(true);
+                try {
+                  const { data, error } = await supabase.functions.invoke(
+                    "get-phase2-token",
+                    { method: "GET" },
+                  );
+                  // supabase-js mapea no-2xx a error con context.response
+                  const status =
+                    (error as any)?.context?.response?.status ??
+                    (data ? 200 : undefined);
+                  if (status === 403) {
+                    toast.error("No autorizado");
+                    return;
+                  }
+                  if (status === 401) {
+                    toast.error("Sesión no válida");
+                    return;
+                  }
+                  if (
+                    status === 500 ||
+                    (data && (data as any).error === "secret_not_configured")
+                  ) {
+                    toast.warning(
+                      "Secret STRESS_TESTS_HEADER_TOKEN no encontrado en Supabase",
+                    );
+                    return;
+                  }
+                  if (error || !data?.token) {
+                    toast.error("Error obteniendo token");
+                    return;
+                  }
+                  setPhase2Token(data.token);
+                  toast.success(`Token cargado: ${data.masked ?? "••••"}`);
+                } catch (e) {
+                  toast.error("Error obteniendo token");
+                } finally {
+                  setAutofilling(false);
+                }
+              }}
+              disabled={autofilling}
+              className="gap-1"
+            >
+              {autofilling ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Unlock className="h-4 w-4" />
+              )}
+              Auto-fill token Fase 2
+            </Button>
+            <Button
+              variant="outline"
+              type="button"
               onClick={() => setPhase2Token("")}
               disabled={phase2Token.length === 0}
             >
