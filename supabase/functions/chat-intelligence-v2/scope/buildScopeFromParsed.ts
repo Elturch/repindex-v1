@@ -22,6 +22,14 @@ export interface BuildScopeFromParsedOpts {
   strict_subsector?: string | null;
   /** Sector_category resuelto por el detector legacy (sector hint). */
   sector_hint?: string | null;
+  /** Universe / IBEX family code detectado en la pregunta cruda
+   *  (IBEX-35, IBEX-MC, IBEX-SC, MC-OTHER, BME-GROWTH). Se usa como
+   *  derivacion final cuando no hay candidate_tickers ni subsector ni
+   *  sector. Imprescindible para que las queries tipo "IBEX-35 multi
+   *  4w" persistan scope_contract en chat_logs (de lo contrario
+   *  buildScopeContract lanza ScopeResolutionError y el runner del
+   *  stress-test marca SQL_DIFF). */
+  universe_hint?: string | null;
 }
 
 export async function buildScopeFromParsed(
@@ -38,12 +46,15 @@ export async function buildScopeFromParsed(
 
   const subsector = opts.strict_subsector ?? null;
   const sector = opts.sector_hint ?? null;
+  const universe = opts.universe_hint ?? null;
 
   let kind: ScopeKind = "tickers";
   if (fromTickers.length === 0 && subsector) kind = "subsector";
   else if (fromTickers.length === 0 && sector) kind = "sector";
+  else if (fromTickers.length === 0 && universe) kind = "universe";
   else if (subsector) kind = "subsector";
   else if (sector) kind = "sector";
+  else if (universe) kind = "universe";
 
   const window = {
     from: parsed.temporal?.requested_from ?? parsed.temporal?.from ?? "2026-01-01",
@@ -52,14 +63,14 @@ export async function buildScopeFromParsed(
 
   const input: BuildScopeInput = {
     kind,
-    universe: null,
+    universe,
     sector,
     subsector,
     candidate_tickers: fromTickers.length > 0 ? fromTickers : null,
     models: parsed.models,
     window,
     sources: {
-      universe_source: null,
+      universe_source: universe ? "orchestrator.universe_hint" : null,
       sector_source: sector ? "orchestrator.sector_hint" : null,
       subsector_source: subsector ? "orchestrator.strict_subsector" : null,
       tickers_source:
