@@ -821,9 +821,20 @@ export async function process(
 
   if (SCOPE_RAIL_INTENTS.includes(parsed.intent)) {
     try {
+      // Universe / IBEX family hint: cuando la pregunta cruda referencia
+      // IBEX-35, IBEX-MC, IBEX-SC, MC-OTHER o BME-GROWTH y no hay scope
+      // mas especifico, derivamos `universe` por ibex_family_code. Esto
+      // garantiza que scope_contract se persista SIEMPRE para estas
+      // queries (de lo contrario buildScopeContract lanza
+      // ScopeResolutionError y el runner del stress-test reporta
+      // SQL_DIFF: "scope_contract no persistido").
+      const universeHint = (!strictSubsectorLabel && !sectorHint)
+        ? detectFamilyCode(question)
+        : null;
       scopeContract = await buildScopeFromParsed(parsed, supabase, {
         strict_subsector: strictSubsectorLabel,
         sector_hint: sectorHint,
+        universe_hint: universeHint,
       });
       // Fase 2 — Eje A. Cuando ENRICH_RANKING_SUBMETRICS=true, pedimos a
       // runScopedQuery que rellene submetrics_coverage / submetrics_summary
