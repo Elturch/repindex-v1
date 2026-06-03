@@ -1,0 +1,1 @@
+UPDATE public.stress_runs SET status='aborted', finished_at=now(), notes = COALESCE(notes,'') || ' | Aborted: 7 phase2-* cells skipped (phase2_header_missing) — launched without STRESS_TESTS_HEADER_TOKEN' WHERE id='f4f11e90-fb75-4be3-806b-2ec556a177c4';
