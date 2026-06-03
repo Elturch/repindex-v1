@@ -210,6 +210,7 @@ export function StressTestsPanel() {
   // la sesión del navegador. NUNCA se persiste en localStorage ni en
   // código. El admin lo pega manualmente la primera vez por sesión.
   const [phase2Token, setPhase2Token] = useState("");
+  const [autofilling, setAutofilling] = useState(false);
   const STRESS_HEADER_NAME = "x-repindex-stress" as const;
 
   const loadRuns = async () => {
