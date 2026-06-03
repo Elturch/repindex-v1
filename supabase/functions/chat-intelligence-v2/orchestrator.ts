@@ -34,6 +34,7 @@ import { periodEvolutionSkill } from "./skills/periodEvolution.ts";
 // esta activo y la auditoria falla, el pipeline aborta con error
 // estructurado y NUNCA llama al LLM.
 import { buildScopeFromParsed } from "./scope/buildScopeFromParsed.ts";
+import { detectFamilyCode } from "./skills/sectorRanking.ts";
 import {
   ScopeResolutionError,
   type ScopeContract,
