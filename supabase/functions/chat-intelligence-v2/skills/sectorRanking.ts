@@ -40,7 +40,7 @@ import { computePeriodAggregation } from "../../_shared/periodAggregation.ts";
  * codes first so that "IBEX-MC" is not swallowed by the generic /\bibex\b/.
  * Returns null when no family hint is present.
  */
-function detectFamilyCode(raw: string): string | null {
+export function detectFamilyCode(raw: string): string | null {
   const q = (raw ?? "").toLowerCase();
   // Explicit canonical codes (with or without dash, common typos).
   if (/\bibex[-\s]?mc\b|\bibex\s+medium\s+cap\b/i.test(raw)) return "IBEX-MC";
