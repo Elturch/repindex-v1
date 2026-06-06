@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FilterPanel } from "./FilterPanel";
 import { LivePreview } from "./LivePreview";
-import { FilterState } from "@/lib/reports/filterState";
+import { FilterState, reanchorWindow, setFilter } from "@/lib/reports/filterState";
 import { runCoherence, CompanyMeta } from "@/lib/reports/coherenceEngine";
 
 interface Props {
@@ -39,8 +39,19 @@ export function RegenerateDialog({
 
   // Re-seed local state every time the dialog is (re)opened with a new report.
   useEffect(() => {
-    if (open) setState(initialFilters);
-  }, [open, initialFilters]);
+    if (!open) return;
+    let seeded = initialFilters;
+    if (lastBatchDate && initialFilters.window.value.preset !== "custom") {
+      const reanchored = reanchorWindow(initialFilters.window.value, lastBatchDate);
+      if (
+        reanchored.from !== initialFilters.window.value.from ||
+        reanchored.to !== initialFilters.window.value.to
+      ) {
+        seeded = setFilter(initialFilters, "window", reanchored, "derived");
+      }
+    }
+    setState(seeded);
+  }, [open, initialFilters, lastBatchDate]);
 
   const coherence = useMemo(() => runCoherence(state, companies), [state, companies]);
   const hasErrors = coherence.warnings.some((w) => w.level === "error");

@@ -1,32 +1,45 @@
-## SUB-COMMIT C-1 — Regla anti-muletillas (única regla)
+## Objetivo
+Cuando el usuario abre "Regenerar informe" desde el Visor, las fechas por defecto deben anclarse al **último barrido canónico disponible** y hacia atrás según el preset del informe original, en lugar de reusar las fechas (potencialmente desfasadas) del informe guardado.
 
-### Decisión previa
-Sub-commit 1 (orphan `<th>Peso</th>`) se cierra SIN cambios. No se toca `src/lib/technicalSheetHtml.ts`. El glosario queda intacto (Opción B).
+## Comportamiento actual
+`RegenerateDialog` re-siembra su estado local con `initialFilters` cada vez que se abre (efecto sobre `open`). Esos `initialFilters` vienen del informe guardado, así que si el informe se generó hace semanas, la ventana sigue terminando en la fecha vieja aunque ya haya barridos posteriores.
 
-### Cambio único en este sub-commit
-Archivo: `supabase/functions/chat-intelligence-v2/prompts/narrativeQuality.ts`
+## Comportamiento propuesto
+Al abrir el diálogo:
 
-Estado actual del prompt tras el revert: reglas 1–17 + 20 (con huecos 18/19 reservados). Para no rellenar huecos ya marcados como reservados, la nueva regla se añade como **regla 21**, inmediatamente después de la 20 ("NOMBRES COMPLETOS DE MÉTRICAS"), al final del string concatenado.
+- Si `window.preset !== "custom"` y existe `lastBatchDate`, reanclar la ventana con `reanchorWindow(window, lastBatchDate)` (ya disponible en `src/lib/reports/filterState.ts`). Esto fija `to = lastBatchDate` y recalcula `from` según el preset (last_week / last_month / last_quarter / ytd).
+- Si `preset === "custom"`, **no tocar** las fechas — el usuario las fijó explícitamente en el informe original.
+- Si no hay `lastBatchDate` aún (query cargando), mantener el comportamiento actual.
 
-### Texto exacto de la regla 21 a añadir
+Marcar el origin de la ventana reanclada como `"derived"` para indicar que viene del último barrido (consistente con cómo `RixReports.tsx` re-ancla el preset por defecto).
 
+## Cambios
+
+**Único archivo tocado: `src/components/reports/RegenerateDialog.tsx`**
+
+En el `useEffect` que actualmente hace `setState(initialFilters)` cuando `open` cambia, añadir el reanclado:
+
+```ts
+useEffect(() => {
+  if (!open) return;
+  let seeded = initialFilters;
+  if (lastBatchDate && initialFilters.window.value.preset !== "custom") {
+    const reanchored = reanchorWindow(initialFilters.window.value, lastBatchDate);
+    if (
+      reanchored.from !== initialFilters.window.value.from ||
+      reanchored.to !== initialFilters.window.value.to
+    ) {
+      seeded = setFilter(initialFilters, "window", reanchored, "derived");
+    }
+  }
+  setState(seeded);
+}, [open, initialFilters, lastBatchDate]);
 ```
-21. PROHIBICIÓN DE MULETILLAS Y CLICHÉS PERIODÍSTICOS: está EXPRESAMENTE PROHIBIDO usar muletillas, clichés periodísticos o frases hechas en cualquier parte del informe (resumen ejecutivo, análisis, recomendaciones, alertas, pies de tabla). Lista no exhaustiva de expresiones VETADAS: "hallazgo clave", "farolillo rojo", "talón de Aquiles", "punta del iceberg", "luces y sombras", "asignatura pendiente", "caballo de batalla", "piedra angular", "pone el foco", "saca pecho", "pasa factura", "marca la diferencia", "da un golpe sobre la mesa", "juega un papel", "no es oro todo lo que reluce", y cualquier metáfora periodística equivalente. En su lugar, usa lenguaje DIRECTO Y DESCRIPTIVO que nombre el hecho concreto: en vez de "farolillo rojo del grupo" escribe "la empresa con menor RIX del grupo (52,3)"; en vez de "talón de Aquiles" escribe "la submétrica más débil"; en vez de "hallazgo clave" escribe "el dato más relevante es" o directamente expón el dato sin preámbulo. Antes de emitir la respuesta final, revisa el texto y sustituye cualquier muletilla por su equivalente descriptivo.
-```
 
-### Lo que NO se toca en este sub-commit
-- Anglicismos ("snapshot") — siguiente sub-commit.
-- Decimales en prosa / redondeo — siguiente sub-commit.
-- Adjetivos vacíos ("robusta", "sólido", "compacto") — siguiente sub-commit.
-- Inversión de pirámide — siguiente sub-commit.
-- Código de tablas, headers, renderers (A.1–B.2 intactos).
-- `technicalSheetHtml.ts` (intacto).
-- Reglas 1–17 y 20 existentes (intactas, sin reescritura).
+Imports añadidos desde `@/lib/reports/filterState`: `reanchorWindow`, `setFilter`.
 
-### Verificación esperada (la ejecuta Marco)
-1. Re-deploy de `chat-intelligence-v2` (la edición del prompt requiere redeploy de la edge function que lo consume).
-2. Sanity IBEX → revisar HTML generado: 0 ocurrencias de "hallazgo clave", "farolillo rojo", "talón de Aquiles".
-3. Si Sanity pasa, avanzar al sub-commit C-2 (anglicismo "snapshot").
-
-### Entrega al cerrar el sub-commit
-Confirmar: archivo modificado (`narrativeQuality.ts`), número de regla añadida (**21**), y que ninguna otra regla fue reescrita.
+## Fuera de alcance
+- No se toca `RixReports.tsx` (ya reancla correctamente para informes nuevos).
+- No se toca el `FilterPanel`, ni la lógica de coherencia, ni `compileQuestion`.
+- No se cambia el comportamiento cuando el preset es `custom` (fechas explícitas del usuario se respetan).
+- No se modifica nada en backend / prompts / V2 (bloque ajeno a las reglas R20-R25).
