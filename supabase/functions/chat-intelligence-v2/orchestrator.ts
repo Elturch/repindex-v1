@@ -22,7 +22,7 @@ import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
 import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker, sanitizeFinalMarkdown } from "./guards/outputGuard.ts";
-import { enforceR20Acronyms } from "./prompts/narrativeQuality.ts";
+import { enforceR20Acronyms, enforceR24Adjectives } from "./prompts/narrativeQuality.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 import { sectorRankingSkill } from "./skills/sectorRanking.ts";
 import { comparisonSkill } from "./skills/comparison.ts";
@@ -1051,6 +1051,25 @@ export async function process(
     }
   } catch (r20Err) {
     console.warn("[R20] enforceR20Acronyms failed (non-fatal):", r20Err);
+  }
+
+  // R24 — Post-procesador determinista de adjetivos vacíos sin respaldo
+  // numérico. Corre DESPUÉS de R20 para aprovechar la expansión de siglas.
+  // Reancla cifras de frase contigua del mismo sujeto cuando es seguro;
+  // si no hay cifra disponible, elimina el adjetivo (heurística segura) o
+  // solo registra warning. NUNCA inventa datos. No toca tablas, encabezados,
+  // blockquotes, glosario ni metodología. R23 intacta (no altera cifras).
+  try {
+    const r24 = enforceR24Adjectives(content);
+    if (r24.substitutions > 0 || r24.removals > 0) {
+      console.log(`[R24] skill=${skill.name} reanchored=${r24.substitutions} removed=${r24.removals}`);
+      content = r24.output;
+    }
+    if (r24.warnings.length > 0) {
+      console.warn(`[R24] skill=${skill.name} warnings=`, r24.warnings);
+    }
+  } catch (r24Err) {
+    console.warn("[R24] enforceR24Adjectives failed (non-fatal):", r24Err);
   }
 
   // Fase 2 — Eje B. Tiny universe guard (post-validador PASIVO). Solo se
