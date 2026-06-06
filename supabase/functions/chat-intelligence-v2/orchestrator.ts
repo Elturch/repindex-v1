@@ -22,6 +22,7 @@ import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
 import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker, sanitizeFinalMarkdown } from "./guards/outputGuard.ts";
+import { enforceR20Acronyms } from "./prompts/narrativeQuality.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 import { sectorRankingSkill } from "./skills/sectorRanking.ts";
 import { comparisonSkill } from "./skills/comparison.ts";
@@ -1033,6 +1034,23 @@ export async function process(
     }
   } catch (sanErr) {
     console.warn("[outputGuard] sanitizeFinalMarkdown failed (non-fatal):", sanErr);
+  }
+
+  // R20 — Post-procesador determinista de acrónimos de métricas.
+  // Expande la primera aparición de cada sigla por «Nombre completo (SIGLA)»
+  // en cada ficha narrativa. No toca tablas, encabezados, blockquotes,
+  // glosario ni metodología. No altera cifras (R23 intacta).
+  try {
+    const r20 = enforceR20Acronyms(content);
+    if (r20.substitutions > 0) {
+      console.log(`[R20] skill=${skill.name} substitutions=${r20.substitutions}`);
+      content = r20.output;
+    }
+    if (r20.warnings.length > 0) {
+      console.warn(`[R20] skill=${skill.name} warnings=`, r20.warnings);
+    }
+  } catch (r20Err) {
+    console.warn("[R20] enforceR20Acronyms failed (non-fatal):", r20Err);
   }
 
   // Fase 2 — Eje B. Tiny universe guard (post-validador PASIVO). Solo se
