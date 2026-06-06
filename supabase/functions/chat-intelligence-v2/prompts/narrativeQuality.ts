@@ -178,3 +178,416 @@ export function enforceR20Acronyms(
     warnings: Array.from(warnings),
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R24 — Post-procesador determinista de adjetivos vacíos sin respaldo numérico
+// Recorre la prosa frase a frase. Para cada adjetivo de la lista cerrada:
+//   - Si la frase tiene cifra propia → OK (no toca).
+//   - Si la frase contigua (post > pre) tiene cifra del MISMO sujeto →
+//     reancla la cifra al final de la frase del adjetivo. Etiqueta el tipo de
+//     métrica solo cuando hay un token canónico adyacente; si no, neutro.
+//   - Sin cifra disponible → elimina el adjetivo (heurística segura) y log
+//     warning. Si la eliminación no es segura → solo warning, sin tocar.
+// Cero invención de datos. No toca tablas, encabezados, blockquotes,
+// glosario, metodología, ni cifras (R23 intacta).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const R24_EMPTY_ADJECTIVES: string[] = [
+  "robusto", "robusta", "robustos", "robustas",
+  "sólido", "sólida", "sólidos", "sólidas",
+  "compacto", "compacta", "compactos", "compactas",
+  "potente", "potentes",
+  "fuerte", "fuertes",
+  "débil", "débiles",
+  "excelente", "excelentes",
+  "notable", "notables",
+  "destacado", "destacada", "destacados", "destacadas",
+  "significativo", "significativa", "significativos", "significativas",
+  "relevante", "relevantes",
+  "importante", "importantes",
+  "considerable", "considerables",
+  "sustancial", "sustanciales",
+];
+
+// Tickers IBEX y satélites derivados de warnings reales de R20 (run 6/6/2026
+// 19:16). No inventados. Sirven como detector adicional de sujeto cross-frase.
+export const R24_IBEX_TICKERS: Set<string> = new Set([
+  // IBEX-35 core
+  "BBVA", "SAN", "ITX", "TEF", "REP", "ACS", "FER", "AENA", "CABK", "ELE",
+  "IAG", "MAP", "ANA", "NTGY", "ENG", "MTS", "COL", "BKT", "ACX", "AMS",
+  "IDR", "MC", "GCO", "LOG", "SCYR", "SLR", "CLNX", "ROVI", "SAB", "UNI",
+  "PUIG", "GRF", "FDR", "RED", "MRL",
+  // Continuo extendido observado en logs
+  "OHLA", "DIA", "EZE", "NHS", "ATR", "TRG", "VOC", "SOL", "BKY", "OHL",
+  "ARM", "AED", "TLG", "URB", "SEPI", "OTT", "AMP", "AGIL", "PSG", "GRE",
+  "PPA", "CASH", "GSJ", "MDF", "NXT", "ORY", "ECR", "AZK", "ADX", "OLE",
+  "RJF", "NEA", "ART", "FAE", "MOE", "HOME", "VID", "VIS", "TRE", "TUB",
+  "CAF", "DOM", "EDR", "GEST", "ENC", "ENO", "CIE", "PHM", "LDA", "CSN",
+  "LRE", "EBR",
+]);
+
+const R24_METRIC_TOKENS: Set<string> = new Set([
+  "RIX", "NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM",
+]);
+
+const R24_BAND_EMOJIS = ["🟢", "🟡", "🟠", "🔴", "💎"];
+
+const R24_ADJ_LOOKUP: Set<string> = new Set(R24_EMPTY_ADJECTIVES.map((a) => a.toLowerCase()));
+const R24_ADJ_ALTERNATION = R24_EMPTY_ADJECTIVES
+  .map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  .join("|");
+const R24_ADJ_REGEX = new RegExp(`\\b(${R24_ADJ_ALTERNATION})\\b`, "giu");
+
+const R24_QUANTIFIERS = new Set(["muy", "bastante", "extremadamente", "altamente", "particularmente", "especialmente"]);
+
+export interface EnforceR24Result {
+  output: string;
+  substitutions: number;
+  removals: number;
+  warnings: string[];
+}
+
+function r24ExtractNumbers(text: string): Array<{ raw: string; index: number; length: number }> {
+  const out: Array<{ raw: string; index: number; length: number }> = [];
+  const re = /(?<![A-Za-zÀ-ÿ])[-+]?\d+(?:[.,]\d+)?%?(?![A-Za-zÀ-ÿ])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const tok = m[0];
+    const stripped = tok.replace(/[+%]/g, "").replace(/^-/, "");
+    if (/^20\d\d$/.test(stripped)) continue;
+    // Skip leading bullet markers like "1." or "2)" at sentence start
+    if (m.index === 0 && /^\d+[.)]\s*$/.test(text.slice(0, tok.length + 1))) continue;
+    out.push({ raw: tok, index: m.index, length: tok.length });
+  }
+  return out;
+}
+
+function r24DetectMetricTag(sentence: string, numIndex: number, numLen: number): string | null {
+  // Inspect a small window before and after the number for a canonical metric token.
+  const winStart = Math.max(0, numIndex - 30);
+  const winEnd = Math.min(sentence.length, numIndex + numLen + 30);
+  const left = sentence.slice(winStart, numIndex);
+  const right = sentence.slice(numIndex + numLen, winEnd);
+  // Right side: "RIX 71,2" pattern → metric token immediately before number
+  const leftTokens = left.match(/\b[A-Z]{2,5}\b/g) || [];
+  const rightTokens = right.match(/\b[A-Z]{2,5}\b/g) || [];
+  // Priority: closest token on the LEFT (metric usually precedes number)
+  for (let i = leftTokens.length - 1; i >= 0; i--) {
+    if (R24_METRIC_TOKENS.has(leftTokens[i])) return leftTokens[i];
+  }
+  for (const t of rightTokens) {
+    if (R24_METRIC_TOKENS.has(t)) return t;
+  }
+  return null;
+}
+
+function r24DetectSubject(sentence: string): string | null {
+  // Ticker first (cheaper, unambiguous).
+  const tickerMatch = sentence.match(/\b[A-Z]{2,6}\b/g);
+  if (tickerMatch) {
+    for (const t of tickerMatch) {
+      if (R24_IBEX_TICKERS.has(t)) return t;
+    }
+  }
+  // Proper-noun heuristic: capitalized word ≥3 chars (allow accented).
+  const propRe = /\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*\b/u;
+  const pm = sentence.match(propRe);
+  if (pm) {
+    const candidate = pm[0];
+    const lower = candidate.toLowerCase();
+    // Skip month names and weekdays
+    const stopwords = new Set([
+      "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+      "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+      "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo",
+    ]);
+    if (!stopwords.has(lower)) return candidate;
+  }
+  return null;
+}
+
+function r24SentenceHasBandEmoji(sentence: string, adjStart: number, adjEnd: number): boolean {
+  // Band exempt: emoji within 6 chars after the adjective, or pattern "— Adj 🟢" inside parens.
+  const after = sentence.slice(adjEnd, Math.min(sentence.length, adjEnd + 8));
+  for (const e of R24_BAND_EMOJIS) {
+    if (after.includes(e)) return true;
+  }
+  // Inside parens?
+  const before = sentence.slice(0, adjStart);
+  const openParen = before.lastIndexOf("(");
+  const closeParen = before.lastIndexOf(")");
+  if (openParen > closeParen) {
+    // We are inside an open paren. Check if there's a number earlier in that paren block.
+    const insideParen = sentence.slice(openParen);
+    if (/\d/.test(insideParen.slice(0, sentence.length - openParen).slice(0, adjStart - openParen))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function r24SplitSentences(paragraph: string): Array<{ text: string; start: number }> {
+  // Conservative sentence splitter: terminator followed by whitespace and capital/quote/opening sign.
+  const out: Array<{ text: string; start: number }> = [];
+  const re = /(?<=[.!?…])\s+(?=[A-ZÁÉÍÓÚÑ«"¿¡—])/gu;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(paragraph)) !== null) {
+    const end = m.index;
+    out.push({ text: paragraph.slice(last, end), start: last });
+    last = m.index + m[0].length;
+  }
+  out.push({ text: paragraph.slice(last), start: last });
+  return out;
+}
+
+function r24IsLineExempt(trimmed: string): boolean {
+  if (!trimmed) return true;
+  if (trimmed.startsWith("|")) return true;
+  if (trimmed.startsWith(">")) return true;
+  return false;
+}
+
+function r24RemoveAdjective(
+  sentence: string,
+  adjStart: number,
+  adjEnd: number,
+): { result: string; safe: boolean } {
+  // Capture preceding quantifier if any.
+  let removeStart = adjStart;
+  const beforeTxt = sentence.slice(0, adjStart);
+  const quantMatch = beforeTxt.match(/(?:^|\s)(muy|bastante|extremadamente|altamente|particularmente|especialmente)\s+$/i);
+  if (quantMatch && quantMatch.index !== undefined) {
+    removeStart = quantMatch.index + (quantMatch[0].startsWith(" ") ? 1 : 0);
+  }
+
+  const isAtSentenceStart = /^\s*$/.test(sentence.slice(0, removeStart).replace(/^[\s«"¿¡—(]*/, ""));
+
+  // Build candidate removal: drop adjective (+ preceding quantifier) and one trailing OR preceding space.
+  let cutStart = removeStart;
+  let cutEnd = adjEnd;
+  // Prefer eating a preceding space (mid-sentence) to avoid double spaces.
+  if (!isAtSentenceStart && cutStart > 0 && sentence[cutStart - 1] === " ") {
+    cutStart -= 1;
+  } else if (cutEnd < sentence.length && sentence[cutEnd] === " ") {
+    cutEnd += 1;
+  }
+
+  let result = sentence.slice(0, cutStart) + sentence.slice(cutEnd);
+
+  // If we removed at sentence start, recapitalize the next alphabetic char.
+  if (isAtSentenceStart) {
+    const leadMatch = result.match(/^(\s*[«"¿¡—(]*\s*)([a-záéíóúñ])/u);
+    if (leadMatch && leadMatch[2]) {
+      const upper = leadMatch[2].toUpperCase();
+      result = leadMatch[1] + upper + result.slice(leadMatch[0].length);
+    } else {
+      // Couldn't safely recapitalize → treat as unsafe.
+      return { result: sentence, safe: false };
+    }
+  }
+
+  // Normalize whitespace around punctuation.
+  result = result.replace(/ {2,}/g, " ").replace(/\s+([,.;:])/g, "$1");
+
+  // Safety check: result should still parse as a non-empty sentence.
+  if (result.trim().length < 3) return { result: sentence, safe: false };
+  return { result, safe: true };
+}
+
+function r24SentenceInsideQuotes(sentence: string): boolean {
+  // If the entire sentence is wrapped in quotation marks, treat as literal quote.
+  const t = sentence.trim();
+  if (!t) return false;
+  return (
+    (t.startsWith("«") && t.endsWith("»")) ||
+    (t.startsWith("\u201C") && t.endsWith("\u201D")) ||
+    (t.startsWith('"') && t.endsWith('"'))
+  );
+}
+
+export function enforceR24Adjectives(markdown: string): EnforceR24Result {
+  if (!markdown || typeof markdown !== "string") {
+    return { output: markdown ?? "", substitutions: 0, removals: 0, warnings: [] };
+  }
+
+  const lines = markdown.split(/\r?\n/);
+  let inCodeBlock = false;
+  let inGlossaryOrMethodology = false;
+  let substitutions = 0;
+  let removals = 0;
+  const warnings: string[] = [];
+
+  // Build paragraph groups respecting line-level exemptions. Each paragraph is
+  // a contiguous run of mutable lines; exempt lines flush the current paragraph.
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+
+    if (/^```/.test(trimmed)) {
+      inCodeBlock = !inCodeBlock;
+      i++;
+      continue;
+    }
+    if (inCodeBlock) { i++; continue; }
+
+    const headingMatch = /^(#{1,6})\s+(.*)$/.exec(trimmed);
+    if (headingMatch) {
+      const headingText = headingMatch[2].toLowerCase();
+      if (/glosario|metodolog[íi]a/.test(headingText)) {
+        inGlossaryOrMethodology = true;
+      } else if (headingMatch[1].length <= 2) {
+        inGlossaryOrMethodology = false;
+      }
+      i++;
+      continue;
+    }
+
+    if (inGlossaryOrMethodology) { i++; continue; }
+    if (r24IsLineExempt(trimmed)) { i++; continue; }
+    if (line.trim() === "") { i++; continue; }
+
+    // Gather contiguous mutable lines into a paragraph block.
+    const blockStart = i;
+    const blockLines: string[] = [];
+    while (i < lines.length) {
+      const ln = lines[i];
+      const tr = ln.trimStart();
+      if (ln.trim() === "") break;
+      if (/^```/.test(tr)) break;
+      if (/^#{1,6}\s+/.test(tr)) break;
+      if (r24IsLineExempt(tr)) break;
+      blockLines.push(ln);
+      i++;
+    }
+
+    // Process the paragraph as a single text unit; preserve line breaks by
+    // joining with " \n " sentinel? Simpler: process line by line but pass
+    // the neighbour-context from previous/next lines in the same block.
+    const paragraph = blockLines.join("\n");
+    const sentences = r24SplitSentences(paragraph);
+
+    // Pre-compute per-sentence metadata.
+    const meta = sentences.map((s) => {
+      const nums = r24ExtractNumbers(s.text);
+      return {
+        nums,
+        subject: r24DetectSubject(s.text),
+        isQuote: r24SentenceInsideQuotes(s.text),
+      };
+    });
+
+    // Mutate sentences in place.
+    const mutated = sentences.map((s) => s.text);
+    for (let si = 0; si < sentences.length; si++) {
+      if (meta[si].isQuote) continue;
+      const original = mutated[si];
+      // Find adjective hits (case-insensitive). Iterate from end to start so
+      // that index-based mutations earlier in the string don't invalidate
+      // later ones.
+      const hits: Array<{ start: number; end: number; word: string }> = [];
+      R24_ADJ_REGEX.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = R24_ADJ_REGEX.exec(original)) !== null) {
+        const w = m[1];
+        if (R24_ADJ_LOOKUP.has(w.toLowerCase())) {
+          hits.push({ start: m.index, end: m.index + w.length, word: w });
+        }
+      }
+      if (hits.length === 0) continue;
+
+      let working = original;
+      for (let hi = hits.length - 1; hi >= 0; hi--) {
+        const hit = hits[hi];
+        // Recompute against the current working string only if no prior mutation
+        // shifted indices. Since we go end-to-start, earlier-index hits remain
+        // valid as long as later mutations only touched their own suffix.
+        if (working.slice(hit.start, hit.end).toLowerCase() !== hit.word.toLowerCase()) continue;
+
+        // Exception: own sentence already has a number → OK.
+        if (meta[si].nums.length > 0) continue;
+
+        // Exception: band emoji adjacent or inside parenthetical numeric block.
+        if (r24SentenceHasBandEmoji(working, hit.start, hit.end)) continue;
+
+        // Try to reanchor from next sentence (preferred), then previous.
+        const candidates: number[] = [];
+        if (si + 1 < sentences.length) candidates.push(si + 1);
+        if (si - 1 >= 0) candidates.push(si - 1);
+
+        let reanchored = false;
+        for (const ni of candidates) {
+          if (meta[ni].isQuote) continue;
+          if (meta[ni].nums.length === 0) continue;
+          const ownSubject = meta[si].subject;
+          const neighSubject = meta[ni].subject;
+          const subjectsAgree =
+            ownSubject === null /* implicit continuation */ ||
+            (neighSubject !== null && neighSubject === ownSubject) ||
+            sentences[ni].text.includes(ownSubject ?? "\u0000");
+          if (!subjectsAgree) continue;
+
+          const pickedNum = meta[ni].nums[0];
+          const tag = r24DetectMetricTag(sentences[ni].text, pickedNum.index, pickedNum.length);
+          const suffix = tag ? ` (${tag} ${pickedNum.raw})` : ` (${pickedNum.raw})`;
+
+          // Insert suffix just before the sentence-final punctuation, if any.
+          const punctMatch = working.match(/([.!?…])\s*$/);
+          if (punctMatch && punctMatch.index !== undefined) {
+            working = working.slice(0, punctMatch.index) + suffix + working.slice(punctMatch.index);
+          } else {
+            working = working + suffix;
+          }
+          substitutions++;
+          reanchored = true;
+          break;
+        }
+
+        if (reanchored) continue;
+
+        // No reanchor available → attempt safe removal.
+        const removal = r24RemoveAdjective(working, hit.start, hit.end);
+        if (removal.safe) {
+          working = removal.result;
+          removals++;
+          warnings.push(
+            `[R24] adjetivo sin cifra eliminado: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
+          );
+        } else {
+          warnings.push(
+            `[R24] adjetivo sin cifra (sin acción, no seguro): "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
+          );
+        }
+      }
+      mutated[si] = working;
+    }
+
+    // Reassemble paragraph and split back to lines preserving original line breaks.
+    let newParagraph = "";
+    for (let si = 0; si < sentences.length; si++) {
+      if (si > 0) {
+        const gapStart = sentences[si - 1].start + sentences[si - 1].text.length;
+        newParagraph += paragraph.slice(gapStart, sentences[si].start);
+      }
+      newParagraph += mutated[si];
+    }
+    const newBlockLines = newParagraph.split(/\r?\n/);
+    if (newBlockLines.length === blockLines.length) {
+      for (let bi = 0; bi < blockLines.length; bi++) {
+        lines[blockStart + bi] = newBlockLines[bi];
+      }
+    } else {
+      // Line count drift (rare: removal collapsed a line). Splice in the new lines.
+      lines.splice(blockStart, blockLines.length, ...newBlockLines);
+      i = blockStart + newBlockLines.length;
+    }
+  }
+
+  return {
+    output: lines.join("\n"),
+    substitutions,
+    removals,
+    warnings,
+  };
+}
