@@ -1,45 +1,72 @@
 ## Objetivo
-Cuando el usuario abre "Regenerar informe" desde el Visor, las fechas por defecto deben anclarse al **último barrido canónico disponible** y hacia atrás según el preset del informe original, en lugar de reusar las fechas (potencialmente desfasadas) del informe guardado.
 
-## Comportamiento actual
-`RegenerateDialog` re-siembra su estado local con `initialFilters` cada vez que se abre (efecto sobre `open`). Esos `initialFilters` vienen del informe guardado, así que si el informe se generó hace semanas, la ventana sigue terminando en la fecha vieja aunque ya haya barridos posteriores.
+Eliminar la regresión sistémica de R20 (acrónimos sueltos en fichas de empresa) con un parche **determinista post-LLM**, sin tocar prompts, glosario ni R21-R25.
 
-## Comportamiento propuesto
-Al abrir el diálogo:
+## Cambios (sub-commit atómico, 2 archivos)
 
-- Si `window.preset !== "custom"` y existe `lastBatchDate`, reanclar la ventana con `reanchorWindow(window, lastBatchDate)` (ya disponible en `src/lib/reports/filterState.ts`). Esto fija `to = lastBatchDate` y recalcula `from` según el preset (last_week / last_month / last_quarter / ytd).
-- Si `preset === "custom"`, **no tocar** las fechas — el usuario las fijó explícitamente en el informe original.
-- Si no hay `lastBatchDate` aún (query cargando), mantener el comportamiento actual.
+### 1. `supabase/functions/chat-intelligence-v2/prompts/narrativeQuality.ts` (modificado)
 
-Marcar el origin de la ventana reanclada como `"derived"` para indicar que viene del último barrido (consistente con cómo `RixReports.tsx` re-ancla el preset por defecto).
+Añadir al final del archivo, **sin tocar** la export `NARRATIVE_QUALITY_PROMPT` ni el diccionario de la regla 20 del prompt:
 
-## Cambios
+- **Constante local** `R20_GLOSSARY_MAP: Record<string, string>` espejo exacto del diccionario canónico ya embebido en la regla 20:
+  - `NVM → Calidad de la Narrativa`
+  - `DRM → Fortaleza de Evidencia`
+  - `SIM → Autoridad de Fuentes`
+  - `RMM → Actualidad y Empuje Mediático`
+  - `CEM → Gestión de Controversias`
+  - `GAM → Percepción de Gobernanza`
+  - `DCM → Coherencia Informativa`
+  - `CXM → Ejecución Corporativa`
+  - `RIX → Índice de Reputación Algorítmica`
 
-**Único archivo tocado: `src/components/reports/RegenerateDialog.tsx`**
+- **Función exportada** `enforceR20Acronyms(markdown: string, glossary?: Record<string,string>): { output: string; substitutions: number; warnings: string[] }`:
+  1. Trocea el markdown por líneas, manteniendo orden.
+  2. **Salta** (no procesa) líneas que cumplan cualquiera de:
+     - Empieza por `|` (filas de tabla)
+     - Empieza por `#` (encabezados)
+     - Empieza por `>` (blockquotes — alertas/citas)
+     - Está dentro de un bloque de código (toggle por <code>```</code>)
+     - Pertenece a una sección glosario/metodología (toggle activado al ver un `## ...Glosario...` o `## ...Metodología...` hasta el siguiente `##`)
+  3. En el resto de líneas (prosa narrativa), mantiene un `Set<string> seen` **por bloque ficha** (resetea al detectar `## ` o `### ` que abra ficha nueva, criterio markdown estándar).
+  4. Para cada sigla del mapa, busca la **primera** ocurrencia "suelta" en la línea — patrón: `\b(SIGLA)\b` que NO esté ya precedida por `(` ni inmediatamente seguida por `)` con nombre completo delante. Si la sigla no está en `seen` para el bloque actual, sustituye `SIGLA` por `Nombre completo (SIGLA)` y marca `seen.add(SIGLA)`.
+  5. **Nunca** toca números, decimales, ni texto dentro de paréntesis ya formados (R23 intacta).
+  6. Si encuentra una sigla candidata que no está en el glosario, **no rompe**: empuja `warnings.push("[R20] sigla sin glosario: XXX")` y la deja como está.
+  7. Devuelve `{ output, substitutions, warnings }`.
 
-En el `useEffect` que actualmente hace `setState(initialFilters)` cuando `open` cambia, añadir el reanclado:
+### 2. `supabase/functions/chat-intelligence-v2/orchestrator.ts` (cableado mínimo)
+
+En el bloque post-stream existente (~línea 1009-1035), **después** de la llamada actual a `sanitizeFinalMarkdown(content, ...)` y antes de cerrar el `try`:
 
 ```ts
-useEffect(() => {
-  if (!open) return;
-  let seeded = initialFilters;
-  if (lastBatchDate && initialFilters.window.value.preset !== "custom") {
-    const reanchored = reanchorWindow(initialFilters.window.value, lastBatchDate);
-    if (
-      reanchored.from !== initialFilters.window.value.from ||
-      reanchored.to !== initialFilters.window.value.to
-    ) {
-      seeded = setFilter(initialFilters, "window", reanchored, "derived");
-    }
+try {
+  const r20 = enforceR20Acronyms(content);
+  if (r20.substitutions > 0) {
+    console.log(`[R20] skill=${skill.name} substitutions=${r20.substitutions}`);
+    content = r20.output;
   }
-  setState(seeded);
-}, [open, initialFilters, lastBatchDate]);
+  if (r20.warnings.length) console.warn(`[R20] warnings:`, r20.warnings);
+} catch (r20Err) {
+  console.warn("[R20] enforceR20Acronyms failed (non-fatal):", r20Err);
+}
 ```
 
-Imports añadidos desde `@/lib/reports/filterState`: `reanchorWindow`, `setFilter`.
+Añadir import al top del archivo:
+```ts
+import { enforceR20Acronyms } from "./prompts/narrativeQuality.ts";
+```
 
-## Fuera de alcance
-- No se toca `RixReports.tsx` (ya reancla correctamente para informes nuevos).
-- No se toca el `FilterPanel`, ni la lógica de coherencia, ni `compileQuestion`.
-- No se cambia el comportamiento cuando el preset es `custom` (fechas explícitas del usuario se respetan).
-- No se modifica nada en backend / prompts / V2 (bloque ajeno a las reglas R20-R25).
+## Fuera de alcance (no se toca)
+
+- R21-R25 del prompt (intactas)
+- Glosario y diccionario embebido en la regla 20 del prompt (intacto)
+- `src/lib/rixMetricsGlossary.ts` (no se importa, no se modifica)
+- Cualquier otro archivo de skills, guards, frontend
+- R24 (queda pendiente para el siguiente sub-commit)
+
+## Verificación
+
+Tras el commit, el usuario lanza Sanity IBEX. Debería seguir verde (3/3) y los nuevos logs `[R20] substitutions=N` aparecerán en `edge_function_logs` confirmando que el parche se está disparando en fichas largas.
+
+## Reporte al cerrar
+
+Indicaré las líneas exactas modificadas en `narrativeQuality.ts` (append al final del archivo + ningún cambio en la export del prompt) y las líneas exactas insertadas en `orchestrator.ts` (1 import + ~10 líneas en el bloque post-stream).
