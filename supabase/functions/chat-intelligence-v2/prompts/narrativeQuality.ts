@@ -238,13 +238,34 @@ const R24_ADJ_ALTERNATION = R24_EMPTY_ADJECTIVES
   .join("|");
 const R24_ADJ_REGEX = new RegExp(`\\b(${R24_ADJ_ALTERNATION})\\b`, "giu");
 
-const R24_QUANTIFIERS = new Set(["muy", "bastante", "extremadamente", "altamente", "particularmente", "especialmente"]);
+const R24_QUANTIFIERS = new Set([
+  "muy", "bastante", "extremadamente", "altamente", "particularmente", "especialmente",
+  "más", "mas", "menos", "tan", "poco", "algo", "demasiado",
+]);
+
+// Meta-prosa: sustantivos estructurales que, junto al adjetivo, indican
+// referencia a las propias métricas (no juicio vacío). Exentos de R24.
+const R24_METAPROSE_NOUNS: Set<string> = new Set([
+  "métrica", "métricas", "metrica", "metricas",
+  "fortaleza", "fortalezas",
+  "debilidad", "debilidades",
+  "dimensión", "dimensiones", "dimension",
+]);
+
+// Tail tokens that indicate a dangling sentence (preposition/conjunction).
+const R24_DANGLING_TAIL: Set<string> = new Set([
+  "de", "del", "en", "con", "por", "para", "sin", "sobre", "tras", "entre",
+  "hacia", "hasta", "desde", "a", "al", "y", "o", "u", "e",
+  "pero", "aunque", "mientras", "cuando", "como", "que", "si", "ni",
+]);
 
 export interface EnforceR24Result {
   output: string;
   substitutions: number;
   removals: number;
   warnings: string[];
+  metaprose?: number;
+  stubsAvoided?: number;
 }
 
 function r24ExtractNumbers(text: string): Array<{ raw: string; index: number; length: number }> {
