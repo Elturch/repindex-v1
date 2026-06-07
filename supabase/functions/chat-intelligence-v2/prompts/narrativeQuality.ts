@@ -373,11 +373,11 @@ function r24RemoveAdjective(
   sentence: string,
   adjStart: number,
   adjEnd: number,
-): { result: string; safe: boolean } {
+): { result: string; safe: boolean; stub?: boolean } {
   // Capture preceding quantifier if any.
   let removeStart = adjStart;
   const beforeTxt = sentence.slice(0, adjStart);
-  const quantMatch = beforeTxt.match(/(?:^|\s)(muy|bastante|extremadamente|altamente|particularmente|especialmente)\s+$/i);
+  const quantMatch = beforeTxt.match(/(?:^|\s)(muy|bastante|extremadamente|altamente|particularmente|especialmente|más|mas|menos|tan|poco|algo|demasiado)\s+$/iu);
   if (quantMatch && quantMatch.index !== undefined) {
     removeStart = quantMatch.index + (quantMatch[0].startsWith(" ") ? 1 : 0);
   }
@@ -413,6 +413,31 @@ function r24RemoveAdjective(
 
   // Safety check: result should still parse as a non-empty sentence.
   if (result.trim().length < 3) return { result: sentence, safe: false };
+
+  // Stub guard: avoid producing dangling/broken sentences.
+  const trimmedTail = result.replace(/[\s.!?…»"]+$/u, "");
+  const lastWordMatch = trimmedTail.match(/(\S+)$/u);
+  const lastWord = lastWordMatch ? lastWordMatch[1].toLowerCase().replace(/[.,;:]+$/u, "") : "";
+  // H1: ends in preposition/conjunction.
+  if (R24_DANGLING_TAIL.has(lastWord)) {
+    return { result: sentence, safe: false, stub: true };
+  }
+  // H2: ends in participle (-ado/-ada/-ido/-ida + plurals) and nothing
+  // meaningful followed the adjective in the original (i.e. the removed
+  // segment was the participle's complement).
+  if (/(ado|ada|ido|ida|ados|adas|idos|idas)$/u.test(lastWord)) {
+    const tailAfterAdj = sentence.slice(adjEnd).replace(/[\s.!?…»"]+$/u, "").trim();
+    if (tailAfterAdj === "") {
+      return { result: sentence, safe: false, stub: true };
+    }
+  }
+  // H3: drastic length collapse on a previously substantive sentence.
+  const origTokens = sentence.trim().split(/\s+/).length;
+  const newTokens = result.trim().split(/\s+/).length;
+  if (origTokens >= 6 && newTokens / origTokens < 0.4) {
+    return { result: sentence, safe: false, stub: true };
+  }
+
   return { result, safe: true };
 }
 
