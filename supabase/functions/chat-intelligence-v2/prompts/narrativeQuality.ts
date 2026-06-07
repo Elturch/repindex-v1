@@ -238,13 +238,34 @@ const R24_ADJ_ALTERNATION = R24_EMPTY_ADJECTIVES
   .join("|");
 const R24_ADJ_REGEX = new RegExp(`\\b(${R24_ADJ_ALTERNATION})\\b`, "giu");
 
-const R24_QUANTIFIERS = new Set(["muy", "bastante", "extremadamente", "altamente", "particularmente", "especialmente"]);
+const R24_QUANTIFIERS = new Set([
+  "muy", "bastante", "extremadamente", "altamente", "particularmente", "especialmente",
+  "más", "mas", "menos", "tan", "poco", "algo", "demasiado",
+]);
+
+// Meta-prosa: sustantivos estructurales que, junto al adjetivo, indican
+// referencia a las propias métricas (no juicio vacío). Exentos de R24.
+const R24_METAPROSE_NOUNS: Set<string> = new Set([
+  "métrica", "métricas", "metrica", "metricas",
+  "fortaleza", "fortalezas",
+  "debilidad", "debilidades",
+  "dimensión", "dimensiones", "dimension",
+]);
+
+// Tail tokens that indicate a dangling sentence (preposition/conjunction).
+const R24_DANGLING_TAIL: Set<string> = new Set([
+  "de", "del", "en", "con", "por", "para", "sin", "sobre", "tras", "entre",
+  "hacia", "hasta", "desde", "a", "al", "y", "o", "u", "e",
+  "pero", "aunque", "mientras", "cuando", "como", "que", "si", "ni",
+]);
 
 export interface EnforceR24Result {
   output: string;
   substitutions: number;
   removals: number;
   warnings: string[];
+  metaprose?: number;
+  stubsAvoided?: number;
 }
 
 function r24ExtractNumbers(text: string): Array<{ raw: string; index: number; length: number }> {
@@ -352,11 +373,11 @@ function r24RemoveAdjective(
   sentence: string,
   adjStart: number,
   adjEnd: number,
-): { result: string; safe: boolean } {
+): { result: string; safe: boolean; stub?: boolean } {
   // Capture preceding quantifier if any.
   let removeStart = adjStart;
   const beforeTxt = sentence.slice(0, adjStart);
-  const quantMatch = beforeTxt.match(/(?:^|\s)(muy|bastante|extremadamente|altamente|particularmente|especialmente)\s+$/i);
+  const quantMatch = beforeTxt.match(/(?:^|\s)(muy|bastante|extremadamente|altamente|particularmente|especialmente|más|mas|menos|tan|poco|algo|demasiado)\s+$/iu);
   if (quantMatch && quantMatch.index !== undefined) {
     removeStart = quantMatch.index + (quantMatch[0].startsWith(" ") ? 1 : 0);
   }
@@ -392,6 +413,31 @@ function r24RemoveAdjective(
 
   // Safety check: result should still parse as a non-empty sentence.
   if (result.trim().length < 3) return { result: sentence, safe: false };
+
+  // Stub guard: avoid producing dangling/broken sentences.
+  const trimmedTail = result.replace(/[\s.!?…»"]+$/u, "");
+  const lastWordMatch = trimmedTail.match(/(\S+)$/u);
+  const lastWord = lastWordMatch ? lastWordMatch[1].toLowerCase().replace(/[.,;:]+$/u, "") : "";
+  // H1: ends in preposition/conjunction.
+  if (R24_DANGLING_TAIL.has(lastWord)) {
+    return { result: sentence, safe: false, stub: true };
+  }
+  // H2: ends in participle (-ado/-ada/-ido/-ida + plurals) and nothing
+  // meaningful followed the adjective in the original (i.e. the removed
+  // segment was the participle's complement).
+  if (/(ado|ada|ido|ida|ados|adas|idos|idas)$/u.test(lastWord)) {
+    const tailAfterAdj = sentence.slice(adjEnd).replace(/[\s.!?…»"]+$/u, "").trim();
+    if (tailAfterAdj === "") {
+      return { result: sentence, safe: false, stub: true };
+    }
+  }
+  // H3: drastic length collapse on a previously substantive sentence.
+  const origTokens = sentence.trim().split(/\s+/).length;
+  const newTokens = result.trim().split(/\s+/).length;
+  if (origTokens >= 6 && newTokens / origTokens < 0.4) {
+    return { result: sentence, safe: false, stub: true };
+  }
+
   return { result, safe: true };
 }
 
@@ -406,6 +452,50 @@ function r24SentenceInsideQuotes(sentence: string): boolean {
   );
 }
 
+// Meta-prosa: el adjetivo se refiere a las propias métricas/dimensiones del
+// índice o aparece en una construcción superlativa de listado
+// ("la métrica más fuerte", "X es la más débil"). En ese caso NO es un
+// juicio vacío sino prosa estructural; queda exento.
+function r24IsMetaprose(sentence: string, adjStart: number, adjEnd: number): boolean {
+  const beforeRaw = sentence.slice(Math.max(0, adjStart - 60), adjStart);
+  const afterRaw = sentence.slice(adjEnd, Math.min(sentence.length, adjEnd + 60));
+  const before = beforeRaw.toLowerCase();
+  const after = afterRaw.toLowerCase();
+
+  const beforeTokens = before
+    .replace(/[(){}\[\]"«»]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(-4)
+    .map((t) => t.replace(/[.,;:!?…]+$/u, ""));
+  const afterTokens = after
+    .replace(/[(){}\[\]"«»]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((t) => t.replace(/[.,;:!?…]+$/u, ""));
+
+  // Patrón A: el adjetivo modifica directamente a un sustantivo meta
+  // (postpuesto: "métrica fuerte" o prepuesto: "fuerte métrica").
+  for (const noun of R24_METAPROSE_NOUNS) {
+    if (beforeTokens.includes(noun)) return true;
+    if (afterTokens.includes(noun)) return true;
+  }
+
+  // Patrón B: superlativo de listado "(la|el|las|los) (más|menos) <adj>".
+  if (beforeTokens.length >= 2) {
+    const tMinus2 = beforeTokens[beforeTokens.length - 2];
+    const tMinus1 = beforeTokens[beforeTokens.length - 1];
+    if (/^(la|el|las|los)$/.test(tMinus2) && /^(más|mas|menos)$/.test(tMinus1)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function enforceR24Adjectives(markdown: string): EnforceR24Result {
   if (!markdown || typeof markdown !== "string") {
     return { output: markdown ?? "", substitutions: 0, removals: 0, warnings: [] };
@@ -416,6 +506,8 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
   let inGlossaryOrMethodology = false;
   let substitutions = 0;
   let removals = 0;
+  let metaprose = 0;
+  let stubsAvoided = 0;
   const warnings: string[] = [];
 
   // Build paragraph groups respecting line-level exemptions. Each paragraph is
@@ -511,6 +603,15 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
         // Exception: band emoji adjacent or inside parenthetical numeric block.
         if (r24SentenceHasBandEmoji(working, hit.start, hit.end)) continue;
 
+        // Exception: meta-prosa (referencia estructural a las métricas).
+        if (r24IsMetaprose(working, hit.start, hit.end)) {
+          metaprose++;
+          warnings.push(
+            `[R24] exento meta-prosa: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
+          );
+          continue;
+        }
+
         // Try to reanchor from next sentence (preferred), then previous.
         const candidates: number[] = [];
         if (si + 1 < sentences.length) candidates.push(si + 1);
@@ -554,6 +655,11 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
           warnings.push(
             `[R24] adjetivo sin cifra eliminado: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
           );
+        } else if (removal.stub) {
+          stubsAvoided++;
+          warnings.push(
+            `[R24] stub evitado: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
+          );
         } else {
           warnings.push(
             `[R24] adjetivo sin cifra (sin acción, no seguro): "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
@@ -589,5 +695,7 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
     substitutions,
     removals,
     warnings,
+    metaprose,
+    stubsAvoided,
   };
 }
