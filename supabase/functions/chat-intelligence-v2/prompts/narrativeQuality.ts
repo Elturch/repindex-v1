@@ -452,6 +452,50 @@ function r24SentenceInsideQuotes(sentence: string): boolean {
   );
 }
 
+// Meta-prosa: el adjetivo se refiere a las propias métricas/dimensiones del
+// índice o aparece en una construcción superlativa de listado
+// ("la métrica más fuerte", "X es la más débil"). En ese caso NO es un
+// juicio vacío sino prosa estructural; queda exento.
+function r24IsMetaprose(sentence: string, adjStart: number, adjEnd: number): boolean {
+  const beforeRaw = sentence.slice(Math.max(0, adjStart - 60), adjStart);
+  const afterRaw = sentence.slice(adjEnd, Math.min(sentence.length, adjEnd + 60));
+  const before = beforeRaw.toLowerCase();
+  const after = afterRaw.toLowerCase();
+
+  const beforeTokens = before
+    .replace(/[(){}\[\]"«»]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(-4)
+    .map((t) => t.replace(/[.,;:!?…]+$/u, ""));
+  const afterTokens = after
+    .replace(/[(){}\[\]"«»]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((t) => t.replace(/[.,;:!?…]+$/u, ""));
+
+  // Patrón A: el adjetivo modifica directamente a un sustantivo meta
+  // (postpuesto: "métrica fuerte" o prepuesto: "fuerte métrica").
+  for (const noun of R24_METAPROSE_NOUNS) {
+    if (beforeTokens.includes(noun)) return true;
+    if (afterTokens.includes(noun)) return true;
+  }
+
+  // Patrón B: superlativo de listado "(la|el|las|los) (más|menos) <adj>".
+  if (beforeTokens.length >= 2) {
+    const tMinus2 = beforeTokens[beforeTokens.length - 2];
+    const tMinus1 = beforeTokens[beforeTokens.length - 1];
+    if (/^(la|el|las|los)$/.test(tMinus2) && /^(más|mas|menos)$/.test(tMinus1)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function enforceR24Adjectives(markdown: string): EnforceR24Result {
   if (!markdown || typeof markdown !== "string") {
     return { output: markdown ?? "", substitutions: 0, removals: 0, warnings: [] };
