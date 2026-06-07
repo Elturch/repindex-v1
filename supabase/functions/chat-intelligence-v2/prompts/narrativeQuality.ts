@@ -506,6 +506,8 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
   let inGlossaryOrMethodology = false;
   let substitutions = 0;
   let removals = 0;
+  let metaprose = 0;
+  let stubsAvoided = 0;
   const warnings: string[] = [];
 
   // Build paragraph groups respecting line-level exemptions. Each paragraph is
@@ -601,6 +603,15 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
         // Exception: band emoji adjacent or inside parenthetical numeric block.
         if (r24SentenceHasBandEmoji(working, hit.start, hit.end)) continue;
 
+        // Exception: meta-prosa (referencia estructural a las métricas).
+        if (r24IsMetaprose(working, hit.start, hit.end)) {
+          metaprose++;
+          warnings.push(
+            `[R24] exento meta-prosa: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
+          );
+          continue;
+        }
+
         // Try to reanchor from next sentence (preferred), then previous.
         const candidates: number[] = [];
         if (si + 1 < sentences.length) candidates.push(si + 1);
@@ -644,6 +655,11 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
           warnings.push(
             `[R24] adjetivo sin cifra eliminado: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
           );
+        } else if (removal.stub) {
+          stubsAvoided++;
+          warnings.push(
+            `[R24] stub evitado: "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
+          );
         } else {
           warnings.push(
             `[R24] adjetivo sin cifra (sin acción, no seguro): "${hit.word}" en: "${original.slice(0, 80).trim()}…"`,
@@ -679,5 +695,7 @@ export function enforceR24Adjectives(markdown: string): EnforceR24Result {
     substitutions,
     removals,
     warnings,
+    metaprose,
+    stubsAvoided,
   };
 }
