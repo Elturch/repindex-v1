@@ -1492,6 +1492,34 @@ export function ChatProvider({ children }: ChatProviderProps) {
         return;
       }
 
+      // Group-scope queries (IBEX, sector, ranking) that failed in v2:
+      // do NOT downgrade to v1 (incompatible) — show a clear retry message.
+      if (isGroupScope && getAgentVersion() === 'v2') {
+        const description =
+          'El informe agregado no se ha podido generar (v2 sin respuesta). Reintenta en unos segundos o reduce el alcance temporal.';
+        const failMsg: Message = {
+          role: 'assistant',
+          content: `⚠️ ${description}`,
+          metadata: { type: 'guard_rejection', guardKind: 'generic' },
+        };
+        setMessages(prev => [...prev, failMsg]);
+        if (currentUserId) {
+          await supabase.from('chat_intelligence_sessions').insert({
+            session_id: sessionId,
+            role: 'assistant',
+            content: failMsg.content,
+            user_id: currentUserId,
+            metadata: toStoredMetadata(failMsg.metadata),
+          });
+        }
+        toast({
+          title: 'Informe agregado no generado',
+          description,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Error en el análisis',
