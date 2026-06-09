@@ -441,11 +441,20 @@ export default function RixViewer() {
                             if (e.key === "Enter") void commitRename();
                             else if (e.key === "Escape") cancelRename();
                           }}
+                          onBlur={() => {
+                            // Autosave al perder foco: si el valor cambió, persistimos.
+                            // Si no cambió, commitRename detecta el no-op y solo cierra el input.
+                            if (renamingId) void commitRename();
+                          }}
                           className="h-6 text-xs px-1.5"
                         />
                         <button
                           type="button"
-                          onClick={() => void commitRename()}
+                          // mouseDown dispara antes del blur del Input para evitar doble commit
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            void commitRename();
+                          }}
                           className="text-primary hover:text-primary/80"
                           aria-label="Guardar nombre"
                         >
@@ -453,7 +462,10 @@ export default function RixViewer() {
                         </button>
                         <button
                           type="button"
-                          onClick={cancelRename}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            cancelRename();
+                          }}
                           className="text-muted-foreground hover:text-foreground"
                           aria-label="Cancelar"
                         >
