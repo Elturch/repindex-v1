@@ -1426,14 +1426,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
         fallbackVector === 'client_timeout' ||
         fallbackVector === 'empty_stream_after_abort' ||
         fallbackVector === 'manual_abort';
+      // v1 no soporta análisis multi-entidad (IBEX, sectores, rankings):
+      // siempre devuelve "Fuera de cobertura" tomando la primera palabra
+      // como ticker. Bloqueamos el downgrade y mostramos error útil.
+      const isGroupScope = /\b(IBEX[-\s]?35|universo|todos los|todas las|ranking|sector(?:es)?|subsector(?:es)?)\b/i.test(
+        question ?? '',
+      );
       const shouldFallback =
         getAgentVersion() === 'v2' &&
         !forceV1FallbackRef.current &&
-        !blockFallback;
+        !blockFallback &&
+        !isGroupScope;
       console.log('[RIX-V2][fallback-decision]', {
         vector: fallbackVector,
         blockFallback,
         shouldFallback,
+        isGroupScope,
         agentVersion: getAgentVersion(),
         v2AbortReason,
         chunks: __metricsChunks,
