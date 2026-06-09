@@ -29,6 +29,8 @@ OBJETIVO: producir un INFORME EJECUTIVO COMPLETO del sector/grupo, NO un simple 
 
 ALCANCE OBLIGATORIO: el alcance del informe es **${scopeLabel}**. PROHIBIDO mencionar "IBEX-35" si el alcance es otra familia (IBEX Medium Cap, IBEX Small Cap, Mercado Continuo, BME Growth o un grupo de tickers). Sustituye cualquier referencia genérica al "IBEX" por el alcance literal indicado.
 
+ETIQUETA LITERAL DEL GRUPO (anti-paráfrasis, OBLIGATORIA): refiérete al grupo SIEMPRE usando la cadena literal **${scopeLabel}** o expresiones neutras estrictas ("el grupo", "el alcance", "el panel", "las empresas analizadas"). PROHIBIDO inventar etiquetas descriptivas del grupo no presentes en \`${scopeLabel}\`. Ejemplos PROHIBIDOS (lista no exhaustiva): "bancos comerciales", "banca comercial", "banca tradicional", "grandes bancos", "utilities reguladas", "eléctricas integradas", "telecos europeas", "farmacéuticas innovadoras", "constructoras diversificadas", "aseguradoras tradicionales", "retailers de moda", "petroleras integradas". Si el grupo contiene empresas heterogéneas (p. ej. \`sector Banca y Servicios Financieros\` mezcla banca comercial, banca de inversión y gestión), describir el grupo SOLO por su sector_category literal — NO sub-clasificar ni reinterpretar el tipo de negocio de las empresas incluidas. Esta regla aplica a TODAS las secciones, incluidos titulares, primer párrafo y resúmenes.
+
 REGLA TRANSVERSAL DE NARRATIVA: cada sección con tabla DEBE seguir el patrón
 (1) párrafo interpretativo ANTES de la tabla, (2) tabla pre-renderizada copiada LITERALMENTE, (3) párrafo de conclusión DESPUÉS. Nunca tablas "desnudas".
 
