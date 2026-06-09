@@ -1,44 +1,50 @@
-# Diagnóstico
+## Objetivo
 
-En `src/lib/reports/coherenceEngine.ts` (regla **R-sub-1**, líneas 182-199) cuando el usuario marca un subsector (p.ej. "Banca Comercial"), el motor de coherencia rellena automáticamente el campo Sector con el sector padre ("Banca y Servicios Financieros") y lo marca como `origin="derived"`. Por eso aparece en el panel aunque el usuario no lo haya tocado.
+Eliminar el doble fallo observado en el informe IBEX-35 YTD:
+1. v2 parsea mal el rango temporal (`2026-01-23 → 2026-01-24` en vez de `2026-01-01 → 2026-06-07`).
+2. v1 toma "Genera" como ticker y devuelve "Fuera de cobertura".
 
-Ese auto-derive es innecesario para la pregunta final:
-- `compileQuestion.ts` (L65-68) ya prioriza subsector sobre sector — si hay subsector, ignora sector.
-- `buildReportTitle` (`reportMemory.ts:176-179`) también prioriza subsector.
+La optimización de CPU de `sectorRanking` (P1) queda fuera de este plan — se aborda después si vuelve a aparecer el `CPU Time exceeded` con el rango correcto ya parseado.
 
-Por tanto el sector derivado no aporta nada al informe; solo ensucia visualmente el filtro y puede dar lugar a que el LLM use "sector Banca y Servicios Financieros" como `scopeLabel` en vez de "subsector Banca Comercial".
+## Cambios
 
-# Fix propuesto (sub-commit atómico)
+### 1. Parser temporal — `chat-intelligence-v2/parser/temporalParser.ts` (o equivalente)
 
-Único archivo: **`src/lib/reports/coherenceEngine.ts`**.
+Añadir regla de **máxima prioridad** que detecte rangos ISO explícitos en la pregunta antes de aplicar cualquier heurística de "lo que va de año" / "year to date":
 
-## Cambio
+```
+/\bentre\s+(\d{4}-\d{2}-\d{2})\s+y\s+(\d{4}-\d{2}-\d{2})\b/i
+/\bdesde\s+(\d{4}-\d{2}-\d{2})\s+(?:hasta|a)\s+(\d{4}-\d{2}-\d{2})\b/i
+/\bdel?\s+(\d{4}-\d{2}-\d{2})\s+al\s+(\d{4}-\d{2}-\d{2})\b/i
+```
 
-Eliminar/desactivar la regla **R-sub-1** (auto-derive sector desde subsector). El subsector deja de "tirar" del sector hacia arriba. El sector queda vacío salvo que el usuario lo marque explícitamente.
+Si matchea → `from = match[1]`, `to = match[2]`, `mode = "period"`, saltar el resto de heurísticas. Esto cubre los informes generados desde `/informes` (que siempre incluyen el rango ISO explícito).
 
-Conservamos:
-- **R-sub-2** (líneas 201-…): si sector user-set y subsector no encaja, sigue limpiando. Sin cambios.
-- **R1** (ascendente desde tickers): sigue infiriendo sector/subsector desde empresas concretas, que es lo esperado al elegir empresas.
+### 2. Bloquear fallback v1 para queries multi-entidad — `src/contexts/ChatContext.tsx`
 
-## Impacto downstream
+En la rama de fallback (`v2 failed, retrying with v1 fallback`), antes de llamar a v1 detectar si la pregunta es de **scope grupal** y, en ese caso, NO degradar a v1 — mostrar error claro al usuario:
 
-Verificado: nada se rompe.
-- `compileQuestion.ts:65-68` → ya usa subsector si existe.
-- `reportMemory.ts:buildReportTitle` → ya prioriza subsector.
-- `rankingMode.ts` `scopeLabel` → vendrá ahora como "subsector Banca Comercial" (correcto), no como "sector Banca y Servicios Financieros".
-- `FilterPanel.tsx` → el campo Sector mostrará "Todos los sectores" en placeholder; el chip de subsector mantiene su valor.
+```ts
+const isGroupScope = /\b(IBEX-?35|universo|todos los|todas las|ranking|sector\s+\w+|subsector)\b/i.test(query);
+if (isGroupScope) {
+  throw new Error("El informe agregado no se ha podido generar. Reintenta en unos segundos o reduce el alcance temporal.");
+}
+```
+
+Razón: v1 no soporta análisis multi-entidad ni rankings agregados; siempre devolverá "Fuera de cobertura" con un ticker inventado.
+
+### 3. Mensaje de error UX (RixViewer)
+
+`RixViewer.tsx` debe pintar el mensaje de error anterior tal cual (no como respuesta del asistente), con un botón "Reintentar" que reuse el mismo `originalQuestion`. Sin cambios de lógica adicionales.
 
 ## Verificación
 
-1. Ir a `/informes`, marcar "Banca Comercial" en Subsector.
-2. Campo Sector debe quedar vacío (placeholder "Todos los sectores").
-3. Generar informe → pregunta compilada contiene "del subsector Banca Comercial" (no "del sector Banca y Servicios Financieros").
-4. Título del informe en `/visor` → "Visión general · Banca Comercial".
-5. Probar también el camino opuesto: marcar empresas concretas → R1 sigue rellenando sector/subsector como antes (esto NO cambia).
+1. Generar desde `/informes` informe IBEX-35 YTD → logs de v2 deben mostrar `from=2026-01-01 | to=2026-06-07` (no `2026-01-23`).
+2. Si v2 sigue agotando CPU (P1 pendiente), el usuario verá el mensaje claro de reintento — no la respuesta absurda "No tengo a «Genera» en el índice".
+3. Test directo: pregunta puntual "reputación de Iberdrola en 2026-05-10" sigue funcionando (snapshot path intacto).
 
-## Fuera de scope
+## Fuera de alcance
 
-- Cambiar la pantalla `/informes` para ocultar visualmente el sector cuando hay subsector (no hace falta tras este fix: el sector quedará vacío de forma natural).
-- Bug de duplicados de `rix_reports` (señalado antes, sigue pendiente y aparte).
-
-¿Procedo?
+- Optimización de payload de `sectorRanking` para IBEX-35 completo (P1, abordable después con paginación o agregación SQL en `rix_runs_v2`).
+- Cambios en v1.
+- Cambios en el visor más allá del mensaje de error.
