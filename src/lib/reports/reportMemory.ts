@@ -104,15 +104,19 @@ export async function renameReport(
   userId: string,
   id: string,
   customName: string | null,
-): Promise<void> {
-  if (!userId) return;
+): Promise<{ ok: boolean; error?: string }> {
+  if (!userId) return { ok: false, error: "no-user" };
   const trimmed = customName?.trim() || null;
   const { error } = await supabase
     .from("rix_reports")
     .update({ custom_name: trimmed } as any)
     .eq("user_id", userId)
     .eq("id", id);
-  if (error) console.error("[reportMemory] renameReport", error);
+  if (error) {
+    console.error("[reportMemory] renameReport", error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }
 
 export async function clearAll(userId: string): Promise<void> {

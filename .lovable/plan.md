@@ -1,152 +1,47 @@
-## Objetivo
+# Diagnóstico
 
-Eliminar la regresión sistémica de R24 (adjetivos valorativos sin cifra de respaldo) con un **parche determinista post-LLM**, sin tocar prompts, glosario, R20-R23/R25 ni la regla 24 del prompt. Cero invención de datos.
+He revisado la BD (`rix_reports`) y el código del visor. El renombrado **sí persiste cuando se confirma**: el informe más reciente "Banca Comercial" tiene `custom_name="Banca Comercial"` guardado correctamente. El problema es que **solo se guarda si el usuario pulsa Enter o el botón ✓**: no hay autosave al perder el foco. Si el usuario teclea el nuevo nombre y hace clic fuera (en otro informe, en el chat, recarga, etc.), el input desaparece sin enviar el UPDATE.
 
-## Archivos a tocar (sub-commit atómico)
+En la BD se ve el patrón: de los 3 informes recientes con título idéntico "Visión general · Banca Comercial", **solo 1 tiene `custom_name`** poblado. Los otros 2 quedaron en NULL → al recargar el visor, esos 2 vuelven a mostrar el título auto-generado y "parecen" haber perdido el nombre.
 
-### 1. `supabase/functions/chat-intelligence-v2/prompts/narrativeQuality.ts` (modificado)
+Causa secundaria menor: hay 3 filas duplicadas creadas con ~12 ms de diferencia (mismo título, distinto `session_id`). Eso es un bug aparte de la pantalla `/informes` que dispara el insert múltiples veces (probablemente StrictMode + efecto sin guarda). Lo dejo señalado pero **fuera de scope** de este fix.
 
-Append al final del archivo, **sin tocar** la export `NARRATIVE_QUALITY_PROMPT`, ni `R20_GLOSSARY_MAP`, ni `enforceR20Acronyms`:
+# Fix propuesto (acotado, sólo `/visor`)
 
-- **Constante** `R24_EMPTY_ADJECTIVES: string[]` (lista cerrada, espejo exacto de la regla 24 con variantes de género/número):
-  ```
-  robusto, robusta, robustos, robustas
-  sólido, sólida, sólidos, sólidas
-  compacto, compacta, compactos, compactas
-  potente, potentes
-  fuerte, fuertes
-  débil, débiles
-  excelente, excelentes
-  notable, notables
-  destacado, destacada, destacados, destacadas
-  significativo, significativa, significativos, significativas
-  relevante, relevantes
-  importante, importantes
-  considerable, considerables
-  sustancial, sustanciales
-  ```
+Sub-commit atómico en `src/pages/RixViewer.tsx` — única función `commitRename` + JSX del `<Input>` del renombrado. No toco `reportMemory.ts`, ni RLS, ni el flujo de creación.
 
-- **Exclusiones contextuales** (no cuentan como violación aunque carezcan de cifra):
-  - Bandas interpretativas canónicas de R12: `"Sólido 🟢"`, `"Débil 🟠"` (detectables por emoji adyacente o por aparecer dentro de paréntesis tras un valor: `(78,4 — Sólido 🟢)`).
-  - Adjetivo dentro de un bloque ya parentetizado con cifra delante: `(RIX 78,4 sólido)` → exento.
+## Cambios
 
-- **Función exportada** `enforceR24Adjectives(markdown: string): { output: string; substitutions: number; removals: number; warnings: string[] }`.
+1. **Autosave al perder foco** (`onBlur`) en el input de renombrado:
+   - Si el valor difiere del original (`entry.customName || entry.title`), confirmar igual que Enter.
+   - Si está vacío o es idéntico, cancelar silenciosamente.
+   - Guardar el `originalName` en un ref (`renameOriginalRef`) cuando arranca `startRename`, para poder comparar en `commitRename`.
 
-### 2. `supabase/functions/chat-intelligence-v2/orchestrator.ts` (cableado mínimo)
+2. **Confirmación visual** con toast en `commitRename`:
+   - Éxito → `toast({ title: "Nombre actualizado" })`.
+   - Error → toast destructivo con el mensaje del servidor.
+   - Requiere que `renameReport` devuelva `{ ok, error }` en vez de `void`. Cambio mínimo en `reportMemory.ts` (solo el tipo de retorno; sigue siendo backwards-compatible donde se ignora el valor).
 
-Insertar **inmediatamente después** del bloque `try { const r20 = enforceR20Acronyms(...) }` (el añadido en el sub-commit anterior, ~líneas 1037-1052):
+3. **Guardar el botón ✓ con `onMouseDown` en lugar de `onClick`** para que dispare ANTES del `onBlur` del input y no haya doble commit. (Patrón estándar React.)
 
-```ts
-try {
-  const r24 = enforceR24Adjectives(content);
-  if (r24.substitutions > 0 || r24.removals > 0) {
-    console.log(`[R24] skill=${skill.name} reanchored=${r24.substitutions} removed=${r24.removals}`);
-    content = r24.output;
-  }
-  if (r24.warnings.length > 0) {
-    console.warn(`[R24] skill=${skill.name} warnings=`, r24.warnings);
-  }
-} catch (r24Err) {
-  console.warn("[R24] enforceR24Adjectives failed (non-fatal):", r24Err);
-}
-```
+4. **Trim defensivo**: si tras `trim()` el valor queda vacío y era distinto del original, interpretarlo como "restaurar al título auto-generado" → pasar `null` a `renameReport` (la función ya hace `trim() || null`, sólo confirmar comportamiento).
 
-Y ampliar el import existente:
-```ts
-import { enforceR20Acronyms, enforceR24Adjectives } from "./prompts/narrativeQuality.ts";
-```
+## Archivos tocados
 
-## Lógica determinista
+- `src/pages/RixViewer.tsx` — `startRename`, `commitRename`, JSX del `<Input>` (4 líneas + handler nuevo).
+- `src/lib/reports/reportMemory.ts` — `renameReport` retorna `{ ok: boolean; error?: string }` (cambio de firma trivial, retro-compatible).
 
-### Paso 0 — Filtrado por línea (idéntico a R20)
+## Fuera de scope (señalado, no se toca)
 
-Mismas guardas: skip de líneas que empiezan por `|`, `#`, `>`, dentro de bloques ```` ``` ````, o dentro de secciones cuyo encabezado contiene `glosario` o `metodología`. Reset implícito por bloque `##`/`###` (las decisiones son por frase, no acumulativas).
+- Duplicados de `rix_reports` creados a los pocos ms (fix iría en `RixReports.tsx` o `addReport`, no en el visor).
+- Histórico de "(actualizado) (actualizado) ..." encadenados en `handleRegenerate` (es un bug distinto: cada regen concatena sin idempotencia).
 
-### Paso 1 — Tokenización por párrafo y por frase
+## Verificación
 
-- **Párrafo** = secuencia de líneas no vacías consecutivas (separadas por línea en blanco).
-- **Frase** dentro del párrafo: split con regex `/(?<=[.!?…])\s+(?=[A-ZÁÉÍÓÚÑ«"¿¡—])/u`.
-  - El lookahead exige mayúscula, comilla o signo de apertura: evita romper en `62.8`, `1.234`, `Sr.`, `S.A.`, `Ltd.`, decimales con punto y abreviaturas comunes.
-  - El lookbehind acepta `.`, `!`, `?`, `…`.
-- Conservar índices originales para reensamblar sin perder espaciado.
+1. Renombrar un informe y hacer clic en otra fila → debe persistir (autosave on blur).
+2. Renombrar y pulsar Enter → toast "Nombre actualizado".
+3. Renombrar a cadena vacía → vuelve al título auto-generado.
+4. Recargar `/visor` → los renombres siguen visibles.
+5. `SELECT id, title, custom_name FROM rix_reports ORDER BY created_at DESC LIMIT 5` en BD para confirmar persistencia.
 
-### Paso 2 — Detección de "cifra válida en la frase"
-
-Regex: `/(?<![A-Za-z])[-+]?\d+(?:[.,]\d+)?%?(?![A-Za-z])/g`
-- Excluir tokens de año puro `\b20\d\d\b` (igual que `execNarrativeValidator.extractNumbers`).
-- Excluir números de sección/bullet tipo `1.`, `2)` (si el token aparece al inicio de la frase y va seguido inmediatamente de `.` o `)` + espacio, descartarlo).
-- Si tras los filtros queda ≥1 token numérico → la frase tiene **cifra propia** → adjetivo OK.
-
-### Paso 3 — "Cifra de respaldo del mismo sujeto en frase contigua"
-
-Definición operacional **conservadora** (para no inventar relaciones):
-
-- **Sujeto candidato** de una frase = primer proper noun detectado (mayúscula inicial, no al principio absoluto de la frase, no preposición ni mes). Heurística: extraer matches de `/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*\b/u` y tomar el primero; si la frase empieza con proper noun, también vale.
-- También se considera sujeto un **ticker** del universo (lista cargada como constante `R24_IBEX_TICKERS` con el mismo set que el `ignoreList` de R20: `BBVA`, `SAN`, `ITX`, `TEF`, `REP`, etc. — los tickers ya observados en los warnings de R20, no se inventan; se enumeran explícitamente en código).
-- **Reancla** la cifra de la frase contigua (anterior o posterior, dentro del mismo párrafo) **solo si** se cumplen **TODAS**:
-  1. La frase contigua contiene ≥1 cifra válida (paso 2).
-  2. El sujeto candidato de la frase del adjetivo aparece textualmente en la frase contigua, **o** la frase del adjetivo no tiene sujeto propio explícito (sujeto implícito continuado).
-  3. La cifra contigua no es ya un año puro ni un número de sección.
-- **Reescritura mínima**: añadir ` (referencia: ${cifra})` justo antes del signo de puntuación final de la frase del adjetivo. No se toca el texto del adjetivo. Se cuenta como `substitutions++`.
-- Se elige la **primera cifra disponible** de la frase contigua, priorizando frase **posterior** (suele ser la justificación) sobre frase anterior.
-
-### Paso 4 — Sin cifra disponible: neutralización (no invención)
-
-Si ni la frase del adjetivo ni las contiguas dentro del párrafo aportan cifra de respaldo válida:
-
-- **Eliminar** el adjetivo del texto. Estrategia mínima:
-  - Si el adjetivo va precedido por artículo + sustantivo (`una reputación sólida`, `desempeño notable`): borrar el adjetivo y el espacio precedente → `una reputación`, `desempeño`.
-  - Si el adjetivo abre la frase (`Sólido desempeño en...`): borrar adjetivo + capitalizar siguiente palabra → `Desempeño en...`.
-  - Si el adjetivo va precedido por adverbio cuantificador (`muy sólido`, `bastante notable`): borrar adverbio + adjetivo conjuntamente.
-  - Colapsar dobles espacios resultantes (`/  +/g → ' '`) y normalizar `\s+([,.;:])` → `\1`.
-- Contar como `removals++`.
-- Log warning: `[R24] adjetivo sin cifra eliminado: "<adjetivo>" en frase: "<frase truncada a 80 chars>"`.
-
-### Paso 5 — Excepciones definitivas
-
-- Adjetivo precedido **inmediatamente** por una cifra en la misma frase (ej. `78,4 sólido`) → OK por paso 2, no actúa.
-- Adjetivo dentro de paréntesis con cifra dentro: `(RIX 78,4 — Sólido 🟢)` → la cifra está en la misma frase, OK.
-- Adjetivo en banda interpretativa canónica (`Sólido 🟢`, `Crítico 🔴`, etc.): si el adjetivo va seguido por uno de los emojis `🟢🟡🟠🔴💎` o precedido por `—` dentro de paréntesis → exento.
-- Blockquotes (`>`), tablas (`|`), encabezados (`#`), glosario, metodología, citas literales entre comillas tipográficas (`"..."` / `«...»`): exentos en bloque desde paso 0 (líneas) y, dentro de líneas válidas, las frases entre comillas se marcan y se saltan.
-
-### Paso 6 — Idempotencia y orden con R20
-
-- R24 corre **después** de R20 en el orchestrator. Esto es deliberado: si R20 expandió `CEM` → `Gestión de Controversias (CEM)`, la frase ya contiene el sustantivo "Controversias" y el sujeto puede detectarse mejor. La cifra que valida el adjetivo no se ve afectada.
-- R24 nunca toca números → R23 intacta.
-- R24 nunca añade ni quita acrónimos → R20 intacta.
-- R24 nunca toca tablas, encabezados ni numeración → R12/R14/R17 intactas.
-
-## Casos de prueba mentales (para que valides el contrato antes de aprobar)
-
-| Entrada | Decisión esperada | Acción |
-|---|---|---|
-| `CaixaBank presenta una reputación sólida.` | Sin cifra propia; sin cifra contigua del mismo sujeto. | **Remove**: `CaixaBank presenta una reputación.` + warning |
-| `CaixaBank presenta una reputación sólida. Su RIX se sitúa en 71,2.` | Cifra de respaldo en frase posterior, mismo sujeto implícito. | **Reanchor**: `CaixaBank presenta una reputación sólida (referencia: 71,2). Su RIX se sitúa en 71,2.` |
-| `CaixaBank muestra un RIX sólido de 78,4.` | Cifra propia. | **OK**, no toca. |
-| `BBVA (62,8 — Sólido 🟢) lidera el grupo.` | Banda canónica (emoji adyacente). | **Exento**. |
-| `Sólido desempeño en gobernanza.` | Sin cifra ni sujeto. | **Remove + capitalize**: `Desempeño en gobernanza.` + warning |
-| `Merlin tiene una posición fuerte. Inditex también es fuerte, con RIX 83,1.` | Frase 1: sujeto Merlin, frase 2: sujeto distinto Inditex → no reancla cross-subject. | **Remove en frase 1** + warning. Frase 2 OK (cifra propia). |
-| Línea en tabla `\| sólido \| 78,4 \|` | Skip de línea por `|`. | **Exento**. |
-
-## Fuera de alcance
-
-- R20, R21, R22, R23, R25 (intactos)
-- Glosario y diccionario embebido en la regla 24 del prompt (intacto)
-- `src/lib/rixMetricsGlossary.ts` (no se importa)
-- Cualquier otro archivo (frontend, skills, guards)
-- Detección semántica avanzada / NER real (uso heurístico determinista declarado)
-
-## Verificación post-commit
-
-Tras aplicar, Sanity IBEX y revisión de `edge_function_logs`:
-- `[R24] skill=… reanchored=N removed=M`
-- `[R24] warnings=[...]`
-- 0 `[R24] enforceR24Adjectives failed`
-- 3/3 verde, cero regresiones R20-R23/R25
-- Inspección manual de las 2 frases que detecté la última vez (CaixaBank "robusta" y Merlin "sólida"): deben venir o reancladas con cifra o sin el adjetivo.
-
-## Puntos abiertos que necesito que valides antes de implementar
-
-1. **Reescritura con `(referencia: NN)`**: ¿formato OK o prefieres otra fórmula (`(RIX NN)` solo cuando la cifra es de RIX, `(SIM NN)` cuando es de submétrica)? Detectar tipo requiere mirar la palabra previa/posterior al número en la frase contigua; factible pero añade complejidad. Mi recomendación: empezar con `(referencia: NN)` por seguridad; iterar si queda feo.
-2. **Lista de tickers IBEX hardcodeada**: ¿la enumero en código (set cerrado con los ~120 tickers vistos en R20 warnings) o me limito a heurística de mayúsculas? La hardcoded da mejor detección de sujeto cross-frase pero introduce mantenimiento. Mi recomendación: incluir el set core IBEX-35 (35 tickers) + dejar la heurística de proper noun para el resto.
-3. **Neutralización al inicio de frase**: ¿OK eliminar y recapitalizar, o prefieres dejar el adjetivo intacto y solo registrar warning sin reescribir (modo "auditoría sin acción" en frases ambiguas)? Mi recomendación: eliminar siempre que la regla heurística sea segura; si no es segura (ej. el adjetivo es la palabra única antes del verbo), solo loggear warning sin tocar.
+¿Procedo?

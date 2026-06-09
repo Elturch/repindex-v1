@@ -135,6 +135,7 @@ export default function RixViewer() {
   const [activeId, setActiveIdState] = useState<string | null>(() => getActiveId());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const renameOriginalRef = useRef<string>("");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
@@ -284,15 +285,34 @@ export default function RixViewer() {
 
   const startRename = (entry: ReportMemoryEntry) => {
     setRenamingId(entry.id);
-    setRenameValue(entry.customName || entry.title);
+    const original = entry.customName || entry.title;
+    setRenameValue(original);
+    renameOriginalRef.current = original;
   };
 
   const commitRename = async () => {
     if (!renamingId) return;
-    await renameReport(userId, renamingId, renameValue);
+    const next = renameValue.trim();
+    const original = renameOriginalRef.current.trim();
+    // No-op si no cambió: sólo cerrar el input
+    if (next === original) {
+      setRenamingId(null);
+      setRenameValue("");
+      return;
+    }
+    const res = await renameReport(userId, renamingId, renameValue);
     setRenamingId(null);
     setRenameValue("");
     await refresh();
+    if (res.ok) {
+      toast({ title: "Nombre actualizado" });
+    } else {
+      toast({
+        title: "No se pudo guardar el nombre",
+        description: res.error ?? "Inténtalo de nuevo.",
+        variant: "destructive",
+      });
+    }
   };
 
   const cancelRename = () => {
@@ -421,11 +441,20 @@ export default function RixViewer() {
                             if (e.key === "Enter") void commitRename();
                             else if (e.key === "Escape") cancelRename();
                           }}
+                          onBlur={() => {
+                            // Autosave al perder foco: si el valor cambió, persistimos.
+                            // Si no cambió, commitRename detecta el no-op y solo cierra el input.
+                            if (renamingId) void commitRename();
+                          }}
                           className="h-6 text-xs px-1.5"
                         />
                         <button
                           type="button"
-                          onClick={() => void commitRename()}
+                          // mouseDown dispara antes del blur del Input para evitar doble commit
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            void commitRename();
+                          }}
                           className="text-primary hover:text-primary/80"
                           aria-label="Guardar nombre"
                         >
@@ -433,7 +462,10 @@ export default function RixViewer() {
                         </button>
                         <button
                           type="button"
-                          onClick={cancelRename}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            cancelRename();
+                          }}
                           className="text-muted-foreground hover:text-foreground"
                           aria-label="Cancelar"
                         >
