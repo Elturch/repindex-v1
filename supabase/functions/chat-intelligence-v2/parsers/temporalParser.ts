@@ -225,6 +225,50 @@ export async function parseTemporal(
   ticker: string | null = null,
 ): Promise<ResolvedTemporal> {
   const today = new Date();
+
+  // PRIORIDAD MÁXIMA — rango ISO explícito en la pregunta
+  // ("entre YYYY-MM-DD y YYYY-MM-DD", "desde X hasta Y", "del X al Y").
+  // Estos rangos vienen del generador `/informes` y deben respetarse tal
+  // cual, ANTES de cualquier heurística (year-to-date, explicit_date, etc.).
+  // Fix bug: "entre 2026-01-01 y 2026-06-07" se resolvía como explicit_date
+  // del primer ISO match y degradaba a snapshot 2026-01-23.
+  const explicitRange =
+    /\bentre\s+(\d{4}-\d{2}-\d{2})\s+(?:y|hasta|a)\s+(\d{4}-\d{2}-\d{2})\b/i.exec(question) ??
+    /\bdesde\s+(\d{4}-\d{2}-\d{2})\s+(?:hasta|a)\s+(\d{4}-\d{2}-\d{2})\b/i.exec(question) ??
+    /\bdel\s+(\d{4}-\d{2}-\d{2})\s+al\s+(\d{4}-\d{2}-\d{2})\b/i.exec(question);
+  if (explicitRange) {
+    const [, startISO, endISO] = explicitRange;
+    const requested: TheoreticalWindow = {
+      start_t: startISO,
+      end_t: endISO,
+      label: `${startISO} → ${endISO}`,
+      granularity: "weekly",
+      kind: "explicit_range",
+    };
+    let reconciled: ReconciledWindow;
+    try {
+      reconciled = await reconcileWindow(supabase, ticker, requested);
+    } catch (e) {
+      console.error("[RIX-V2][temporal] reconcileWindow (explicit_range) error:", e);
+      reconciled = {
+        requested,
+        start_r: startISO,
+        end_r: endISO,
+        n_real: 0,
+        n_expected: 1,
+        first_available_snapshot: null,
+        last_available_snapshot: null,
+        gap_days_start: 0,
+        gap_days_end: 0,
+        isComplete: false,
+      };
+    }
+    console.log(
+      `[RIX-V2][temporal] explicit_range matched | from=${startISO} | to=${endISO}`,
+    );
+    return reconciledToResolved(reconciled);
+  }
+
   const intent = parseTemporalIntent(question, today);
 
   // PHASE 4 — "esta semana" / "this week" gets the snapshot-aware resolver
