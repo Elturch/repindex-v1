@@ -127,6 +127,8 @@ export function buildSingleModelRankingRules(input: SingleModelRankingPromptInpu
 
 OBJETIVO: producir un informe ejecutivo que describe EXCLUSIVAMENTE la perspectiva de **${model}** sobre el alcance ${scopeLabel}. NO compares con otros modelos. NO uses las palabras "consenso", "divergencia", "rango RIX", "anti-mediana", "promedio entre IAs". Esas figuras NO aplican con un único modelo.${partialWarn}
 
+ETIQUETA LITERAL DEL GRUPO (anti-paráfrasis, OBLIGATORIA): refiérete al grupo SIEMPRE usando la cadena literal **${scopeLabel}** o expresiones neutras estrictas ("el grupo", "el alcance", "el panel"). PROHIBIDO inventar etiquetas descriptivas no presentes en \`${scopeLabel}\` (ej. "bancos comerciales", "utilities reguladas", "telecos europeas", "farmacéuticas innovadoras"). Si el grupo es heterogéneo (mezcla banca comercial e inversión, distintos subsectores, etc.), describir el grupo SOLO por su sector_category literal.
+
 ESTRUCTURA OBLIGATORIA (5 secciones, en este orden):
 
 ## 1. Resumen ejecutivo (perspectiva ${model})
