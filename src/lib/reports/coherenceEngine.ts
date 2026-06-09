@@ -179,24 +179,12 @@ export function runCoherence(
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // R-sub-1 — Subsector → sector (auto-derive si todas las empresas del
-  // subsector pertenecen a un único sector)
+  // R-sub-1 — DESACTIVADA (2026-06-09): el subsector NO debe auto-rellenar
+  // el sector padre. El usuario quiere que "Banca Comercial" se trate como
+  // subsector puro, sin que aparezca "Banca y Servicios Financieros" en el
+  // campo Sector. compileQuestion y buildReportTitle ya priorizan subsector
+  // sobre sector, así que no hace falta el auto-derive.
   // ──────────────────────────────────────────────────────────────────────
-  if (
-    next.subsector.value.length > 0 &&
-    next.subsector.origin === "user-set" &&
-    next.sector.origin === "free"
-  ) {
-    const sectorsForSub = unique(
-      companies
-        .filter((c) => c.subsector && next.subsector.value.includes(c.subsector))
-        .map((c) => c.sector_category)
-        .filter((s): s is string => !!s),
-    );
-    if (sectorsForSub.length === 1) {
-      next = setFilter(next, "sector", sectorsForSub, "derived", "subsector");
-    }
-  }
 
   // R-sub-2 — Si el subsector ya no encaja con el sector user-set, limpiarlo
   if (
