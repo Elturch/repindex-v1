@@ -1,47 +1,44 @@
 # Diagnóstico
 
-He revisado la BD (`rix_reports`) y el código del visor. El renombrado **sí persiste cuando se confirma**: el informe más reciente "Banca Comercial" tiene `custom_name="Banca Comercial"` guardado correctamente. El problema es que **solo se guarda si el usuario pulsa Enter o el botón ✓**: no hay autosave al perder el foco. Si el usuario teclea el nuevo nombre y hace clic fuera (en otro informe, en el chat, recarga, etc.), el input desaparece sin enviar el UPDATE.
+En `src/lib/reports/coherenceEngine.ts` (regla **R-sub-1**, líneas 182-199) cuando el usuario marca un subsector (p.ej. "Banca Comercial"), el motor de coherencia rellena automáticamente el campo Sector con el sector padre ("Banca y Servicios Financieros") y lo marca como `origin="derived"`. Por eso aparece en el panel aunque el usuario no lo haya tocado.
 
-En la BD se ve el patrón: de los 3 informes recientes con título idéntico "Visión general · Banca Comercial", **solo 1 tiene `custom_name`** poblado. Los otros 2 quedaron en NULL → al recargar el visor, esos 2 vuelven a mostrar el título auto-generado y "parecen" haber perdido el nombre.
+Ese auto-derive es innecesario para la pregunta final:
+- `compileQuestion.ts` (L65-68) ya prioriza subsector sobre sector — si hay subsector, ignora sector.
+- `buildReportTitle` (`reportMemory.ts:176-179`) también prioriza subsector.
 
-Causa secundaria menor: hay 3 filas duplicadas creadas con ~12 ms de diferencia (mismo título, distinto `session_id`). Eso es un bug aparte de la pantalla `/informes` que dispara el insert múltiples veces (probablemente StrictMode + efecto sin guarda). Lo dejo señalado pero **fuera de scope** de este fix.
+Por tanto el sector derivado no aporta nada al informe; solo ensucia visualmente el filtro y puede dar lugar a que el LLM use "sector Banca y Servicios Financieros" como `scopeLabel` en vez de "subsector Banca Comercial".
 
-# Fix propuesto (acotado, sólo `/visor`)
+# Fix propuesto (sub-commit atómico)
 
-Sub-commit atómico en `src/pages/RixViewer.tsx` — única función `commitRename` + JSX del `<Input>` del renombrado. No toco `reportMemory.ts`, ni RLS, ni el flujo de creación.
+Único archivo: **`src/lib/reports/coherenceEngine.ts`**.
 
-## Cambios
+## Cambio
 
-1. **Autosave al perder foco** (`onBlur`) en el input de renombrado:
-   - Si el valor difiere del original (`entry.customName || entry.title`), confirmar igual que Enter.
-   - Si está vacío o es idéntico, cancelar silenciosamente.
-   - Guardar el `originalName` en un ref (`renameOriginalRef`) cuando arranca `startRename`, para poder comparar en `commitRename`.
+Eliminar/desactivar la regla **R-sub-1** (auto-derive sector desde subsector). El subsector deja de "tirar" del sector hacia arriba. El sector queda vacío salvo que el usuario lo marque explícitamente.
 
-2. **Confirmación visual** con toast en `commitRename`:
-   - Éxito → `toast({ title: "Nombre actualizado" })`.
-   - Error → toast destructivo con el mensaje del servidor.
-   - Requiere que `renameReport` devuelva `{ ok, error }` en vez de `void`. Cambio mínimo en `reportMemory.ts` (solo el tipo de retorno; sigue siendo backwards-compatible donde se ignora el valor).
+Conservamos:
+- **R-sub-2** (líneas 201-…): si sector user-set y subsector no encaja, sigue limpiando. Sin cambios.
+- **R1** (ascendente desde tickers): sigue infiriendo sector/subsector desde empresas concretas, que es lo esperado al elegir empresas.
 
-3. **Guardar el botón ✓ con `onMouseDown` en lugar de `onClick`** para que dispare ANTES del `onBlur` del input y no haya doble commit. (Patrón estándar React.)
+## Impacto downstream
 
-4. **Trim defensivo**: si tras `trim()` el valor queda vacío y era distinto del original, interpretarlo como "restaurar al título auto-generado" → pasar `null` a `renameReport` (la función ya hace `trim() || null`, sólo confirmar comportamiento).
-
-## Archivos tocados
-
-- `src/pages/RixViewer.tsx` — `startRename`, `commitRename`, JSX del `<Input>` (4 líneas + handler nuevo).
-- `src/lib/reports/reportMemory.ts` — `renameReport` retorna `{ ok: boolean; error?: string }` (cambio de firma trivial, retro-compatible).
-
-## Fuera de scope (señalado, no se toca)
-
-- Duplicados de `rix_reports` creados a los pocos ms (fix iría en `RixReports.tsx` o `addReport`, no en el visor).
-- Histórico de "(actualizado) (actualizado) ..." encadenados en `handleRegenerate` (es un bug distinto: cada regen concatena sin idempotencia).
+Verificado: nada se rompe.
+- `compileQuestion.ts:65-68` → ya usa subsector si existe.
+- `reportMemory.ts:buildReportTitle` → ya prioriza subsector.
+- `rankingMode.ts` `scopeLabel` → vendrá ahora como "subsector Banca Comercial" (correcto), no como "sector Banca y Servicios Financieros".
+- `FilterPanel.tsx` → el campo Sector mostrará "Todos los sectores" en placeholder; el chip de subsector mantiene su valor.
 
 ## Verificación
 
-1. Renombrar un informe y hacer clic en otra fila → debe persistir (autosave on blur).
-2. Renombrar y pulsar Enter → toast "Nombre actualizado".
-3. Renombrar a cadena vacía → vuelve al título auto-generado.
-4. Recargar `/visor` → los renombres siguen visibles.
-5. `SELECT id, title, custom_name FROM rix_reports ORDER BY created_at DESC LIMIT 5` en BD para confirmar persistencia.
+1. Ir a `/informes`, marcar "Banca Comercial" en Subsector.
+2. Campo Sector debe quedar vacío (placeholder "Todos los sectores").
+3. Generar informe → pregunta compilada contiene "del subsector Banca Comercial" (no "del sector Banca y Servicios Financieros").
+4. Título del informe en `/visor` → "Visión general · Banca Comercial".
+5. Probar también el camino opuesto: marcar empresas concretas → R1 sigue rellenando sector/subsector como antes (esto NO cambia).
+
+## Fuera de scope
+
+- Cambiar la pantalla `/informes` para ocultar visualmente el sector cuando hay subsector (no hace falta tras este fix: el sector quedará vacío de forma natural).
+- Bug de duplicados de `rix_reports` (señalado antes, sigue pendiente y aparte).
 
 ¿Procedo?
