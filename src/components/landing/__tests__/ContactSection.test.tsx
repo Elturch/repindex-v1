@@ -63,7 +63,7 @@ describe("ContactSection success flow", () => {
     expect(invokeMock).toHaveBeenCalledTimes(1);
 
     // Payload includes interes field
-    const payload = invokeMock.mock.calls[0][0];
+    const payload = invokeMock.mock.calls[0][1] as { body: Record<string, unknown> };
     expect(payload.body).toMatchObject({
       interes: "RepIndex",
       name: "Juan Pérez",
