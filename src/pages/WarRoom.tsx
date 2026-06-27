@@ -263,17 +263,12 @@ export default function WarRoom() {
               <iframe
                 src="https://acme-warroom.tiiny.co"
                 title="War Room demo — ACME"
-                className="absolute inset-0 w-full h-full pointer-events-none"
+                className="absolute inset-0 w-full h-full"
                 loading="lazy"
               />
-              <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] flex flex-col items-center justify-center gap-3 pointer-events-none">
-                <div className="rounded-full border border-border/60 bg-card/90 p-3">
-                  <Lock className="h-6 w-6 text-foreground" strokeWidth={1.5} />
-                </div>
-                <p className="text-sm font-medium text-foreground bg-card/90 px-4 py-2 rounded-md border border-border/60">
-                  Vista previa con datos demo — disponible al contratar
-                </p>
-              </div>
+            </div>
+            <div className="px-4 py-2 border-t border-border/60 bg-muted/20 text-xs text-muted-foreground text-center">
+              Demo navegable con datos ficticios (ACME). <a href="https://acme-warroom.tiiny.co" target="_blank" rel="noreferrer" className="underline">Abrir en nueva pestaña</a>.
             </div>
           </div>
         </section>
