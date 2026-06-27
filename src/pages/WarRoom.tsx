@@ -42,7 +42,7 @@ const modules = [
   { block: "Diagnóstico e inteligencia", items: [
     { icon: Gauge, title: "Índice de Salud Reputacional (0-100)", desc: "No mide cuánto se habla, sino la carga de riesgo: promedio ponderado de cobertura negativa, alertas, intensidad emocional, amplificación tier 1-2 y reputación ante las IAs." },
     { icon: BrainCircuit, title: "Reputación ante las IAs (GEO)", desc: "Mide cómo te perciben ChatGPT, Perplexity y Gemini. La dimensión que ninguna otra herramienta cubre." },
-    { icon: HeartPulse, title: "Huella emocional (Plutchik)", desc: "Las 8 emociones que proyecta tu marca, desglosadas, para entender el tono real más allá del positivo/negativo." },
+    { icon: HeartPulse, title: "Huella emocional", desc: "Las 8 emociones que proyecta tu marca, desglosadas, para entender el tono real más allá del positivo/negativo." },
     { icon: Activity, title: "Momentum 24h", desc: "Compara las últimas 24h con las previas para detectar el giro emocional antes de que sea titular." },
     { icon: SearchCheck, title: "Forense auditable (sin caja negra)", desc: "Cada puntuación tiene fórmula pública y enlaza a su pieza fuente. 100% trazable: la IA agrupa y nombra, no inventa notas." },
     { icon: Scale, title: "Suelos éticos y legales", desc: "Reglas explícitas que respetan la presunción de inocencia y elevan la criticidad en conflictos judiciales o laborales graves." },
@@ -91,7 +91,7 @@ const intel: Array<[string, Mark[]]> = [
   ["Forense auditable (sin caja negra)",           ["C","N","N","N","N","N","N"]],
   ["Trazabilidad 100% a la pieza",                 ["C","P","P","P","P","P","P"]],
   ["Suelos éticos/legales",                        ["C","N","N","N","N","N","N"]],
-  ["Análisis emocional Plutchik (8)",              ["C","P","N","P","C","P","N"]],
+  ["Análisis emocional (8 emociones)",              ["C","P","N","P","C","P","N"]],
   ["Momentum 24h",                                 ["C","P","N","N","P","P","N"]],
   ["Radar de crisis (aceleración + palanca)",      ["C","P","N","P","P","P","P"]],
   ["Batalla de narrativas (por alcance)",          ["C","P","N","N","P","N","N"]],
