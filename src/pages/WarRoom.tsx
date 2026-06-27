@@ -280,7 +280,7 @@ export default function WarRoom() {
         </section>
 
         {/* CONTACTO */}
-        <ContactSection />
+        <ContactSection defaultInterest="War Room" />
       </article>
     </Layout>
   );

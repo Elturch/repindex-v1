@@ -33,7 +33,7 @@ export default function Landing() {
             <FAQSection />
             <StatsSection />
             <CTASection />
-            <ContactSection />
+            <ContactSection defaultInterest="Ambas" />
           </article>
         </main>
       </LandingAIModelProvider>
