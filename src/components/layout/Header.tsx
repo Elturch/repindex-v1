@@ -33,10 +33,10 @@ interface HeaderProps {
 }
 
 const navItems = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
+  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: false },
   { path: "/informes", label: "Crear informe", icon: Plus, protected: true },
   { path: "/visor", label: "Visor de informes", icon: FileBarChart2, protected: true },
-  { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
+  { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: false },
   { path: "/noticias", label: "Newsroom", icon: Newspaper, protected: false },
   { path: "/war-room", label: "War Room", icon: Radar, protected: false },
 ];
