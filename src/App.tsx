@@ -22,6 +22,7 @@ import { MarketEvolution } from "./pages/MarketEvolution";
 import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
 import WeeklyNews from "./pages/WeeklyNews";
+import WarRoom from "./pages/WarRoom";
 import NewsArticleDetail from "./pages/NewsArticleDetail";
 import NewsArchive from "./pages/NewsArchive";
 import Login from "./pages/Login";
@@ -58,6 +59,7 @@ const App = () => (
                 {/* Public routes */}
                 <Route path="/" element={<Landing />} />
                 <Route path="/noticias" element={<WeeklyNews />} />
+                <Route path="/war-room" element={<WarRoom />} />
                 <Route path="/noticias/archivo" element={<NewsArchive />} />
                 <Route path="/noticias/:slug" element={<NewsArticleDetail />} />
                 <Route path="/metodologia" element={<Methodology />} />
