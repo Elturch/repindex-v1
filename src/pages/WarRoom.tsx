@@ -7,6 +7,7 @@ import {
   Radar, Filter, TrendingUp, Layers, Gauge, BrainCircuit, HeartPulse,
   Activity, SearchCheck, Scale, Siren, Swords, Crosshair, Lightbulb,
   ListChecks, FileOutput, Lock, ArrowRight, BarChart3, Megaphone,
+  BookOpen,
 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { ContactSection } from "@/components/landing/ContactSection";
