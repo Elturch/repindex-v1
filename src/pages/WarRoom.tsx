@@ -34,7 +34,7 @@ function HarveyBall({ state }: { state: Mark }) {
 
 const modules = [
   { block: "Monitorización e ingesta", items: [
-    { icon: Radar, title: "Monitorización multicanal 24/7", desc: "Prensa online, X, Instagram, Facebook, YouTube, TikTok y Bluesky en un solo panel vivo, actualizado cada día." },
+    { icon: Radar, title: "Monitorización multicanal 24/7", desc: "Medios y redes sociales en un solo panel vivo, actualizado cada día." },
     { icon: Filter, title: "Ingesta algorítmica filtrada", desc: "Un algoritmo decide qué es señal y qué es ruido: solo entra lo relevante, nunca un volcado en bruto." },
     { icon: TrendingUp, title: "Motor de amplificación", desc: "Cada pieza se pondera por volumen, difusión y frescura para saber no solo qué se dice, sino cuánto se amplifica." },
     { icon: Layers, title: "Relatos vivos", desc: "Agrupa automáticamente la cobertura dispersa en historias con nombre, estado y criticidad: nuevas, vivas y críticas." },
