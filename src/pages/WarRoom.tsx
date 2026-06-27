@@ -56,6 +56,7 @@ const modules = [
   ]},
   { block: "Reporting y modos", items: [
     { icon: FileOutput, title: "Salidas ejecutivas", desc: "Exporta a PDF e Informe, activa el Modo TV para sala y recibe el correo matinal automático, en ventanas de 7, 30 y 90 días con histórico." },
+    { icon: BookOpen, title: "Metodología declarada", desc: "Fórmulas públicas, criterios explícitos y trazabilidad completa: sabes qué mide, por qué y cómo se calcula cada métrica. Sin caja negra." },
   ]},
 ];
 
