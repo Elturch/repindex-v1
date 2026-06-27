@@ -41,6 +41,7 @@ function cleanupRateLimitMap() {
 }
 
 interface ContactRequest {
+  interes: string;
   name: string;
   email: string;
   company?: string;
@@ -48,11 +49,18 @@ interface ContactRequest {
   honeypot?: string;
 }
 
+const VALID_INTERESTS = ["RepIndex", "War Room", "Ambas"];
+
 const validateRequest = (data: ContactRequest): { valid: boolean; error?: string } => {
   // Honeypot check - if filled, it's a bot
   if (data.honeypot && data.honeypot.length > 0) {
     console.log("Honeypot triggered - rejecting spam");
     return { valid: false, error: "Invalid request" };
+  }
+
+  // Interest validation
+  if (!data.interes || !VALID_INTERESTS.includes(data.interes)) {
+    return { valid: false, error: "Selecciona una opción de interés válida" };
   }
 
   // Name validation
@@ -88,12 +96,24 @@ const validateRequest = (data: ContactRequest): { valid: boolean; error?: string
   return { valid: true };
 };
 
-const generateInternalEmailHtml = (name: string, email: string, company: string | undefined, message: string): string => {
+const generateInternalEmailHtml = (
+  interes: string,
+  name: string,
+  email: string,
+  company: string | undefined,
+  message: string
+): string => {
   const timestamp = new Date().toLocaleString("es-ES", { 
     timeZone: "Europe/Madrid",
     dateStyle: "full",
     timeStyle: "short"
   });
+
+  const interesBadgeColor = interes === "Ambas"
+    ? "#7c3aed"
+    : interes === "War Room"
+    ? "#dc2626"
+    : "#2563eb";
 
   return `
 <!DOCTYPE html>
@@ -122,6 +142,17 @@ const generateInternalEmailHtml = (name: string, email: string, company: string 
           <!-- Content -->
           <tr>
             <td style="padding: 32px;">
+              <!-- Interest badge -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                <tr>
+                  <td>
+                    <span style="display: inline-block; padding: 8px 16px; background-color: ${interesBadgeColor}; color: #ffffff; border-radius: 20px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                      ${interes}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+
               <!-- Contact Info -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
                 <tr>
@@ -271,6 +302,7 @@ const handler = async (req: Request): Promise<Response> => {
     const data: ContactRequest = await req.json();
     
     console.log("Contact form submission received:", { 
+      interes: data.interes,
       name: data.name, 
       email: data.email, 
       company: data.company,
@@ -289,13 +321,14 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // Sanitize inputs
+    const interes = data.interes.trim();
     const name = data.name.trim();
     const email = data.email.trim().toLowerCase();
     const company = data.company?.trim() || undefined;
     const message = data.message.trim();
 
     // Generate email HTML for internal notification
-    const internalHtml = generateInternalEmailHtml(name, email, company, message);
+    const internalHtml = generateInternalEmailHtml(interes, name, email, company, message);
     
     // Generate confirmation email HTML for user
     const confirmationHtml = generateConfirmationEmailHtml(name);
@@ -305,7 +338,7 @@ const handler = async (req: Request): Promise<Response> => {
       from: "RepIndex <no-reply@repindex.ai>",
       to: ["informes@hablamosde.com", "info@repindex.ai"],
       replyTo: [email],
-      subject: `[Contacto Web] ${name}${company ? ` - ${company}` : ''}`,
+      subject: `[Contacto Web] ${name}${company ? ` - ${company}` : ''} — ${interes}`,
       html: internalHtml,
     });
 

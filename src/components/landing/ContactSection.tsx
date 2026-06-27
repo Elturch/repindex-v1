@@ -19,8 +19,21 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
+import { cn } from "@/lib/utils";
+
+const INTEREST_OPTIONS = [
+  { value: "RepIndex", label: "RepIndex" },
+  { value: "War Room", label: "War Room" },
+  { value: "Ambas", label: "Ambas (RepIndex + War Room)" },
+] as const;
+
+type InterestValue = (typeof INTEREST_OPTIONS)[number]["value"];
 
 const contactSchema = z.object({
+  interes: z.enum(["RepIndex", "War Room", "Ambas"], {
+    required_error: "Selecciona una opción",
+    invalid_type_error: "Selecciona una opción válida",
+  }),
   name: z
     .string()
     .trim()
@@ -48,7 +61,11 @@ type ContactFormData = z.infer<typeof contactSchema>;
 
 type FormStatus = "idle" | "loading" | "success" | "error";
 
-export function ContactSection() {
+interface ContactSectionProps {
+  defaultInterest?: InterestValue;
+}
+
+export function ContactSection({ defaultInterest }: ContactSectionProps) {
   const [status, setStatus] = useState<FormStatus>("idle");
   const [honeypot, setHoneypot] = useState("");
   const { toast } = useToast();
@@ -56,6 +73,7 @@ export function ContactSection() {
   const form = useForm<ContactFormData>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
+      interes: defaultInterest ?? undefined,
       name: "",
       email: "",
       company: "",
@@ -71,6 +89,7 @@ export function ContactSection() {
         "send-contact-form",
         {
           body: {
+            interes: data.interes,
             name: data.name,
             email: data.email,
             company: data.company || undefined,
@@ -118,6 +137,8 @@ export function ContactSection() {
     }
   };
 
+  const selectedInterest = form.watch("interes");
+
   return (
     <section
       id="contact-section"
@@ -132,7 +153,7 @@ export function ContactSection() {
           className="text-center mb-10"
         >
           <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-3">
-            ¿Interesado en RepIndex?
+            ¿Interesado en RepIndex o War Room?
           </h2>
           <p className="text-muted-foreground text-base sm:text-lg">
             Déjanos tus datos y te contactaremos
@@ -177,6 +198,43 @@ export function ContactSection() {
                       tabIndex={-1}
                       autoComplete="off"
                       aria-hidden="true"
+                    />
+
+                    {/* Selector de interés — segmented control */}
+                    <FormField
+                      control={form.control}
+                      name="interes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>¿Qué te interesa? *</FormLabel>
+                          <FormControl>
+                            <div className="flex flex-wrap gap-2">
+                              {INTEREST_OPTIONS.map((opt) => {
+                                const isActive = field.value === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() =>
+                                      field.onChange(opt.value)
+                                    }
+                                    className={cn(
+                                      "px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border",
+                                      isActive
+                                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                        : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-primary/5"
+                                    )}
+                                    aria-pressed={isActive}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
