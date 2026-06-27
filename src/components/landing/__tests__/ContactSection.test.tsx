@@ -45,6 +45,9 @@ describe("ContactSection success flow", () => {
     const user = userEvent.setup();
     render(<ContactSection />);
 
+    // Select interest option
+    await user.click(screen.getByRole("button", { name: /RepIndex$/i }));
+
     await user.type(screen.getByLabelText(/Nombre/i), "Juan Pérez");
     await user.type(screen.getByLabelText(/Email/i), "juan@example.com");
     await user.type(screen.getByLabelText(/Mensaje/i), "Hola, me interesa RepIndex.");
@@ -58,6 +61,15 @@ describe("ContactSection success flow", () => {
 
     // Edge function was invoked
     expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    // Payload includes interes field
+    const payload = invokeMock.mock.calls[0][0];
+    expect(payload.body).toMatchObject({
+      interes: "RepIndex",
+      name: "Juan Pérez",
+      email: "juan@example.com",
+      message: "Hola, me interesa RepIndex.",
+    });
 
     // Both toast systems were notified
     expect(useToastMock).toHaveBeenCalledTimes(1);
@@ -76,5 +88,29 @@ describe("ContactSection success flow", () => {
 
     // Form is no longer mounted (success view replaced it)
     expect(screen.queryByLabelText(/Mensaje \*/i)).not.toBeInTheDocument();
+  });
+
+  it("preselects interest from defaultInterest prop", async () => {
+    render(<ContactSection defaultInterest="War Room" />);
+
+    const warRoomButton = screen.getByRole("button", { name: /War Room$/i });
+    expect(warRoomButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows validation error when interest is not selected", async () => {
+    const user = userEvent.setup();
+    render(<ContactSection />);
+
+    await user.type(screen.getByLabelText(/Nombre/i), "Juan Pérez");
+    await user.type(screen.getByLabelText(/Email/i), "juan@example.com");
+    await user.type(screen.getByLabelText(/Mensaje/i), "Hola.");
+
+    await user.click(screen.getByRole("button", { name: /Enviar mensaje/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Selecciona una opción/i)).toBeInTheDocument();
+    });
+
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });
