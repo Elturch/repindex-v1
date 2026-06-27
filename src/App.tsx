@@ -72,33 +72,21 @@ const App = () => (
                 <Route path="/login" element={<Login />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 
-                {/* Protected routes */}
-                <Route path="/dashboard" element={
-                  <ProtectedRoute><Dashboard /></ProtectedRoute>
-                } />
-                <Route path="/chat" element={
-                  <ProtectedRoute><ChatIntelligence /></ProtectedRoute>
-                } />
+                {/* Public routes */}
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/chat" element={<ChatIntelligence />} />
+                <Route path="/market-evolution" element={<MarketEvolution />} />
+                <Route path="/rix-run/:id" element={<RixRunDetail />} />
+                <Route path="/mis-documentos" element={<MyDocuments />} />
+                <Route path="/mis-conversaciones" element={<MyConversations />} />
+                <Route path="/perfil" element={<UserProfile />} />
+                
+                {/* Protected routes — solo informes y visor requieren login */}
                 <Route path="/informes" element={
                   <ProtectedRoute><RixReports /></ProtectedRoute>
                 } />
                 <Route path="/visor" element={
                   <ProtectedRoute><RixViewer /></ProtectedRoute>
-                } />
-                <Route path="/market-evolution" element={
-                  <ProtectedRoute><MarketEvolution /></ProtectedRoute>
-                } />
-                <Route path="/rix-run/:id" element={
-                  <ProtectedRoute><RixRunDetail /></ProtectedRoute>
-                } />
-                <Route path="/mis-documentos" element={
-                  <ProtectedRoute><MyDocuments /></ProtectedRoute>
-                } />
-                <Route path="/mis-conversaciones" element={
-                  <ProtectedRoute><MyConversations /></ProtectedRoute>
-                } />
-                <Route path="/perfil" element={
-                  <ProtectedRoute><UserProfile /></ProtectedRoute>
                 } />
                 
                 {/* Admin routes - only available in Preview/development */}
