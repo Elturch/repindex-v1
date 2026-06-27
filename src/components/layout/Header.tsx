@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sun, Moon, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User, FileBarChart2, Plus } from "lucide-react";
+import { Sun, Moon, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User, FileBarChart2, Plus, Radar } from "lucide-react";
 import repindexLogoText from "@/assets/repindex-logo-text-source.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -38,6 +38,7 @@ const navItems = [
   { path: "/visor", label: "Visor de informes", icon: FileBarChart2, protected: true },
   { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
   { path: "/noticias", label: "Newsroom", icon: Newspaper, protected: false },
+  { path: "/war-room", label: "War Room", icon: Radar, protected: false },
 ];
 
 export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
