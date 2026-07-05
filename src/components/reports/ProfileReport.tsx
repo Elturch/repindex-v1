@@ -189,6 +189,12 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
         </CardContent>
       </Card>
 
+      <ExpertAnalysis
+        type="profile"
+        tickers={[entity.ticker]}
+        week={latest_week}
+      />
+
       {/* Headline card */}
       <Card>
         <CardContent className="pt-6">
