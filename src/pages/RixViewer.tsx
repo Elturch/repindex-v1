@@ -848,18 +848,21 @@ export default function RixViewer() {
                 )}
                 {isComparativeActive && activeReport ? (
                   <div key={`cmp-${refreshNonce}`}>
+                    <ReportQuestionBlock question={activeReport.question} />
                     <ComparisonReport
                       tickers={activeReport.filters.tickers.value}
                     />
                   </div>
                 ) : isProfileActive && activeReport ? (
                   <div key={`prof-${refreshNonce}`}>
+                    <ReportQuestionBlock question={activeReport.question} />
                     <ProfileReport
                       ticker={activeReport.filters.tickers.value[0]}
                     />
                   </div>
                 ) : isRankingActive && activeReport && rankingParams ? (
                   <div key={`rank-${refreshNonce}`}>
+                    <ReportQuestionBlock question={activeReport.question} />
                     <RankingReport
                       params={rankingParams}
                       scopeLabel={rankingScopeLabel}
