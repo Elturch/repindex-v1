@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useComparisonDatapack";
 import { buildRecommendations } from "@/lib/reports/recommendationEngine";
 import { ExternalLink } from "lucide-react";
+import { METRIC_GLOSSARY, METRIC_BY_KEY } from "@/lib/reports/metricGlossary";
 
 interface Props {
   tickers: string[];
@@ -57,40 +58,41 @@ const MODEL_LABEL: Record<string, string> = {
   "Qwen": "Qwen",
 };
 
-const METRIC_DESCRIPTIONS: Record<string, string> = {
-  RIXc: "Índice compuesto de reputación algorítmica.",
-  NVM: "Visibilidad de la marca en las IAs.",
-  RMM: "Calidad de las menciones de marca.",
-  CEM: "Evidencias y fuentes que citan a la marca.",
-  DCM: "Diversidad de la cobertura informativa.",
-  GAM: "Gobierno, ética y factor ESG-G.",
-  CXM: "Experiencia de cliente (solo B2C).",
-  SIM: "Intensidad del sentimiento.",
-  DRM: "Riesgo y desacuerdo entre modelos (menor = mejor).",
-};
-
-const METRIC_ROWS: Array<{ key: string; field: keyof ComparisonSnapshotRow | "rixc"; higherIsBetter: boolean; inverted?: boolean }> = [
+// All metric names & descriptions come from the canonical glossary.
+// Every metric is higher = better (no exceptions).
+const METRIC_ROWS: Array<{
+  key: string;
+  field: keyof ComparisonSnapshotRow | "rixc";
+  higherIsBetter: boolean;
+}> = [
   { key: "RIXc", field: "rixc", higherIsBetter: true },
-  { key: "NVM", field: "nvm", higherIsBetter: true },
-  { key: "RMM", field: "rmm", higherIsBetter: true },
-  { key: "CEM", field: "cem", higherIsBetter: true },
-  { key: "DCM", field: "dcm", higherIsBetter: true },
-  { key: "GAM", field: "gam", higherIsBetter: true },
-  { key: "CXM", field: "cxm", higherIsBetter: true },
-  { key: "SIM", field: "sim", higherIsBetter: true },
-  { key: "DRM", field: "drm", higherIsBetter: false, inverted: true },
+  ...METRIC_GLOSSARY.map((m) => ({
+    key: m.code,
+    field: m.key as keyof ComparisonSnapshotRow,
+    higherIsBetter: true,
+  })),
 ];
 
-// Metrics used for "destaca en / más floja en" (excluding DRM per spec).
-const HIGHLIGHT_METRICS: Array<{ key: string; field: keyof ComparisonSnapshotRow; label: string }> = [
-  { key: "NVM", field: "nvm", label: "visibilidad (NVM)" },
-  { key: "RMM", field: "rmm", label: "calidad de menciones (RMM)" },
-  { key: "CEM", field: "cem", label: "evidencias (CEM)" },
-  { key: "DCM", field: "dcm", label: "diversidad (DCM)" },
-  { key: "GAM", field: "gam", label: "gobierno (GAM)" },
-  { key: "CXM", field: "cxm", label: "experiencia de cliente (CXM)" },
-  { key: "SIM", field: "sim", label: "sentimiento (SIM)" },
-];
+function metricWhat(code: string): string {
+  if (code === "RIXc") return "Índice compuesto de reputación algorítmica.";
+  const def = METRIC_GLOSSARY.find((m) => m.code === code);
+  return def ? def.what : "";
+}
+function metricLabel(code: string): string {
+  const def = METRIC_GLOSSARY.find((m) => m.code === code);
+  return def ? `${def.name.toLowerCase()} (${def.code})` : code;
+}
+
+// Metrics used for "destaca en / más floja en" — all 8 canonical metrics.
+const HIGHLIGHT_METRICS: Array<{
+  key: string;
+  field: keyof ComparisonSnapshotRow;
+  label: string;
+}> = METRIC_GLOSSARY.map((m) => ({
+  key: m.code,
+  field: m.key as keyof ComparisonSnapshotRow,
+  label: metricLabel(m.code),
+}));
 
 function fmtNum(v: number | null | undefined, decimals = 1): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
