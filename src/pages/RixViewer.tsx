@@ -284,6 +284,38 @@ export default function RixViewer() {
   );
   const isDeterministicActive = isComparativeActive || isProfileActive;
 
+  const reportCaptureRef = useRef<HTMLDivElement | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  const handleDownloadDeterministicPdf = useCallback(async () => {
+    if (!reportCaptureRef.current || isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    try {
+      const entityLabel =
+        activeReport?.customName ||
+        activeReport?.title ||
+        (activeReport?.filters?.tickers?.value ?? []).join("-") ||
+        "informe";
+      const safe = entityLabel
+        .replace(/[^\p{L}\p{N}\-_ ]+/gu, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .slice(0, 80) || "informe";
+      const week = new Date().toISOString().slice(0, 10);
+      const filename = `RepIndex-${safe}-${week}.pdf`;
+      await downloadReportPdf(reportCaptureRef.current, filename);
+    } catch (err) {
+      console.error("[pdf] download failed", err);
+      toast({
+        title: "No se pudo generar el PDF",
+        description: "Inténtalo de nuevo en unos segundos.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  }, [activeReport, isDownloadingPdf]);
+
   // If a pending auto-send belongs to a deterministic report (perfil o
   // comparativa), drop it silently — nunca llamamos al LLM en esos casos.
   useEffect(() => {
