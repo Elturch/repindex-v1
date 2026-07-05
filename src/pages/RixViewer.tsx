@@ -110,6 +110,7 @@ export default function RixViewer() {
         sector_category: c.sector_category ?? null,
         subsector: (c as any).subsector ?? null,
         ibex_family_code: c.ibex_family_code ?? null,
+        cotiza_en_bolsa: typeof (c as any).cotiza_en_bolsa === "boolean" ? (c as any).cotiza_en_bolsa : null,
         verified_competitors: Array.isArray((c as any).verified_competitors)
           ? ((c as any).verified_competitors as unknown[])
               .map((x) => (typeof x === "string" ? x : String(x)))
