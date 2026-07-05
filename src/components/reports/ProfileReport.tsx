@@ -34,6 +34,7 @@ import {
   type ProfileDatapack,
 } from "@/hooks/useProfileDatapack";
 import { buildProfileRecommendations } from "@/lib/reports/recommendationEngine";
+import { METRIC_GLOSSARY } from "@/lib/reports/metricGlossary";
 
 interface Props {
   ticker: string;
@@ -50,18 +51,6 @@ const MODEL_LABEL: Record<string, string> = {
   Qwen: "Qwen",
 };
 
-const METRIC_DESCRIPTIONS: Record<string, string> = {
-  RIXc: "Índice compuesto de reputación algorítmica.",
-  NVM: "Visibilidad de la marca en las IAs.",
-  RMM: "Calidad de las menciones de marca.",
-  CEM: "Evidencias y fuentes que citan a la marca.",
-  DCM: "Diversidad de la cobertura informativa.",
-  GAM: "Gobierno, ética y factor ESG-G.",
-  CXM: "Experiencia de cliente (solo B2C).",
-  SIM: "Intensidad del sentimiento.",
-  DRM: "Riesgo y desacuerdo entre modelos (menor = mejor).",
-};
-
 type SnapField = "rixc" | "nvm" | "rmm" | "cem" | "dcm" | "gam" | "cxm" | "sim" | "drm";
 type SectorAvgField =
   | "avg_rixc"
@@ -74,21 +63,31 @@ type SectorAvgField =
   | "avg_sim"
   | "avg_drm";
 
+// All metric rows come from the canonical glossary — every metric is higher = better.
 const METRIC_ROWS: Array<{
   key: string;
+  name: string;
+  what: string;
   snap: SnapField;
-  sector: SectorAvgField | null;
-  higherIsBetter: boolean;
+  sector: SectorAvgField;
+  higherIsBetter: true;
 }> = [
-  { key: "RIXc", snap: "rixc", sector: "avg_rixc", higherIsBetter: true },
-  { key: "NVM", snap: "nvm", sector: "avg_nvm", higherIsBetter: true },
-  { key: "RMM", snap: "rmm", sector: "avg_rmm", higherIsBetter: true },
-  { key: "CEM", snap: "cem", sector: "avg_cem", higherIsBetter: true },
-  { key: "DCM", snap: "dcm", sector: "avg_dcm", higherIsBetter: true },
-  { key: "GAM", snap: "gam", sector: "avg_gam", higherIsBetter: true },
-  { key: "CXM", snap: "cxm", sector: "avg_cxm", higherIsBetter: true },
-  { key: "SIM", snap: "sim", sector: "avg_sim", higherIsBetter: true },
-  { key: "DRM", snap: "drm", sector: "avg_drm", higherIsBetter: false },
+  {
+    key: "RIXc",
+    name: "Índice compuesto",
+    what: "Índice compuesto de reputación algorítmica.",
+    snap: "rixc",
+    sector: "avg_rixc",
+    higherIsBetter: true,
+  },
+  ...METRIC_GLOSSARY.map((m) => ({
+    key: m.code,
+    name: m.name,
+    what: m.what,
+    snap: m.key as SnapField,
+    sector: `avg_${m.key}` as SectorAvgField,
+    higherIsBetter: true as const,
+  })),
 ];
 
 function fmtNum(v: number | null | undefined, decimals = 1): string {
@@ -292,13 +291,10 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
                 return (
                   <TableRow key={row.key}>
                     <TableCell className="font-medium">
-                      {row.key}
-                      {row.key === "DRM" && (
-                        <span className="ml-1 text-[10px] text-muted-foreground">(menor = mejor)</span>
-                      )}
+                      {row.key === "RIXc" ? "RIXc" : `${row.key} · ${row.name}`}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[280px]">
-                      {METRIC_DESCRIPTIONS[row.key]}
+                      {row.what}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {isNa ? "N/A" : fmtNum(raw)}
@@ -509,10 +505,11 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
           <div>
             <h4 className="font-semibold mb-2">Las 8 métricas</h4>
             <ul className="grid gap-1.5 sm:grid-cols-2">
-              {Object.entries(METRIC_DESCRIPTIONS).map(([k, v]) => (
-                <li key={k} className="text-sm">
-                  <span className="font-mono font-semibold">{k}</span>{" "}
-                  <span className="text-muted-foreground">— {v}</span>
+              {METRIC_GLOSSARY.map((m) => (
+                <li key={m.code} className="text-sm">
+                  <span className="font-mono font-semibold">{m.code}</span>{" "}
+                  <span className="font-semibold">· {m.name}</span>{" "}
+                  <span className="text-muted-foreground">— {m.what}</span>
                 </li>
               ))}
             </ul>
