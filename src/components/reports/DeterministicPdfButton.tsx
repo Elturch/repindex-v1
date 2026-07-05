@@ -3,19 +3,21 @@ import { Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { downloadDeterministicReportPdf } from "@/lib/reports/downloadReportPdf";
+import type { RankingDatapackParams } from "@/hooks/useRankingDatapack";
 
 interface Props {
-  kind: "profile" | "comparison";
-  tickers: string[];
+  kind: "profile" | "comparison" | "ranking";
+  tickers?: string[];
+  rankingParams?: RankingDatapackParams | null;
   question?: string | null;
 }
 
-export function DeterministicPdfButton({ kind, tickers, question }: Props) {
+export function DeterministicPdfButton({ kind, tickers, rankingParams, question }: Props) {
   const [busy, setBusy] = useState(false);
 
   const onClick = useCallback(async () => {
     if (busy) return;
-    if (!tickers || tickers.length === 0) {
+    if (kind !== "ranking" && (!tickers || tickers.length === 0)) {
       toast({
         title: "No se pudo generar el PDF",
         description: "El informe no tiene entidades seleccionadas.",
@@ -23,9 +25,22 @@ export function DeterministicPdfButton({ kind, tickers, question }: Props) {
       });
       return;
     }
+    if (kind === "ranking" && !rankingParams) {
+      toast({
+        title: "No se pudo generar el PDF",
+        description: "El informe de ranking no tiene alcance definido.",
+        variant: "destructive",
+      });
+      return;
+    }
     setBusy(true);
     try {
-      await downloadDeterministicReportPdf({ kind, tickers, question: question ?? null });
+      await downloadDeterministicReportPdf({
+        kind,
+        tickers: tickers ?? [],
+        rankingParams: rankingParams ?? null,
+        question: question ?? null,
+      });
     } catch (err) {
       console.error("[pdf] generation failed", err);
       toast({
@@ -36,7 +51,7 @@ export function DeterministicPdfButton({ kind, tickers, question }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [busy, kind, tickers, question]);
+  }, [busy, kind, tickers, rankingParams, question]);
 
   return (
     <Button
