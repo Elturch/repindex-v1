@@ -50,6 +50,19 @@ import {
 } from "@/lib/reports/reportMemory";
 import { toast } from "@/hooks/use-toast";
 
+function ReportQuestionBlock({ question }: { question?: string | null }) {
+  const q = (question ?? "").trim();
+  if (!q) return null;
+  return (
+    <div className="mb-5 rounded-md border border-border border-l-4 border-l-primary bg-muted/40 px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-1">
+        Pregunta del informe
+      </div>
+      <p className="text-sm text-foreground leading-snug whitespace-pre-wrap">{q}</p>
+    </div>
+  );
+}
+
 // Persist `pending` across remounts caused by auth-state churn. Without
 // this, a TOKEN_REFRESHED or transient `isAuthenticated=false→true` flip
 // during the visor mount drops the in-memory pending and the report is
