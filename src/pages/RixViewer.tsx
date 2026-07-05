@@ -768,6 +768,7 @@ export default function RixViewer() {
                   <DeterministicPdfButton
                     kind={isProfileActive ? "profile" : "comparison"}
                     tickers={activeReport?.filters?.tickers?.value ?? []}
+                    question={activeReport?.question ?? null}
                   />
                 )
               ) : (
