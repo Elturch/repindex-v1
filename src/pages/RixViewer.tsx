@@ -25,6 +25,7 @@ import {
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useLatestBatchDate } from "@/hooks/useLatestBatchDate";
 import { compileFiltersToQuestion } from "@/lib/reports/compileQuestion";
@@ -103,6 +104,7 @@ export default function RixViewer() {
   const location = useLocation();
   const { user } = useAuth();
   const userId = user?.id ?? "";
+  const queryClient = useQueryClient();
   const { data: companiesRaw } = useCompanies();
   const { data: lastBatchDate } = useLatestBatchDate();
   const companies: CompanyMeta[] = useMemo(
@@ -143,6 +145,8 @@ export default function RixViewer() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [isRefreshingDet, setIsRefreshingDet] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
@@ -407,6 +411,39 @@ export default function RixViewer() {
     navigate("/informes", { state: { prefilFilters: activeReport.filters } });
   };
 
+  const handleRegenerateDeterministic = useCallback(async () => {
+    if (!activeReport || !isDeterministicActive) return;
+    const tickers = activeReport.filters?.tickers?.value ?? [];
+    if (tickers.length === 0) return;
+    const kind: "profile" | "comparison" = isProfileActive ? "profile" : "comparison";
+    const sorted = [...tickers].sort().join("-");
+    const prefix = `repindex.analysis.${kind}.${sorted}.`;
+
+    setIsRefreshingDet(true);
+    try {
+      try {
+        const toRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(prefix)) toRemove.push(k);
+        }
+        toRemove.forEach((k) => localStorage.removeItem(k));
+      } catch {
+        /* ignore storage errors */
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["rix_profile_datapack"] }),
+        queryClient.invalidateQueries({ queryKey: ["rix_comparison_datapack"] }),
+      ]);
+
+      setRefreshNonce((n) => n + 1);
+      await new Promise((r) => setTimeout(r, 400));
+    } finally {
+      setIsRefreshingDet(false);
+    }
+  }, [activeReport, isDeterministicActive, isProfileActive, queryClient]);
+
   const isGenerating = !isDeterministicActive && (!!pending || (isLoading && messages.length === 0));
   const isEmpty =
     !isLoading &&
@@ -643,6 +680,26 @@ export default function RixViewer() {
                     Regenerar informe
                   </Button>
                   )}
+                  {isDeterministicActive && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => void handleRegenerateDeterministic()}
+                    disabled={isRefreshingDet}
+                    title="Refresca los datos deterministas y vuelve a generar el análisis del experto"
+                  >
+                    {isRefreshingDet ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Regenerando…
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5" /> Regenerar informe
+                      </>
+                    )}
+                  </Button>
+                  )}
                 </>
               )}
               {isDeterministicActive ? (
@@ -726,13 +783,17 @@ export default function RixViewer() {
                   </div>
                 )}
                 {isComparativeActive && activeReport ? (
-                  <ComparisonReport
-                    tickers={activeReport.filters.tickers.value}
-                  />
+                  <div key={`cmp-${refreshNonce}`}>
+                    <ComparisonReport
+                      tickers={activeReport.filters.tickers.value}
+                    />
+                  </div>
                 ) : isProfileActive && activeReport ? (
-                  <ProfileReport
-                    ticker={activeReport.filters.tickers.value[0]}
-                  />
+                  <div key={`prof-${refreshNonce}`}>
+                    <ProfileReport
+                      ticker={activeReport.filters.tickers.value[0]}
+                    />
+                  </div>
                 ) : (
                   <ChatMessages
                     messages={messages}
