@@ -647,7 +647,8 @@ export default function RixViewer() {
               )}
               {isDeterministicActive ? (
                 <DeterministicPdfButton
-                  fallbackLabel={activeReport?.customName || activeReport?.title || "informe"}
+                  kind={isProfileActive ? "profile" : "comparison"}
+                  tickers={activeReport?.filters?.tickers?.value ?? []}
                 />
               ) : (
               <DropdownMenu>
