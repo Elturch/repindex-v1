@@ -148,6 +148,14 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   const citations = data.citations ?? [];
   const recommendations = useMemo(() => buildRecommendations(data), [data]);
 
+  // Publish datapack so the "Descargar PDF" button (in RixViewer) can build
+  // the branded HTML export.
+  const { setPayload } = useReportExport();
+  useEffect(() => {
+    setPayload({ kind: "comparison", datapack: data });
+    return () => setPayload(null);
+  }, [data, setPayload]);
+
   // Order snapshot by rixc desc.
   const ranked = useMemo(
     () => [...snapshot].sort((a, b) => (b.rixc ?? 0) - (a.rixc ?? 0)),
