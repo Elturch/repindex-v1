@@ -648,23 +648,9 @@ export default function RixViewer() {
                 </>
               )}
               {isDeterministicActive ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleDownloadDeterministicPdf}
-                  disabled={isDownloadingPdf}
-                >
-                  {isDownloadingPdf ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando PDF…
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-3.5 w-3.5" /> Descargar PDF
-                    </>
-                  )}
-                </Button>
+                <DeterministicPdfButton
+                  fallbackLabel={activeReport?.customName || activeReport?.title || "informe"}
+                />
               ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
