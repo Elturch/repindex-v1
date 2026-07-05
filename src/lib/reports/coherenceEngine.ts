@@ -25,6 +25,7 @@ export interface CompanyMeta {
   subsector?: string | null;
   ibex_family_code: string | null;
   verified_competitors?: string[] | null;
+  cotiza_en_bolsa?: boolean | null;
 }
 
 export interface CoherenceWarning {
@@ -94,9 +95,6 @@ export function runCoherence(
     const inferredSubsectors = unique(
       selected.map((c) => c.subsector ?? null).filter((s): s is string => !!s),
     );
-    const inferredUniverses = unique(
-      selected.map((c) => c.ibex_family_code).filter((u): u is string => !!u),
-    ) as Universe[];
 
     if (next.sector.origin === "free" && inferredSectors.length > 0) {
       next = setFilter(next, "sector", inferredSectors, "derived", "tickers");
@@ -119,14 +117,9 @@ export function runCoherence(
       next = setFilter(next, "subsector", inferredSubsectors, "derived", "tickers");
     }
 
-    // Only derive universe if all selected tickers fall within a SINGLE universe.
-    // Otherwise leave it free to avoid filtering out companies the user expects.
-    if (
-      next.universe.origin === "free" &&
-      inferredUniverses.length === 1
-    ) {
-      next = setFilter(next, "universe", inferredUniverses, "derived", "tickers");
-    }
+    // Universe is NEVER auto-derived from tickers: mixing listed / non-listed
+    // entities (e.g. Inditex + El Corte Inglés) is a valid free comparison and
+    // must not shrink the pool of selectable companies.
 
     // R6 — multi-sector con varias empresas → recomendar comparativa
     if (
@@ -155,9 +148,9 @@ export function runCoherence(
     const universes = unique(
       sectorCompanies.map((c) => c.ibex_family_code).filter((u): u is string => !!u),
     ) as Universe[];
-    if (universes.length === 1) {
-      next = setFilter(next, "universe", universes, "derived", "sector");
-    }
+    // Do NOT auto-derive universe from sector either: it can silently exclude
+    // non-listed entities in the same sector (foundations, private companies).
+    void universes;
   }
 
   // R2b — If sector is user-set and spans multiple universes, unlock any
@@ -309,10 +302,7 @@ export function computeScopeSize(
   if (state.tickers.value.length > 0) return state.tickers.value.length;
   let pool = companies;
   if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
-    pool = pool.filter(
-      (c) =>
-        c.ibex_family_code && state.universe.value.includes(c.ibex_family_code as Universe),
-    );
+    pool = pool.filter((c) => matchesUniverse(c, state.universe.value));
   }
   if (state.sector.value.length > 0) {
     pool = pool.filter(
@@ -334,10 +324,7 @@ export function getScopeTickers(
   if (state.tickers.value.length > 0) return state.tickers.value;
   let pool = companies;
   if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
-    pool = pool.filter(
-      (c) =>
-        c.ibex_family_code && state.universe.value.includes(c.ibex_family_code as Universe),
-    );
+    pool = pool.filter((c) => matchesUniverse(c, state.universe.value));
   }
   if (state.sector.value.length > 0) {
     pool = pool.filter(
@@ -350,4 +337,21 @@ export function getScopeTickers(
     );
   }
   return pool.map((c) => c.ticker);
+}
+
+/**
+ * Universe filter matcher that supports the synthetic "NO-LISTED" bucket
+ * (private / non-traded entities such as foundations, El Corte Inglés or
+ * Mercadona) alongside the regular IBEX family codes.
+ */
+export function matchesUniverse(
+  c: CompanyMeta,
+  selected: Universe[],
+): boolean {
+  if (selected.length === 0) return true;
+  const wantsNonListed = selected.includes("NO-LISTED" as Universe);
+  if (wantsNonListed && c.cotiza_en_bolsa === false) return true;
+  return Boolean(
+    c.ibex_family_code && selected.includes(c.ibex_family_code as Universe),
+  );
 }

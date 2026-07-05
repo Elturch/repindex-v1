@@ -34,7 +34,7 @@ import {
   windowNeedsReanchor,
   todayISO,
 } from "@/lib/reports/filterState";
-import { CompanyMeta } from "@/lib/reports/coherenceEngine";
+import { CompanyMeta, matchesUniverse } from "@/lib/reports/coherenceEngine";
 import { FilterBlock } from "./FilterBlock";
 import { IntentChips } from "./IntentChips";
 import { MultiChipSelect } from "./MultiChipSelect";
@@ -51,6 +51,7 @@ const UNIVERSES: { value: Universe; label: string }[] = [
   { value: "IBEX-SC", label: "IBEX Small Cap" },
   { value: "BME-GROWTH", label: "BME Growth" },
   { value: "MC-OTHER", label: "MC Other" },
+  { value: "NO-LISTED", label: "No cotiza / Privadas" },
 ];
 
 const METRICS: {
@@ -136,11 +137,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
   const sectorOptions = useMemo(() => {
     let pool = companies;
     if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
-      pool = pool.filter(
-        (c) =>
-          c.ibex_family_code &&
-          state.universe.value.includes(c.ibex_family_code as Universe),
-      );
+      pool = pool.filter((c) => matchesUniverse(c, state.universe.value));
     }
     return Array.from(
       new Set(pool.map((c) => c.sector_category).filter((s): s is string => !!s)),
@@ -163,33 +160,19 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
       .map((s) => ({ value: s, label: s }));
   }, [companies, state.sector.value]);
 
+  // "Empresa / Ticker" MUST always list every company in the catalogue,
+  // regardless of universe/sector/subsector, so users can freely compare
+  // listed and non-listed entities (e.g. Inditex vs El Corte Inglés).
   const tickerOptions = useMemo(() => {
-    let pool = companies;
-    if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
-      pool = pool.filter(
-        (c) =>
-          c.ibex_family_code &&
-          state.universe.value.includes(c.ibex_family_code as Universe),
-      );
-    }
-    if (state.sector.value.length > 0) {
-      pool = pool.filter(
-        (c) => c.sector_category && state.sector.value.includes(c.sector_category),
-      );
-    }
-    if (state.subsector.value.length > 0) {
-      pool = pool.filter(
-        (c) => c.subsector && state.subsector.value.includes(c.subsector),
-      );
-    }
-    return pool
+    return companies
+      .slice()
       .sort((a, b) => a.issuer_name.localeCompare(b.issuer_name))
       .map((c) => ({
         value: c.ticker,
         label: c.issuer_name,
         hint: c.ticker,
       }));
-  }, [companies, state.universe.value, state.universe.origin, state.sector.value, state.subsector.value]);
+  }, [companies]);
 
   // Competidores verificados sugeridos a partir de la selección actual.
   // Sólo usa la columna `verified_competitors` (regla anti-fallback de sector).

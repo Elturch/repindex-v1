@@ -67,6 +67,10 @@ export default function RixReports() {
               .map((x) => (typeof x === "string" ? x : String(x)))
               .filter((x) => x && x.length > 0)
           : null,
+        cotiza_en_bolsa:
+          typeof (c as any).cotiza_en_bolsa === "boolean"
+            ? (c as any).cotiza_en_bolsa
+            : null,
       })),
     [companiesRaw],
   );

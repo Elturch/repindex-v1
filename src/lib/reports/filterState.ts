@@ -28,7 +28,7 @@ export type IntentType =
   | "divergencia"
   | "perfil";
 
-export type Universe = "IBEX-35" | "IBEX-MC" | "IBEX-SC" | "BME-GROWTH" | "MC-OTHER" | "ALL";
+export type Universe = "IBEX-35" | "IBEX-MC" | "IBEX-SC" | "BME-GROWTH" | "MC-OTHER" | "NO-LISTED" | "ALL";
 
 export type ModelName =
   | "ChatGPT"
