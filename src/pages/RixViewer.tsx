@@ -271,7 +271,6 @@ export default function RixViewer() {
   // chat agent for these, so there's no LLM narrative for comparativas.
   const isComparativeActive = !!(
     activeReport &&
-    activeReport.filters?.intent?.value === "comparativa" &&
     (activeReport.filters?.tickers?.value?.length ?? 0) >= 2
   );
 
