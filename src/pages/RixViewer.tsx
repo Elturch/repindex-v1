@@ -34,6 +34,7 @@ import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { ProfileReport } from "@/components/reports/ProfileReport";
+import { downloadReportPdf } from "@/lib/reports/downloadReportPdf";
 import {
   listReports,
   getActiveId,
