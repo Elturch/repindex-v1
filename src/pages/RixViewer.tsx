@@ -304,6 +304,10 @@ export default function RixViewer() {
   const rankingParams = useMemo(() => {
     if (!activeReport || !isRankingActive) return null;
     const f = activeReport.filters;
+    const userTopN =
+      f.topN?.origin === "user-set" && typeof f.topN.value === "number" && f.topN.value > 0
+        ? f.topN.value
+        : null;
     return {
       sector: f.sector.value[0] ?? null,
       subsector: f.subsector.value[0] ?? null,
@@ -317,6 +321,7 @@ export default function RixViewer() {
       orderBy: (f.axisMetrics.value[0] && f.axisMetrics.value[0] !== "RIX"
         ? String(f.axisMetrics.value[0]).toLowerCase()
         : "rixc"),
+      limit: userTopN,
     };
   }, [activeReport, isRankingActive]);
 
