@@ -1,5 +1,7 @@
-// @ts-expect-error - no bundled types
-import html2pdf from "html2pdf.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - html2pdf.js has partial type coverage
+import html2pdfImport from "html2pdf.js";
+const html2pdf: any = html2pdfImport;
 
 /**
  * html2canvas (used by html2pdf) does NOT support modern CSS color spaces such
@@ -104,7 +106,7 @@ export async function downloadReportPdf(
         },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-      })
+      } as any)
       .from(holder.firstElementChild as HTMLElement)
       .save();
   } finally {
