@@ -208,6 +208,7 @@ function SectorView({
       <Ribbon
         kind="sector"
         subtitle={`${scopeLabel} · ${rows.length} empresas · Semana ${isoWeekLabel(data.latest_week)} (${fmtWeek(data.latest_week)})`}
+        topLimit={data.scope?.limit ?? null}
       />
       <div className="rr-body">
         {/* Hero */}
