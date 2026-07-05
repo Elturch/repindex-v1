@@ -4514,6 +4514,19 @@ export type Database = {
       rix_comparison_datapack: { Args: { p_tickers: string[] }; Returns: Json }
       rix_profile_datapack: { Args: { p_ticker: string }; Returns: Json }
       rix_qualitative_signals: { Args: { p_tickers: string[] }; Returns: Json }
+      rix_ranking_datapack: {
+        Args: {
+          p_from?: string
+          p_models?: string[]
+          p_order_by?: string
+          p_sector?: string
+          p_subsector?: string
+          p_tickers?: string[]
+          p_to?: string
+          p_universe?: string[]
+        }
+        Returns: Json
+      }
       set_sweep_status: {
         Args: { p_in_progress: boolean; p_sweep_id?: string; p_total?: number }
         Returns: undefined
