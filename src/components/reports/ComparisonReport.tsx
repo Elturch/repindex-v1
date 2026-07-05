@@ -26,6 +26,8 @@ import {
   type ComparisonDatapack,
   type ComparisonSnapshotRow,
 } from "@/hooks/useComparisonDatapack";
+import { buildRecommendations } from "@/lib/reports/recommendationEngine";
+import { ExternalLink } from "lucide-react";
 
 interface Props {
   tickers: string[];
@@ -141,6 +143,8 @@ export function ComparisonReport({ tickers }: Props) {
 
 function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   const { latest_week, prev_week, entities, snapshot, permodel, evolution } = data;
+  const citations = data.citations ?? [];
+  const recommendations = useMemo(() => buildRecommendations(data), [data]);
 
   // Order snapshot by rixc desc.
   const ranked = useMemo(
