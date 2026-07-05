@@ -35,6 +35,8 @@ import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { ProfileReport } from "@/components/reports/ProfileReport";
+import { RankingReport } from "@/components/reports/RankingReport";
+import { toDbModelNames } from "@/lib/reports/filterState";
 import { DeterministicPdfButton } from "@/components/reports/DeterministicPdfButton";
 import {
   listReports,
@@ -286,7 +288,46 @@ export default function RixViewer() {
     activeReport &&
     (activeReport.filters?.tickers?.value?.length ?? 0) === 1
   );
-  const isDeterministicActive = isComparativeActive || isProfileActive;
+  const isRankingActive = !!(
+    activeReport &&
+    (activeReport.filters?.tickers?.value?.length ?? 0) === 0 &&
+    (
+      (activeReport.filters?.sector?.value?.length ?? 0) > 0 ||
+      (activeReport.filters?.subsector?.value?.length ?? 0) > 0 ||
+      (activeReport.filters?.universe?.value?.length ?? 0) > 0
+    )
+  );
+  const isDeterministicActive =
+    isComparativeActive || isProfileActive || isRankingActive;
+
+  // Map the report filters into params for the ranking datapack RPC.
+  const rankingParams = useMemo(() => {
+    if (!activeReport || !isRankingActive) return null;
+    const f = activeReport.filters;
+    return {
+      sector: f.sector.value[0] ?? null,
+      subsector: f.subsector.value[0] ?? null,
+      universe: f.universe.value.length > 0 ? [...f.universe.value] : null,
+      tickers: null,
+      from: f.window.value.from,
+      to: f.window.value.to,
+      models: f.models.value.length > 0 && f.models.value.length < 6
+        ? toDbModelNames(f.models.value)
+        : null,
+      orderBy: (f.axisMetrics.value[0] && f.axisMetrics.value[0] !== "RIX"
+        ? String(f.axisMetrics.value[0]).toLowerCase()
+        : "rixc"),
+    };
+  }, [activeReport, isRankingActive]);
+
+  const rankingScopeLabel = useMemo(() => {
+    if (!activeReport) return undefined;
+    const f = activeReport.filters;
+    if (f.sector.value[0]) return f.sector.value[0];
+    if (f.subsector.value[0]) return f.subsector.value[0];
+    if (f.universe.value.length > 0) return f.universe.value.join(" · ");
+    return undefined;
+  }, [activeReport]);
 
   // If a pending auto-send belongs to a deterministic report (perfil o
   // comparativa), drop it silently — nunca llamamos al LLM en esos casos.
@@ -414,9 +455,19 @@ export default function RixViewer() {
   const handleRegenerateDeterministic = useCallback(async () => {
     if (!activeReport || !isDeterministicActive) return;
     const tickers = activeReport.filters?.tickers?.value ?? [];
-    if (tickers.length === 0) return;
-    const kind: "profile" | "comparison" = isProfileActive ? "profile" : "comparison";
-    const sorted = [...tickers].sort().join("-");
+    const kind: "profile" | "comparison" | "ranking" = isProfileActive
+      ? "profile"
+      : isComparativeActive
+        ? "comparison"
+        : "ranking";
+    const sorted =
+      tickers.length > 0
+        ? [...tickers].sort().join("-")
+        : JSON.stringify({
+            s: activeReport.filters.sector.value,
+            ss: activeReport.filters.subsector.value,
+            u: activeReport.filters.universe.value,
+          });
     const prefix = `repindex.analysis.${kind}.${sorted}.`;
 
     setIsRefreshingDet(true);
@@ -435,6 +486,7 @@ export default function RixViewer() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["rix_profile_datapack"] }),
         queryClient.invalidateQueries({ queryKey: ["rix_comparison_datapack"] }),
+        queryClient.invalidateQueries({ queryKey: ["rix_ranking_datapack"] }),
       ]);
 
       setRefreshNonce((n) => n + 1);
@@ -442,7 +494,7 @@ export default function RixViewer() {
     } finally {
       setIsRefreshingDet(false);
     }
-  }, [activeReport, isDeterministicActive, isProfileActive, queryClient]);
+  }, [activeReport, isDeterministicActive, isProfileActive, isComparativeActive, queryClient]);
 
   const isGenerating = !isDeterministicActive && (!!pending || (isLoading && messages.length === 0));
   const isEmpty =
@@ -703,10 +755,12 @@ export default function RixViewer() {
                 </>
               )}
               {isDeterministicActive ? (
-                <DeterministicPdfButton
-                  kind={isProfileActive ? "profile" : "comparison"}
-                  tickers={activeReport?.filters?.tickers?.value ?? []}
-                />
+                isRankingActive ? null : (
+                  <DeterministicPdfButton
+                    kind={isProfileActive ? "profile" : "comparison"}
+                    tickers={activeReport?.filters?.tickers?.value ?? []}
+                  />
+                )
               ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -792,6 +846,13 @@ export default function RixViewer() {
                   <div key={`prof-${refreshNonce}`}>
                     <ProfileReport
                       ticker={activeReport.filters.tickers.value[0]}
+                    />
+                  </div>
+                ) : isRankingActive && activeReport && rankingParams ? (
+                  <div key={`rank-${refreshNonce}`}>
+                    <RankingReport
+                      params={rankingParams}
+                      scopeLabel={rankingScopeLabel}
                     />
                   </div>
                 ) : (
