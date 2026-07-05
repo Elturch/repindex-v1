@@ -569,12 +569,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                   <TableRow key={row.key}>
                     <TableCell className="font-medium">
                       {row.key}
-                      {row.key === "DRM" && (
-                        <span className="ml-1 text-[10px] text-muted-foreground">(menor = mejor)</span>
-                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[280px]">
-                      {METRIC_DESCRIPTIONS[row.key]}
+                      {metricWhat(row.key)}
                     </TableCell>
                     {entities.map((e) => {
                       const s = snapshot.find((x) => x.tk === e.ticker);
@@ -739,10 +736,11 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
           <div>
             <h4 className="font-semibold mb-2">Las 8 métricas</h4>
             <ul className="grid gap-1.5 sm:grid-cols-2">
-              {Object.entries(METRIC_DESCRIPTIONS).map(([k, v]) => (
-                <li key={k} className="text-sm">
-                  <span className="font-mono font-semibold">{k}</span>{" "}
-                  <span className="text-muted-foreground">— {v}</span>
+              {METRIC_GLOSSARY.map((m) => (
+                <li key={m.code} className="text-sm">
+                  <span className="font-mono font-semibold">{m.code}</span>{" "}
+                  <span className="font-semibold">· {m.name}</span>{" "}
+                  <span className="text-muted-foreground">— {m.what}</span>
                 </li>
               ))}
             </ul>
