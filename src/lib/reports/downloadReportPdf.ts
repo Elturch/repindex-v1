@@ -102,6 +102,7 @@ async function waitForFramePaint(iframe: HTMLIFrameElement): Promise<void> {
 export interface DownloadDeterministicInput {
   kind: "profile" | "comparison";
   tickers: string[];
+  question?: string | null;
 }
 
 function analysisCacheKey(
@@ -126,7 +127,7 @@ function sanitizeSegment(s: string): string {
 export async function downloadDeterministicReportPdf(
   input: DownloadDeterministicInput,
 ): Promise<void> {
-  const { kind, tickers } = input;
+  const { kind, tickers, question } = input;
   const cleanTickers = (tickers ?? []).map((t) => t.trim()).filter(Boolean);
   if (cleanTickers.length === 0) {
     throw new Error("No tickers provided");
@@ -169,6 +170,7 @@ export async function downloadDeterministicReportPdf(
     kind,
     datapack,
     analysisMarkdown: analysisMarkdown || null,
+    question: question ?? null,
   });
 
   // 4) Filename.
