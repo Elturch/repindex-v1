@@ -1,9 +1,11 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Loader2, Sparkles, AlertTriangle } from "lucide-react";
+import { useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useReportAnalysis } from "@/hooks/useReportAnalysis";
+import { useReportExport } from "@/contexts/ReportExportContext";
 
 interface ExpertAnalysisProps {
   type: "profile" | "comparison";
@@ -17,6 +19,12 @@ export function ExpertAnalysis({ type, tickers, week }: ExpertAnalysisProps) {
     tickers,
     week,
   );
+
+  const { setAnalysisMarkdown } = useReportExport();
+  useEffect(() => {
+    setAnalysisMarkdown(analysis ?? null);
+    return () => setAnalysisMarkdown(null);
+  }, [analysis, setAnalysisMarkdown]);
 
   return (
     <Card className="border-primary/40 bg-gradient-to-br from-primary/5 via-transparent to-transparent">
