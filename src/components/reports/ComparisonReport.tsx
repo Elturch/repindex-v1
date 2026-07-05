@@ -321,6 +321,12 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         </CardContent>
       </Card>
 
+      <ExpertAnalysis
+        type="comparison"
+        tickers={entities.map((e) => e.ticker)}
+        week={latest_week}
+      />
+
       {/* Verdict */}
       {verdict && (
         <Card>
