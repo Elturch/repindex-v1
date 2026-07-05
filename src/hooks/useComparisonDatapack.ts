@@ -21,6 +21,7 @@ export interface ComparisonSnapshotRow {
   gam: number | null;
   dcm: number | null;
   cxm: number | null;
+  num_citas: number | null;
 }
 
 export interface ComparisonPerModelRow {
@@ -35,6 +36,19 @@ export interface ComparisonEvolutionRow {
   rixc: number;
 }
 
+export interface ComparisonCitationItem {
+  url: string;
+  domain: string;
+  models_count: number;
+  models: string[];
+}
+
+export interface ComparisonCitations {
+  tk: string;
+  total_sources: number;
+  items: ComparisonCitationItem[];
+}
+
 export interface ComparisonDatapack {
   latest_week: string;
   prev_week: string;
@@ -42,6 +56,7 @@ export interface ComparisonDatapack {
   snapshot: ComparisonSnapshotRow[];
   permodel: ComparisonPerModelRow[];
   evolution: ComparisonEvolutionRow[];
+  citations: ComparisonCitations[];
 }
 
 export function useComparisonDatapack(tickers: string[]) {

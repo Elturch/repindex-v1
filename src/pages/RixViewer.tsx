@@ -569,7 +569,28 @@ export default function RixViewer() {
           content="Visor de informes RIX deterministas con narrativa V2 completa, 9 epígrafes y bibliografía verificada."
         />
       </Helmet>
-      <Header />
+      <div className="no-print">
+        <Header />
+      </div>
+
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { background: #fff !important; }
+          main.container { max-width: 100% !important; padding: 0 !important; }
+          .rix-comparison-print-grid { display: block !important; }
+          .rix-comparison-print-grid > aside { display: none !important; }
+          .rix-comparison-print-grid > .rix-print-content { max-width: 100% !important; }
+          .rix-print-content .shadow-card,
+          .rix-print-content [class*="shadow"] { box-shadow: none !important; }
+          .rix-print-content .card,
+          .rix-print-content [class*="rounded"] { break-inside: avoid; page-break-inside: avoid; }
+          .rix-print-content h1, .rix-print-content h2, .rix-print-content h3 { page-break-after: avoid; }
+          .rix-print-content section, .rix-print-content .card { break-inside: avoid; }
+          .rix-print-content a { color: #1a56db !important; text-decoration: underline; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+      `}</style>
 
       <main className="container max-w-screen-2xl px-4 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -583,8 +604,8 @@ export default function RixViewer() {
             </p>
           </div>
 
-          {messages.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
+          {(messages.length > 0 || isComparativeActive) && (
+            <div className="flex flex-wrap items-center gap-2 no-print">
               {activeReport && (
                 <>
                   <Button
@@ -595,6 +616,7 @@ export default function RixViewer() {
                   >
                     <Pencil className="h-3.5 w-3.5" /> Editar filtros
                   </Button>
+                  {!isComparativeActive && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -610,8 +632,19 @@ export default function RixViewer() {
                     )}
                     Regenerar informe
                   </Button>
+                  )}
                 </>
               )}
+              {isComparativeActive ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => window.print()}
+                >
+                  <Download className="h-3.5 w-3.5" /> Descargar PDF
+                </Button>
+              ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1.5">
@@ -626,6 +659,7 @@ export default function RixViewer() {
                   <DropdownMenuItem onClick={downloadAsJson}>JSON</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
             </div>
           )}
         </div>
@@ -649,11 +683,11 @@ export default function RixViewer() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
-            <div className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]">
+          <div className="rix-comparison-print-grid grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+            <aside className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] no-print">
               {MemoryList}
-            </div>
-            <Card className="min-w-0 max-w-full overflow-x-hidden shadow-card">
+            </aside>
+            <Card className="rix-print-content min-w-0 max-w-full overflow-x-hidden shadow-card">
               <CardContent className="pt-6 min-w-0 max-w-full overflow-x-hidden">
                 {isGenerating && (
                   <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-center gap-3">
