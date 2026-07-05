@@ -1,9 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ExpertAnalysis } from "./ExpertAnalysis";
-import { useReportExport } from "@/contexts/ReportExportContext";
 import {
   Table,
   TableBody,
@@ -147,14 +146,6 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   const { latest_week, prev_week, entities, snapshot, permodel, evolution } = data;
   const citations = data.citations ?? [];
   const recommendations = useMemo(() => buildRecommendations(data), [data]);
-
-  // Publish datapack so the "Descargar PDF" button (in RixViewer) can build
-  // the branded HTML export.
-  const { setPayload } = useReportExport();
-  useEffect(() => {
-    setPayload({ kind: "comparison", datapack: data });
-    return () => setPayload(null);
-  }, [data, setPayload]);
 
   // Order snapshot by rixc desc.
   const ranked = useMemo(
