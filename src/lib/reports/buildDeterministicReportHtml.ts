@@ -1,6 +1,7 @@
 import { marked } from "marked";
 import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
 import type { ComparisonDatapack } from "@/hooks/useComparisonDatapack";
+import type { RankingDatapack } from "@/hooks/useRankingDatapack";
 import { generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import {
   wrapBrandedReport,
@@ -9,11 +10,11 @@ import {
 } from "./brandedReportShell";
 import { METRIC_GLOSSARY, type MetricKey } from "./metricGlossary";
 
-type Kind = "profile" | "comparison";
+type Kind = "profile" | "comparison" | "ranking";
 
 export interface BuildDeterministicReportInput {
   kind: Kind;
-  datapack: ProfileDatapack | ComparisonDatapack;
+  datapack: ProfileDatapack | ComparisonDatapack | RankingDatapack;
   analysisMarkdown: string | null;
   question?: string | null;
 }
