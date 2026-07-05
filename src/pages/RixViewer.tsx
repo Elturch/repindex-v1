@@ -789,6 +789,5 @@ export default function RixViewer() {
         />
       )}
     </div>
-    </ReportExportProvider>
   );
 }
