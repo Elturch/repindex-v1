@@ -572,6 +572,7 @@ export default function RixViewer() {
   );
 
   return (
+    <ReportExportProvider>
     <div className="min-h-screen bg-background">
       <Helmet>
         <title>Visor de Informes RIX | RepIndex</title>
