@@ -3,6 +3,8 @@ import { Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ExpertAnalysis } from "./ExpertAnalysis";
+import { useReportExport } from "@/contexts/ReportExportContext";
+import { useEffect } from "react";
 import {
   Table,
   TableBody,
