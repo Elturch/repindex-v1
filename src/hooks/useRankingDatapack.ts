@@ -64,6 +64,7 @@ export interface RankingDatapack {
     universe: string[] | null;
     tickers: string[] | null;
     n_entities: number;
+    limit?: number | null;
   };
   window: { from: string; to: string; weeks: number };
   models_used: string[];
@@ -87,6 +88,7 @@ export interface RankingDatapackParams {
   to?: string | null;
   models?: string[] | null;
   orderBy?: string | null;
+  limit?: number | null;
 }
 
 function normalizeArray(arr?: string[] | null): string[] | null {
@@ -103,6 +105,10 @@ export function useRankingDatapack(params: RankingDatapackParams) {
   const to = params.to || null;
   const models = normalizeArray(params.models);
   const orderBy = (params.orderBy || "rixc").toLowerCase();
+  const limit =
+    typeof params.limit === "number" && Number.isFinite(params.limit) && params.limit > 0
+      ? Math.floor(params.limit)
+      : null;
 
   const hasScope =
     !!sector || !!subsector || (universe && universe.length > 0) || (tickers && tickers.length > 0);
@@ -110,7 +116,7 @@ export function useRankingDatapack(params: RankingDatapackParams) {
   return useQuery<RankingDatapack>({
     queryKey: [
       "rix_ranking_datapack",
-      { sector, subsector, universe, tickers, from, to, models, orderBy },
+      { sector, subsector, universe, tickers, from, to, models, orderBy, limit },
     ],
     enabled: hasScope,
     staleTime: 5 * 60 * 1000,
@@ -124,6 +130,7 @@ export function useRankingDatapack(params: RankingDatapackParams) {
         p_to: to,
         p_models: models,
         p_order_by: orderBy,
+        p_limit: limit,
       });
       if (error) throw error;
       return data as RankingDatapack;

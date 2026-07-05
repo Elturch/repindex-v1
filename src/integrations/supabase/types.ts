@@ -1967,6 +1967,39 @@ export type Database = {
           },
         ]
       }
+      repindex_api_keys: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          key_hash: string
+          last_used_at: string | null
+          name: string
+          request_count: number
+          scopes: string[]
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          key_hash: string
+          last_used_at?: string | null
+          name: string
+          request_count?: number
+          scopes?: string[]
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          key_hash?: string
+          last_used_at?: string | null
+          name?: string
+          request_count?: number
+          scopes?: string[]
+        }
+        Relationships: []
+      }
       repindex_root_issuers: {
         Row: {
           cotiza_en_bolsa: boolean
@@ -4517,6 +4550,7 @@ export type Database = {
       rix_ranking_datapack: {
         Args: {
           p_from?: string
+          p_limit?: number
           p_models?: string[]
           p_order_by?: string
           p_sector?: string

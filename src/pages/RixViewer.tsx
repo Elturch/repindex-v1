@@ -50,6 +50,19 @@ import {
 } from "@/lib/reports/reportMemory";
 import { toast } from "@/hooks/use-toast";
 
+function ReportQuestionBlock({ question }: { question?: string | null }) {
+  const q = (question ?? "").trim();
+  if (!q) return null;
+  return (
+    <div className="mb-5 rounded-md border border-border border-l-4 border-l-primary bg-muted/40 px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-1">
+        Pregunta del informe
+      </div>
+      <p className="text-sm text-foreground leading-snug whitespace-pre-wrap">{q}</p>
+    </div>
+  );
+}
+
 // Persist `pending` across remounts caused by auth-state churn. Without
 // this, a TOKEN_REFRESHED or transient `isAuthenticated=false→true` flip
 // during the visor mount drops the in-memory pending and the report is
@@ -304,6 +317,10 @@ export default function RixViewer() {
   const rankingParams = useMemo(() => {
     if (!activeReport || !isRankingActive) return null;
     const f = activeReport.filters;
+    const userTopN =
+      f.topN?.origin === "user-set" && typeof f.topN.value === "number" && f.topN.value > 0
+        ? f.topN.value
+        : null;
     return {
       sector: f.sector.value[0] ?? null,
       subsector: f.subsector.value[0] ?? null,
@@ -317,6 +334,7 @@ export default function RixViewer() {
       orderBy: (f.axisMetrics.value[0] && f.axisMetrics.value[0] !== "RIX"
         ? String(f.axisMetrics.value[0]).toLowerCase()
         : "rixc"),
+      limit: userTopN,
     };
   }, [activeReport, isRankingActive]);
 
@@ -763,6 +781,7 @@ export default function RixViewer() {
                   <DeterministicPdfButton
                     kind={isProfileActive ? "profile" : "comparison"}
                     tickers={activeReport?.filters?.tickers?.value ?? []}
+                    question={activeReport?.question ?? null}
                   />
                 )
               ) : (
@@ -842,18 +861,21 @@ export default function RixViewer() {
                 )}
                 {isComparativeActive && activeReport ? (
                   <div key={`cmp-${refreshNonce}`}>
+                    <ReportQuestionBlock question={activeReport.question} />
                     <ComparisonReport
                       tickers={activeReport.filters.tickers.value}
                     />
                   </div>
                 ) : isProfileActive && activeReport ? (
                   <div key={`prof-${refreshNonce}`}>
+                    <ReportQuestionBlock question={activeReport.question} />
                     <ProfileReport
                       ticker={activeReport.filters.tickers.value[0]}
                     />
                   </div>
                 ) : isRankingActive && activeReport && rankingParams ? (
                   <div key={`rank-${refreshNonce}`}>
+                    <ReportQuestionBlock question={activeReport.question} />
                     <RankingReport
                       params={rankingParams}
                       scopeLabel={rankingScopeLabel}
