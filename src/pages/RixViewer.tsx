@@ -336,7 +336,11 @@ export default function RixViewer() {
     const target = reports.find((r) => r.id === pending.reportId);
     if (!target) return;
     const n = target.filters?.tickers?.value?.length ?? 0;
-    const isDet = n >= 1;
+    const hasScope =
+      (target.filters?.sector?.value?.length ?? 0) > 0 ||
+      (target.filters?.subsector?.value?.length ?? 0) > 0 ||
+      (target.filters?.universe?.value?.length ?? 0) > 0;
+    const isDet = n >= 1 || (n === 0 && hasScope);
     if (isDet) {
       setPending(null);
       persistPending(null);
