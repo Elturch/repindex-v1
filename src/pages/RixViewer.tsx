@@ -32,6 +32,7 @@ import { buildReportTitle } from "@/lib/reports/reportMemory";
 import type { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
+import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import {
   listReports,
   getActiveId,
