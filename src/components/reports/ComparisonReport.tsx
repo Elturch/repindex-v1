@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ExpertAnalysis } from "./ExpertAnalysis";
 import {
   Table,
   TableBody,
@@ -320,6 +321,12 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
           </div>
         </CardContent>
       </Card>
+
+      <ExpertAnalysis
+        type="comparison"
+        tickers={entities.map((e) => e.ticker)}
+        week={latest_week}
+      />
 
       {/* Verdict */}
       {verdict && (

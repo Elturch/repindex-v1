@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ExpertAnalysis } from "./ExpertAnalysis";
 import {
   Table,
   TableBody,
@@ -188,6 +189,12 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
           </div>
         </CardContent>
       </Card>
+
+      <ExpertAnalysis
+        type="profile"
+        tickers={[entity.ticker]}
+        week={latest_week}
+      />
 
       {/* Headline card */}
       <Card>
