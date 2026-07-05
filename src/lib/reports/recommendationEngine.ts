@@ -2,6 +2,7 @@ import type {
   ComparisonDatapack,
   ComparisonSnapshotRow,
 } from "@/hooks/useComparisonDatapack";
+import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
 
 export interface Recommendation {
   severity: "alta" | "media" | "oportunidad";
@@ -161,4 +162,107 @@ export function buildRecommendations(
   }
 
   return out;
+}
+// ------------------------------------------------------------------
+// Profile (single entity) recommendations — deterministic, rule-based.
+// ------------------------------------------------------------------
+
+const METRIC_SHORT_LABEL: Record<MetricKey, string> = {
+  nvm: "NVM",
+  rmm: "RMM",
+  cem: "CEM",
+  dcm: "DCM",
+  gam: "GAM",
+  sim: "SIM",
+  cxm: "CXM",
+};
+
+const SECTOR_AVG_KEY: Record<MetricKey, "avg_nvm" | "avg_rmm" | "avg_cem" | "avg_dcm" | "avg_gam" | "avg_sim" | "avg_cxm"> = {
+  nvm: "avg_nvm",
+  rmm: "avg_rmm",
+  cem: "avg_cem",
+  dcm: "avg_dcm",
+  gam: "avg_gam",
+  sim: "avg_sim",
+  cxm: "avg_cxm",
+};
+
+export function buildProfileRecommendations(dp: ProfileDatapack): Recommendation[] {
+  const recs: Recommendation[] = [];
+  const snap = dp.snapshot;
+  const sector = dp.sector;
+  if (!snap) return recs;
+
+  // Divergence
+  const range = (snap.rix_max ?? 0) - (snap.rix_min ?? 0);
+  if (range >= 25) {
+    recs.push({
+      severity: "alta",
+      title: "Narrativa algorítmica inestable",
+      detail: `Los 6 modelos puntúan de ${snap.rix_min.toFixed(1)} a ${snap.rix_max.toFixed(1)} (${range.toFixed(1)} pts). Acción: homogeneizar mensajes clave y reforzar fuentes verificables para cerrar la horquilla.`,
+    });
+  } else if (range >= 15) {
+    recs.push({
+      severity: "media",
+      title: "Narrativa algorítmica inestable",
+      detail: `Los 6 modelos puntúan de ${snap.rix_min.toFixed(1)} a ${snap.rix_max.toFixed(1)} (${range.toFixed(1)} pts). Acción: homogeneizar mensajes clave y reforzar fuentes verificables.`,
+    });
+  }
+
+  // Weekly drop
+  if (snap.rixc_prev !== null && typeof snap.rixc_prev === "number") {
+    const delta = snap.rixc - snap.rixc_prev;
+    if (delta <= -3) {
+      recs.push({
+        severity: "alta",
+        title: `Retroceso semanal de ${delta.toFixed(1)} pts`,
+        detail: "Revisar qué narrativa o evento ha pesado esta semana y comunicar de forma proactiva para revertir la tendencia.",
+      });
+    } else if (delta <= -1) {
+      recs.push({
+        severity: "media",
+        title: `Retroceso semanal de ${delta.toFixed(1)} pts`,
+        detail: "Revisar qué narrativa o evento ha pesado esta semana y comunicar de forma proactiva.",
+      });
+    }
+  }
+
+  // Weakness vs sector: metric with largest NEGATIVE (value − sector avg)
+  let weakest: { k: MetricKey; v: number; avg: number; diff: number } | null = null;
+  let strongest: { k: MetricKey; v: number; avg: number; diff: number } | null = null;
+  for (const m of METRICS) {
+    const v = (snap as any)[m] as number | null;
+    if (v === null || v === undefined || Number.isNaN(v)) continue;
+    const avg = (sector as any)[SECTOR_AVG_KEY[m]] as number | null;
+    if (avg === null || avg === undefined || Number.isNaN(avg)) continue;
+    const diff = v - avg;
+    if (weakest === null || diff < weakest.diff) weakest = { k: m, v, avg, diff };
+    if (strongest === null || diff > strongest.diff) strongest = { k: m, v, avg, diff };
+  }
+  if (weakest && weakest.diff < 0) {
+    recs.push({
+      severity: "media",
+      title: `Por debajo de la media del sector en ${METRIC_SHORT_LABEL[weakest.k]}`,
+      detail: `${weakest.v.toFixed(1)} vs ${weakest.avg.toFixed(1)} del sector. ${WEAK_ACTION[weakest.k]}`,
+    });
+  }
+  if (strongest && strongest.diff > 0) {
+    recs.push({
+      severity: "oportunidad",
+      title: `Por encima de la media del sector en ${METRIC_SHORT_LABEL[strongest.k]}`,
+      detail: `${strongest.v.toFixed(1)} vs ${strongest.avg.toFixed(1)} del sector; mantén la ventaja.`,
+    });
+  }
+
+  // Low citation density
+  if (typeof snap.num_citas === "number" && snap.num_citas < 8) {
+    recs.push({
+      severity: "media",
+      title: "Baja densidad de fuentes",
+      detail: `Las IAs apenas encuentran fuentes sobre esta empresa (${snap.num_citas}); genera contenido citable y notas de prensa indexables.`,
+    });
+  }
+
+  recs.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+  return recs.slice(0, 4);
 }

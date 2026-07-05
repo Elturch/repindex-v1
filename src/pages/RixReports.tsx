@@ -164,10 +164,10 @@ export default function RixReports() {
                     toast({ title: "No se pudo guardar el informe", description: "Inténtalo de nuevo.", variant: "destructive" });
                     return;
                   }
-                  const isComparativa =
-                    coherence.state.tickers.value.length >= 2;
+                  const isDeterministic =
+                    coherence.state.tickers.value.length >= 1;
                   navigate("/visor", {
-                    state: isComparativa
+                    state: isDeterministic
                       ? {
                           reportId: entry.id,
                           sessionId: newSessionId,

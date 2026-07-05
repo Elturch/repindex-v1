@@ -4512,6 +4512,7 @@ export type Database = {
       release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
       rix_comparison_datapack: { Args: { p_tickers: string[] }; Returns: Json }
+      rix_profile_datapack: { Args: { p_ticker: string }; Returns: Json }
       set_sweep_status: {
         Args: { p_in_progress: boolean; p_sweep_id?: string; p_total?: number }
         Returns: undefined

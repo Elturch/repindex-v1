@@ -33,6 +33,7 @@ import type { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
+import { ProfileReport } from "@/components/reports/ProfileReport";
 import {
   listReports,
   getActiveId,
@@ -276,16 +277,21 @@ export default function RixViewer() {
     activeReport &&
     (activeReport.filters?.tickers?.value?.length ?? 0) >= 2
   );
+  const isProfileActive = !!(
+    activeReport &&
+    (activeReport.filters?.tickers?.value?.length ?? 0) === 1
+  );
+  const isDeterministicActive = isComparativeActive || isProfileActive;
 
-  // If a pending auto-send belongs to a comparativa report, drop it silently.
+  // If a pending auto-send belongs to a deterministic report (perfil o
+  // comparativa), drop it silently — nunca llamamos al LLM en esos casos.
   useEffect(() => {
     if (!pending) return;
     const target = reports.find((r) => r.id === pending.reportId);
     if (!target) return;
-    const isComp =
-      target.filters?.intent?.value === "comparativa" &&
-      (target.filters?.tickers?.value?.length ?? 0) >= 2;
-    if (isComp) {
+    const n = target.filters?.tickers?.value?.length ?? 0;
+    const isDet = n >= 1;
+    if (isDet) {
       setPending(null);
       persistPending(null);
       pendingSinceRef.current = null;
@@ -400,7 +406,7 @@ export default function RixViewer() {
     navigate("/informes", { state: { prefilFilters: activeReport.filters } });
   };
 
-  const isGenerating = !isComparativeActive && (!!pending || (isLoading && messages.length === 0));
+  const isGenerating = !isDeterministicActive && (!!pending || (isLoading && messages.length === 0));
   const isEmpty =
     !isLoading &&
     !isLoadingHistory &&
@@ -412,7 +418,7 @@ export default function RixViewer() {
   // probable failed auto-send. Show a relaunch CTA.
   const showRelaunchActive =
     !!activeReport &&
-    !isComparativeActive &&
+    !isDeterministicActive &&
     !isLoading &&
     !isLoadingHistory &&
     !pending &&
@@ -607,7 +613,7 @@ export default function RixViewer() {
             </p>
           </div>
 
-          {(messages.length > 0 || isComparativeActive) && (
+          {(messages.length > 0 || isDeterministicActive) && (
             <div className="flex flex-wrap items-center gap-2 no-print">
               {activeReport && (
                 <>
@@ -619,7 +625,7 @@ export default function RixViewer() {
                   >
                     <Pencil className="h-3.5 w-3.5" /> Editar filtros
                   </Button>
-                  {!isComparativeActive && (
+                  {!isDeterministicActive && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -638,7 +644,7 @@ export default function RixViewer() {
                   )}
                 </>
               )}
-              {isComparativeActive ? (
+              {isDeterministicActive ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -723,6 +729,10 @@ export default function RixViewer() {
                 {isComparativeActive && activeReport ? (
                   <ComparisonReport
                     tickers={activeReport.filters.tickers.value}
+                  />
+                ) : isProfileActive && activeReport ? (
+                  <ProfileReport
+                    ticker={activeReport.filters.tickers.value[0]}
                   />
                 ) : (
                   <ChatMessages
