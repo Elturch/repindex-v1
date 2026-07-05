@@ -32,6 +32,7 @@ import { buildReportTitle } from "@/lib/reports/reportMemory";
 import type { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
+import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import {
   listReports,
   getActiveId,
@@ -265,6 +266,32 @@ export default function RixViewer() {
     [reports, activeId],
   );
 
+  // Comparativa reports are rendered by a DETERMINISTIC frontend component
+  // (ComparisonReport). We must not dispatch the compiled question to the
+  // chat agent for these, so there's no LLM narrative for comparativas.
+  const isComparativeActive = !!(
+    activeReport &&
+    activeReport.filters?.intent?.value === "comparativa" &&
+    (activeReport.filters?.tickers?.value?.length ?? 0) >= 2
+  );
+
+  // If a pending auto-send belongs to a comparativa report, drop it silently.
+  useEffect(() => {
+    if (!pending) return;
+    const target = reports.find((r) => r.id === pending.reportId);
+    if (!target) return;
+    const isComp =
+      target.filters?.intent?.value === "comparativa" &&
+      (target.filters?.tickers?.value?.length ?? 0) >= 2;
+    if (isComp) {
+      setPending(null);
+      persistPending(null);
+      pendingSinceRef.current = null;
+      if (retryNudgeRef.current) { window.clearTimeout(retryNudgeRef.current); retryNudgeRef.current = null; }
+      if (errorToastRef.current) { window.clearTimeout(errorToastRef.current); errorToastRef.current = null; }
+    }
+  }, [pending, reports]);
+
   const handleSelect = (entry: ReportMemoryEntry) => {
     if (entry.id === activeId) return;
     setActiveId(entry.id);
@@ -371,7 +398,7 @@ export default function RixViewer() {
     navigate("/informes", { state: { prefilFilters: activeReport.filters } });
   };
 
-  const isGenerating = !!pending || (isLoading && messages.length === 0);
+  const isGenerating = !isComparativeActive && (!!pending || (isLoading && messages.length === 0));
   const isEmpty =
     !isLoading &&
     !isLoadingHistory &&
@@ -383,6 +410,7 @@ export default function RixViewer() {
   // probable failed auto-send. Show a relaunch CTA.
   const showRelaunchActive =
     !!activeReport &&
+    !isComparativeActive &&
     !isLoading &&
     !isLoadingHistory &&
     !pending &&
@@ -656,18 +684,24 @@ export default function RixViewer() {
                     </Button>
                   </div>
                 )}
-                <ChatMessages
-                  messages={messages}
-                  isLoading={isLoading}
-                  isLoadingHistory={isLoadingHistory}
-                  loadingMessage={loadingMessage}
-                  onSuggestedQuestion={() => undefined}
-                  onStarterPrompt={() => undefined}
-                  compact={false}
-                  sessionId={sessionId}
-                  languageCode={language.code}
-                  unboundedHeight
-                />
+                {isComparativeActive && activeReport ? (
+                  <ComparisonReport
+                    tickers={activeReport.filters.tickers.value}
+                  />
+                ) : (
+                  <ChatMessages
+                    messages={messages}
+                    isLoading={isLoading}
+                    isLoadingHistory={isLoadingHistory}
+                    loadingMessage={loadingMessage}
+                    onSuggestedQuestion={() => undefined}
+                    onStarterPrompt={() => undefined}
+                    compact={false}
+                    sessionId={sessionId}
+                    languageCode={language.code}
+                    unboundedHeight
+                  />
+                )}
               </CardContent>
             </Card>
           </div>
