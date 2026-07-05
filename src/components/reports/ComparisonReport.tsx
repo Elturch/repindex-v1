@@ -29,7 +29,7 @@ import {
 } from "@/hooks/useComparisonDatapack";
 import { buildRecommendations } from "@/lib/reports/recommendationEngine";
 import { ExternalLink } from "lucide-react";
-import { METRIC_GLOSSARY, METRIC_BY_KEY } from "@/lib/reports/metricGlossary";
+import { METRIC_GLOSSARY } from "@/lib/reports/metricGlossary";
 
 interface Props {
   tickers: string[];
@@ -568,7 +568,12 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                 return (
                   <TableRow key={row.key}>
                     <TableCell className="font-medium">
-                      {row.key}
+                      {row.key === "RIXc"
+                        ? "RIXc"
+                        : (() => {
+                            const def = METRIC_GLOSSARY.find((m) => m.code === row.key);
+                            return def ? `${def.code} · ${def.name}` : row.key;
+                          })()}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-[280px]">
                       {metricWhat(row.key)}
