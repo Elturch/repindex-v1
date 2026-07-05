@@ -164,8 +164,15 @@ export default function RixReports() {
                     toast({ title: "No se pudo guardar el informe", description: "Inténtalo de nuevo.", variant: "destructive" });
                     return;
                   }
-                  const isDeterministic =
-                    coherence.state.tickers.value.length >= 1;
+                  // Deterministic frontend paths: profile (1 ticker),
+                  // comparison (>=2 tickers), and ranking (0 tickers + scope
+                  // defined by sector/subsector/universe).
+                  const tickCount = coherence.state.tickers.value.length;
+                  const hasScope =
+                    coherence.state.sector.value.length > 0 ||
+                    coherence.state.subsector.value.length > 0 ||
+                    coherence.state.universe.value.length > 0;
+                  const isDeterministic = tickCount >= 1 || (tickCount === 0 && hasScope);
                   navigate("/visor", {
                     state: isDeterministic
                       ? {
