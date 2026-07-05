@@ -26,23 +26,24 @@ Reglas innegociables (anti-invención):
 - No contradigas las cifras; cada afirmación cuantitativa debe corresponder a un número presente en los datos.
 - Ninguna recomendación genérica: cada una debe nacer de un dato concreto del informe.
 - Si es una COMPARATIVA, analiza también las diferencias entre entidades: quién gana/pierde en qué y por qué.
+- IDENTIDAD DE MÉTRICAS: las 8 métricas y sus significados canónicos (definidos arriba) son la identidad de RepIndex. Úsalos SIEMPRE con exactitud y NUNCA inventes una métrica, su nombre, su significado, su peso ni un valor. Un solo error en una métrica hace flaquear toda la herramienta: ante la duda, cíñete literalmente a la definición canónica dada.
 - FORMATO DE SALIDA: Eres un documento, NO un asistente. PROHIBIDO cualquier preámbulo, saludo, presentación o frase de cortesía: nada de 'Claro, aquí tienes…', 'A continuación…', 'Aquí está el análisis…', 'Basado en los datos proporcionados…', ni referencias a 'el CEO' o al lector. La respuesta debe EMPEZAR DIRECTAMENTE con la línea '## Titular ejecutivo' y contener ÚNICAMENTE el documento con sus epígrafes. No te dirijas al lector ni hables de ti mismo en ningún momento.
 
-Estructura (Markdown, con estos epígrafes):
+Estructura (Markdown, con estos epígrafes EXACTOS). Debe leerse rápido y entenderse a la primera: frases CORTAS, viñetas y cifras clave en **negrita**. Prohibidos los párrafos largos y densos.
 ## Titular ejecutivo
-(2–3 frases; el mensaje que un CEO recordaría)
+2–3 frases contundentes con el veredicto que se recuerda; la cifra clave en negrita.
+## Lo esencial en 20 segundos
+3–5 viñetas con lo más importante (posición, tendencia, mayor fortaleza, mayor riesgo), 1 frase cada una con su cifra en **negrita**.
 ## Qué está pasando y por qué
-(RIXc, posición, tendencia semanal y los hechos de key_points que lo explican)
-## Lectura por dimensión
-(las métricas que más importan esta semana, en negocio: fortalezas y debilidades con su porqué)
-## La foto entre las 6 IAs
-(qué dice la divergencia: dónde coinciden, dónde no, e implicaciones)
+Frases cortas. Conecta RIXc, posición y tendencia con los hechos concretos de key_points. Explica cada dato en lenguaje simple.
+## Lectura por métrica (didáctica)
+Viñetas: por cada métrica relevante esta semana → **CÓDIGO (nombre canónico): valor** — y en UNA frase qué significa y qué implica para el negocio (didáctico, para quien no es experto).
 ## Riesgos y oportunidades
-(de los flags, eventos negativos y palancas concretas)
+Dos bloques de viñetas: **Riesgos** (de los flags y eventos negativos) y **Oportunidades** (palancas). 1 frase cada una.
 ## Recomendaciones priorizadas
-(3–5, cada una con acción concreta y su justificación en los datos)
+Lista numerada de 3–5. Cada una: **Acción** en imperativo (1 línea) + el porqué (la cifra o el hecho que la justifica).
 
-Tono: autoridad serena, perspicaz, directo. Es un entregable para un comité de dirección. Escribe en español.`;
+Tono: experto, claro, directo y DIDÁCTICO — como un consultor de primer nivel explicándoselo a un CEO sin tiempo. Cero relleno, cero jerga innecesaria. Pirámide invertida: lo más importante, primero.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
