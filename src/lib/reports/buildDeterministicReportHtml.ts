@@ -358,6 +358,152 @@ function buildCitationsSection(
   </section>`;
 }
 
+// ---------- RANKING ----------
+
+function buildRankingBody(
+  dp: RankingDatapack,
+  analysisMarkdown: string | null,
+): string {
+  const rows = dp.ranking ?? [];
+  const avg = dp.sector_avg;
+  const dist = dp.distribution ?? { fuerte: 0, solido: 0, atencion: 0, critico: 0 };
+  const scopeLabel =
+    dp.scope?.sector ||
+    dp.scope?.subsector ||
+    (dp.scope?.universe && dp.scope.universe.length > 0
+      ? dp.scope.universe.join(" · ")
+      : "Alcance");
+  const nTotal = dp.scope?.n_entities ?? rows.length;
+  const topLabel = dp.scope?.limit ? ` · Top ${dp.scope.limit}` : "";
+
+  const analysisSection = analysisMarkdown
+    ? `<section class="report-section">
+        <h2>Análisis del experto</h2>
+        <div class="expert-analysis">${markdownToHtml(analysisMarkdown)}</div>
+       </section>`
+    : `<section class="report-section">
+        <h2>Análisis del experto</h2>
+        <p style="color:#536471;font-style:italic;">Análisis no disponible en el momento de la exportación.</p>
+       </section>`;
+
+  const best = rows[0];
+  const worst = rows[rows.length - 1];
+  const headline = `
+    <div class="headline-callout">
+      <div class="kpi-label">Media del sector · RIXc semana ${escapeHtml(fmtWeek(dp.latest_week))}</div>
+      <div><span class="kpi">${fmtNum(avg?.rixc)}</span></div>
+      <div style="font-size:12px;color:#536471;margin-top:6px;">
+        ${escapeHtml(scopeLabel)} · ${nTotal} empresas${topLabel}
+        ${best ? ` · Líder: <strong>${escapeHtml(best.name)}</strong> (${fmtNum(best.rixc)})` : ""}
+        ${worst && rows.length > 1 ? ` · Cola: <strong>${escapeHtml(worst.name)}</strong> (${fmtNum(worst.rixc)})` : ""}
+      </div>
+    </div>`;
+
+  // Ranking table with 8 sub-metrics
+  const metricHeads = METRIC_KEYS.map(
+    (k) => `<th style="text-align:right;">${metricDef(k).code}</th>`,
+  ).join("");
+  const rankingRows = rows
+    .map((r) => {
+      const d = r.delta;
+      const dColor =
+        d === null || d === undefined
+          ? "#8899a6"
+          : d > 0.05
+            ? "#059669"
+            : d < -0.05
+              ? "#dc2626"
+              : "#8899a6";
+      const cells = METRIC_KEYS.map(
+        (k) =>
+          `<td style="text-align:right;">${fmtNum((r as any)[k] as number | null, 0)}</td>`,
+      ).join("");
+      return `<tr>
+        <td style="text-align:center;font-weight:700;color:#1a73e8;">#${r.rank}</td>
+        <td><strong>${escapeHtml(r.name)}</strong> <span style="color:#8899a6;">${escapeHtml(r.tk)}</span></td>
+        <td style="text-align:right;font-weight:600;">${fmtNum(r.rixc)}</td>
+        <td style="text-align:right;color:${dColor};font-weight:600;">${fmtDelta(d)}</td>
+        ${cells}
+      </tr>`;
+    })
+    .join("");
+  const rankingTable = `
+    <section class="report-section">
+      <h2>Ranking del sector</h2>
+      ${headline}
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:center;">#</th>
+            <th>Empresa</th>
+            <th style="text-align:right;">RIXc</th>
+            <th style="text-align:right;">Δ sem.</th>
+            ${metricHeads}
+          </tr>
+        </thead>
+        <tbody>${rankingRows}</tbody>
+      </table>
+    </section>`;
+
+  // Sector average per metric
+  const avgRows = avg
+    ? METRIC_KEYS.map((k) => {
+        const info = metricDef(k);
+        return `<tr>
+          <td><strong>${info.code}</strong> · ${escapeHtml(info.name)}</td>
+          <td style="color:#536471;">${escapeHtml(info.what)}</td>
+          <td style="text-align:right;font-weight:600;">${fmtNum((avg as any)[k] as number | null)}</td>
+        </tr>`;
+      }).join("")
+    : "";
+  const avgTable = avg
+    ? `<section class="report-section">
+        <h2>Huella del sector · media por métrica</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Métrica</th>
+              <th>Qué mide</th>
+              <th style="text-align:right;">Media</th>
+            </tr>
+          </thead>
+          <tbody>${avgRows}</tbody>
+        </table>
+       </section>`
+    : "";
+
+  // Distribution
+  const distTotal = dist.fuerte + dist.solido + dist.atencion + dist.critico;
+  const distSection = distTotal > 0
+    ? `<section class="report-section">
+        <h2>Distribución por banda</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Banda</th>
+              <th style="text-align:right;">Empresas</th>
+              <th style="text-align:right;">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span style="color:#059669;font-weight:700;">■</span> Fuerte (80–100)</td><td style="text-align:right;">${dist.fuerte}</td><td style="text-align:right;color:#536471;">${((dist.fuerte / distTotal) * 100).toFixed(0)}%</td></tr>
+            <tr><td><span style="color:#1a73e8;font-weight:700;">■</span> Sólido (60–79)</td><td style="text-align:right;">${dist.solido}</td><td style="text-align:right;color:#536471;">${((dist.solido / distTotal) * 100).toFixed(0)}%</td></tr>
+            <tr><td><span style="color:#d97706;font-weight:700;">■</span> Atención (40–59)</td><td style="text-align:right;">${dist.atencion}</td><td style="text-align:right;color:#536471;">${((dist.atencion / distTotal) * 100).toFixed(0)}%</td></tr>
+            <tr><td><span style="color:#dc2626;font-weight:700;">■</span> Crítico (0–39)</td><td style="text-align:right;">${dist.critico}</td><td style="text-align:right;color:#536471;">${((dist.critico / distTotal) * 100).toFixed(0)}%</td></tr>
+          </tbody>
+        </table>
+       </section>`
+    : "";
+
+  return [
+    analysisSection,
+    rankingTable,
+    avgTable,
+    distSection,
+    generateTechnicalSheetHtml(),
+  ].join("\n");
+}
+
 // ---------- Entry point ----------
 
 export function buildDeterministicReportHtml(
@@ -375,11 +521,22 @@ export function buildDeterministicReportHtml(
     title = dp.entity.name;
     latestWeek = dp.latest_week;
     bodyHtml = buildProfileBody(dp, analysisMarkdown);
-  } else {
+  } else if (kind === "comparison") {
     const dp = datapack as ComparisonDatapack;
     title = `Comparativa: ${dp.entities.map((e) => e.name).join(" · ")}`;
     latestWeek = dp.latest_week;
     bodyHtml = buildComparisonBody(dp, analysisMarkdown);
+  } else {
+    const dp = datapack as RankingDatapack;
+    const scopeLabel =
+      dp.scope?.sector ||
+      dp.scope?.subsector ||
+      (dp.scope?.universe && dp.scope.universe.length > 0
+        ? dp.scope.universe.join(" · ")
+        : "Ranking");
+    title = `Ranking del sector: ${scopeLabel}`;
+    latestWeek = dp.latest_week;
+    bodyHtml = buildRankingBody(dp, analysisMarkdown);
   }
 
   const metaItems: BrandedReportMetaItem[] = [
