@@ -34,7 +34,6 @@ import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { ProfileReport } from "@/components/reports/ProfileReport";
-import { ReportExportProvider } from "@/contexts/ReportExportContext";
 import { DeterministicPdfButton } from "@/components/reports/DeterministicPdfButton";
 import {
   listReports,
@@ -572,7 +571,6 @@ export default function RixViewer() {
   );
 
   return (
-    <ReportExportProvider>
     <div className="min-h-screen bg-background">
       <Helmet>
         <title>Visor de Informes RIX | RepIndex</title>
