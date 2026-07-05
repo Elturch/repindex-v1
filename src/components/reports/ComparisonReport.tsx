@@ -599,7 +599,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
           <CardTitle className="text-lg">Lectura por empresa</CardTitle>
         </CardHeader>
         <CardContent className="pt-0 space-y-4">
-          {readings.map(({ row, idx, delta, trend, best, worst }) => (
+          {readings.map(({ row, idx, delta, trend, best, worst }) => {
+            const recs = recommendations[row.tk] ?? [];
+            return (
             <div
               key={row.tk}
               className="rounded-lg border border-border/60 p-4"
@@ -629,8 +631,134 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                   <> Más floja en <strong>{worst.label}</strong>.</>
                 )}
               </p>
+              {recs.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {recs.map((rec, i) => {
+                    const chip =
+                      rec.severity === "alta"
+                        ? "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/40"
+                        : rec.severity === "media"
+                          ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40"
+                          : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/40";
+                    return (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", chip)}>
+                          {rec.severity}
+                        </span>
+                        <span>
+                          <strong className="font-semibold">{rec.title}.</strong>{" "}
+                          <span className="text-muted-foreground">{rec.detail}</span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-          ))}
+          );
+          })}
+        </CardContent>
+      </Card>
+
+      {/* Citations */}
+      {citations.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Menciones y fuentes citadas</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Dominios que los 6 modelos referencian al hablar de cada empresa.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-5">
+            {citations.map((c) => {
+              const name = nameByTk.get(c.tk) ?? c.tk;
+              const color = colorByTk.get(c.tk) ?? "hsl(var(--primary))";
+              return (
+                <div
+                  key={c.tk}
+                  className="rounded-lg border border-border/60 p-4"
+                  style={{ borderLeft: `3px solid ${color}` }}
+                >
+                  <h3 className="font-semibold text-sm mb-2">
+                    {name} —{" "}
+                    <span className="font-normal text-muted-foreground">
+                      {c.total_sources} fuentes citadas
+                    </span>
+                  </h3>
+                  {c.items.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">Sin fuentes verificadas para esta semana.</p>
+                  ) : (
+                    <ul className="divide-y divide-border/40">
+                      {c.items.map((it, i) => (
+                        <li
+                          key={`${c.tk}-${i}`}
+                          className="py-1.5 flex items-start justify-between gap-3 text-sm"
+                        >
+                          <a
+                            href={it.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline break-all inline-flex items-center gap-1 min-w-0"
+                          >
+                            <ExternalLink className="h-3 w-3 shrink-0 no-print" />
+                            <span className="truncate">{it.domain}</span>
+                          </a>
+                          <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
+                            {it.models.join(", ")}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Methodology */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Metodología</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-4 text-sm leading-relaxed">
+          <p>
+            El <strong>RIXc</strong> es un índice compuesto de reputación algorítmica: mide cómo perciben las
+            inteligencias artificiales a una entidad a partir de 8 métricas normalizadas.
+          </p>
+          <div>
+            <h4 className="font-semibold mb-2">Las 8 métricas</h4>
+            <ul className="grid gap-1.5 sm:grid-cols-2">
+              {Object.entries(METRIC_DESCRIPTIONS).map(([k, v]) => (
+                <li key={k} className="text-sm">
+                  <span className="font-mono font-semibold">{k}</span>{" "}
+                  <span className="text-muted-foreground">— {v}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-2">Los 6 modelos consultados</h4>
+            <p className="text-muted-foreground">
+              ChatGPT, Perplexity, Gemini, DeepSeek, Grok y Qwen — todos con búsqueda web real y prompts idénticos
+              para asegurar comparabilidad.
+            </p>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-2">Cadencia y alcance</h4>
+            <p className="text-muted-foreground">
+              El barrido se ejecuta semanalmente (domingo). La métrica <strong>CXM</strong> no aplica a entidades sin
+              componente B2C y aparece como <em>N/A</em> en esos casos.
+            </p>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-2">Reproducibilidad</h4>
+            <p className="text-muted-foreground">
+              Todas las cifras se calculan de forma determinista desde la base de datos (<code className="font-mono text-xs">rix_runs_v2</code>);
+              el mismo informe es idéntico y reproducible en cada carga.
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>
