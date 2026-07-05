@@ -15,6 +15,7 @@ export interface BuildDeterministicReportInput {
   kind: Kind;
   datapack: ProfileDatapack | ComparisonDatapack;
   analysisMarkdown: string | null;
+  question?: string | null;
 }
 
 // ---------- helpers ----------
@@ -361,7 +362,7 @@ function buildCitationsSection(
 export function buildDeterministicReportHtml(
   input: BuildDeterministicReportInput,
 ): string {
-  const { kind, datapack, analysisMarkdown } = input;
+  const { kind, datapack, analysisMarkdown, question } = input;
 
   let title: string;
   let subtitle = "Informe de Reputación Algorítmica";
@@ -386,11 +387,20 @@ export function buildDeterministicReportHtml(
     { icon: "✓", label: "Datos deterministas · sin IA generativa" },
   ];
 
+  const questionSection = question && question.trim()
+    ? `<section class="report-section" style="margin-top:0;">
+        <div style="border:1px solid #e5e7eb;border-left:4px solid #1a73e8;background:#f7f9fa;padding:14px 18px;border-radius:6px;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:#8899a6;font-weight:600;margin-bottom:6px;">Pregunta del informe</div>
+          <div style="font-size:13px;color:#0f1419;line-height:1.55;">${escapeHtml(question.trim())}</div>
+        </div>
+       </section>`
+    : "";
+
   return wrapBrandedReport({
     title,
     subtitle,
     metaItems,
-    bodyHtml,
+    bodyHtml: questionSection + bodyHtml,
     documentTitle: `RepIndex — ${title}`,
   });
 }
