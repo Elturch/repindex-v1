@@ -738,8 +738,67 @@ export default function RixViewer() {
             <aside className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] no-print">
               {MemoryList}
             </aside>
-            <Card className="rix-print-content min-w-0 max-w-full overflow-x-hidden shadow-card">
+            <Card
+              id="rix-report-capture"
+              ref={reportCaptureRef as any}
+              className="rix-print-content min-w-0 max-w-full overflow-x-hidden shadow-card"
+            >
               <CardContent className="pt-6 min-w-0 max-w-full overflow-x-hidden">
+                {isDeterministicActive && (
+                  <div
+                    className="rix-pdf-only"
+                    style={{
+                      display: "none",
+                      borderBottom: "2px solid #1a73e8",
+                      paddingBottom: "12px",
+                      marginBottom: "18px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-end",
+                        gap: "12px",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "22px",
+                            fontWeight: 700,
+                            color: "#1a73e8",
+                            letterSpacing: "-0.01em",
+                          }}
+                        >
+                          RepIndex.ai
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "#0f1419",
+                            marginTop: "2px",
+                          }}
+                        >
+                          Informe de Reputación Algorítmica
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "#0f1419",
+                          textAlign: "right",
+                        }}
+                      >
+                        {new Date().toLocaleDateString("es-ES", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {isGenerating && (
                   <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-center gap-3">
                     <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
