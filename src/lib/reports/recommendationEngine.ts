@@ -2,6 +2,7 @@ import type {
   ComparisonDatapack,
   ComparisonSnapshotRow,
 } from "@/hooks/useComparisonDatapack";
+import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
 
 export interface Recommendation {
   severity: "alta" | "media" | "oportunidad";
