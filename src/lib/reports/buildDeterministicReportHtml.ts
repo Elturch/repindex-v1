@@ -7,6 +7,7 @@ import {
   escapeHtml,
   type BrandedReportMetaItem,
 } from "./brandedReportShell";
+import { METRIC_GLOSSARY, type MetricKey } from "./metricGlossary";
 
 type Kind = "profile" | "comparison";
 
@@ -18,20 +19,11 @@ export interface BuildDeterministicReportInput {
 
 // ---------- helpers ----------
 
-const METRIC_INFO: Record<
-  string,
-  { code: string; name: string; what: string }
-> = {
-  nvm: { code: "NVM", name: "Notoriedad", what: "Visibilidad en las respuestas" },
-  drm: { code: "DRM", name: "Densidad de referencias", what: "Frecuencia con la que la IA la cita" },
-  sim: { code: "SIM", name: "Sentimiento", what: "Polaridad del contenido asociado" },
-  rmm: { code: "RMM", name: "Reputación crítica", what: "Riesgo reputacional detectado" },
-  cem: { code: "CEM", name: "Cobertura editorial", what: "Diversidad y calidad de fuentes" },
-  gam: { code: "GAM", name: "Agenda pública", what: "Alineamiento con temas del momento" },
-  dcm: { code: "DCM", name: "Consenso de modelos", what: "Grado de acuerdo entre las 6 IA" },
-  cxm: { code: "CXM", name: "Contexto cotizado", what: "Peso en índices bursátiles" },
-};
-const METRIC_KEYS = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
+// Canonical single source of truth — never define metrics locally.
+const METRIC_KEYS: readonly MetricKey[] = METRIC_GLOSSARY.map((m) => m.key);
+function metricDef(k: MetricKey) {
+  return METRIC_GLOSSARY.find((m) => m.key === k)!;
+}
 
 function fmtNum(n: number | null | undefined, dec = 2): string {
   if (n === null || n === undefined || !Number.isFinite(n as number)) return "—";
@@ -92,7 +84,7 @@ function buildProfileBody(dp: ProfileDatapack, analysisMarkdown: string | null):
 
   // Sector comparison table (8 metrics)
   const sectorRows = METRIC_KEYS.map((k) => {
-    const info = METRIC_INFO[k];
+    const info = metricDef(k);
     const mine = (snapshot as any)[k] as number | null;
     const avg = (sector as any)[`avg_${k}`] as number | null;
     const diff =
@@ -236,7 +228,7 @@ function buildComparisonBody(dp: ComparisonDatapack, analysisMarkdown: string | 
     .map((r) => `<th style="text-align:right;">${escapeHtml(r.tk)}</th>`)
     .join("");
   const metricsBody = METRIC_KEYS.map((k) => {
-    const info = METRIC_INFO[k];
+    const info = metricDef(k);
     const cells = ranked
       .map(
         (r) =>

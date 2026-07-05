@@ -3,6 +3,7 @@ import type {
   ComparisonSnapshotRow,
 } from "@/hooks/useComparisonDatapack";
 import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
+import { METRIC_GLOSSARY, METRIC_BY_KEY, type MetricKey as GlossaryKey } from "@/lib/reports/metricGlossary";
 
 export interface Recommendation {
   severity: "alta" | "media" | "oportunidad";
@@ -10,29 +11,27 @@ export interface Recommendation {
   detail: string;
 }
 
-type MetricKey = "nvm" | "rmm" | "cem" | "dcm" | "gam" | "sim" | "cxm";
+// Canonical single source of truth for names/actions. All metrics treated equally
+// (higher = better) with no special cases. DRM is included alongside the rest.
+type MetricKey = GlossaryKey;
 
-const METRIC_LABEL: Record<MetricKey, string> = {
-  nvm: "visibilidad (NVM)",
-  rmm: "menciones (RMM)",
-  cem: "evidencias (CEM)",
-  dcm: "cobertura (DCM)",
-  gam: "gobernanza (GAM)",
-  sim: "sentimiento (SIM)",
-  cxm: "experiencia de cliente (CXM)",
-};
+const METRIC_LABEL: Record<MetricKey, string> = METRIC_GLOSSARY.reduce(
+  (acc, m) => {
+    acc[m.key] = `${m.name.toLowerCase()} (${m.code})`;
+    return acc;
+  },
+  {} as Record<MetricKey, string>,
+);
 
-const WEAK_ACTION: Record<MetricKey, string> = {
-  sim: "Sentimiento débil: trabajar tono y contenidos positivos verificables.",
-  rmm: "Menciones de baja calidad: reforzar presencia en medios de autoridad.",
-  nvm: "Baja visibilidad en las IAs: aumentar contenidos indexables.",
-  cem: "Pocas evidencias citables: publicar datos/informes/notas verificables.",
-  dcm: "Cobertura poco diversa: ampliar variedad de fuentes y temáticas.",
-  gam: "Gobernanza/ESG mejorable: comunicar buen gobierno y sostenibilidad.",
-  cxm: "Experiencia de cliente floja: reforzar señales de satisfacción y servicio.",
-};
+const WEAK_ACTION: Record<MetricKey, string> = METRIC_GLOSSARY.reduce(
+  (acc, m) => {
+    acc[m.key] = m.action;
+    return acc;
+  },
+  {} as Record<MetricKey, string>,
+);
 
-const METRICS: MetricKey[] = ["nvm", "rmm", "cem", "dcm", "gam", "sim", "cxm"];
+const METRICS: MetricKey[] = METRIC_GLOSSARY.map((m) => m.key);
 
 const SEVERITY_ORDER: Record<Recommendation["severity"], number> = {
   alta: 0,
@@ -167,25 +166,34 @@ export function buildRecommendations(
 // Profile (single entity) recommendations — deterministic, rule-based.
 // ------------------------------------------------------------------
 
-const METRIC_SHORT_LABEL: Record<MetricKey, string> = {
-  nvm: "NVM",
-  rmm: "RMM",
-  cem: "CEM",
-  dcm: "DCM",
-  gam: "GAM",
-  sim: "SIM",
-  cxm: "CXM",
-};
+const METRIC_SHORT_LABEL: Record<MetricKey, string> = METRIC_GLOSSARY.reduce(
+  (acc, m) => {
+    acc[m.key] = m.code;
+    return acc;
+  },
+  {} as Record<MetricKey, string>,
+);
 
-const SECTOR_AVG_KEY: Record<MetricKey, "avg_nvm" | "avg_rmm" | "avg_cem" | "avg_dcm" | "avg_gam" | "avg_sim" | "avg_cxm"> = {
-  nvm: "avg_nvm",
-  rmm: "avg_rmm",
-  cem: "avg_cem",
-  dcm: "avg_dcm",
-  gam: "avg_gam",
-  sim: "avg_sim",
-  cxm: "avg_cxm",
-};
+type SectorAvgKey =
+  | "avg_nvm"
+  | "avg_drm"
+  | "avg_sim"
+  | "avg_rmm"
+  | "avg_cem"
+  | "avg_gam"
+  | "avg_dcm"
+  | "avg_cxm";
+
+const SECTOR_AVG_KEY: Record<MetricKey, SectorAvgKey> = METRIC_GLOSSARY.reduce(
+  (acc, m) => {
+    acc[m.key] = `avg_${m.key}` as SectorAvgKey;
+    return acc;
+  },
+  {} as Record<MetricKey, SectorAvgKey>,
+);
+
+// Silence unused import: METRIC_BY_KEY is re-exported implicitly via glossary consumers.
+void METRIC_BY_KEY;
 
 export function buildProfileRecommendations(dp: ProfileDatapack): Recommendation[] {
   const recs: Recommendation[] = [];
