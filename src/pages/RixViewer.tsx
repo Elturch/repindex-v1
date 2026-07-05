@@ -156,9 +156,9 @@ export default function RixViewer() {
   // Step 1: Receive a freshly generated report from /informes and queue it.
   useEffect(() => {
     const st = location.state as
-      | { autoSendQuestion?: string; reportId?: string; sessionId?: string }
+      | { autoSendQuestion?: string; reportId?: string; sessionId?: string; deterministic?: boolean }
       | null;
-    if (!st?.autoSendQuestion || !st?.sessionId || !st?.reportId) return;
+    if (!st?.sessionId || !st?.reportId) return;
     if (autoSentRef.current === st.reportId) return;
     autoSentRef.current = st.reportId;
 
@@ -168,17 +168,20 @@ export default function RixViewer() {
       void listReports(userId).then(setReports);
     }
 
-    const next: PendingSend = {
-      question: st.autoSendQuestion,
-      sessionId: st.sessionId,
-      reportId: st.reportId,
-    };
-    setPending(next);
-    persistPending(next);
-    pendingSinceRef.current = Date.now();
-
-    // Switch chat context to the new dedicated session.
+    // Switch chat context to the report's dedicated session.
     loadConversation(st.sessionId);
+
+    // Only queue an LLM dispatch when a question was provided (non-comparativa).
+    if (st.autoSendQuestion) {
+      const next: PendingSend = {
+        question: st.autoSendQuestion,
+        sessionId: st.sessionId,
+        reportId: st.reportId,
+      };
+      setPending(next);
+      persistPending(next);
+      pendingSinceRef.current = Date.now();
+    }
 
     // Clear navigation state to avoid resends on reload/back.
     navigate(location.pathname, { replace: true, state: {} });

@@ -164,12 +164,20 @@ export default function RixReports() {
                     toast({ title: "No se pudo guardar el informe", description: "Inténtalo de nuevo.", variant: "destructive" });
                     return;
                   }
+                  const isComparativa =
+                    coherence.state.tickers.value.length >= 2;
                   navigate("/visor", {
-                    state: {
-                      autoSendQuestion: question,
-                      reportId: entry.id,
-                      sessionId: newSessionId,
-                    },
+                    state: isComparativa
+                      ? {
+                          reportId: entry.id,
+                          sessionId: newSessionId,
+                          deterministic: true,
+                        }
+                      : {
+                          autoSendQuestion: question,
+                          reportId: entry.id,
+                          sessionId: newSessionId,
+                        },
                   });
                   // Reiniciar el panel para que la próxima visita a /informes
                   // arranque desde cero (sin Top N / orden residual).
