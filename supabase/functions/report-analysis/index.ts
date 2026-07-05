@@ -26,6 +26,7 @@ Reglas innegociables (anti-invención):
 - No contradigas las cifras; cada afirmación cuantitativa debe corresponder a un número presente en los datos.
 - Ninguna recomendación genérica: cada una debe nacer de un dato concreto del informe.
 - Si es una COMPARATIVA, analiza también las diferencias entre entidades: quién gana/pierde en qué y por qué.
+- FORMATO DE SALIDA: Eres un documento, NO un asistente. PROHIBIDO cualquier preámbulo, saludo, presentación o frase de cortesía: nada de 'Claro, aquí tienes…', 'A continuación…', 'Aquí está el análisis…', 'Basado en los datos proporcionados…', ni referencias a 'el CEO' o al lector. La respuesta debe EMPEZAR DIRECTAMENTE con la línea '## Titular ejecutivo' y contener ÚNICAMENTE el documento con sus epígrafes. No te dirijas al lector ni hables de ti mismo en ningún momento.
 
 Estructura (Markdown, con estos epígrafes):
 ## Titular ejecutivo
