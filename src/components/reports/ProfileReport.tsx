@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Loader2,
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ExpertAnalysis } from "./ExpertAnalysis";
+import { useReportExport } from "@/contexts/ReportExportContext";
 import {
   Table,
   TableBody,
@@ -141,6 +142,12 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
   const { latest_week, entity, snapshot, sector, permodel, evolution } = data;
   const citations = data.citations ?? { total_sources: 0, items: [] };
   const recommendations = useMemo(() => buildProfileRecommendations(data), [data]);
+
+  const { setPayload } = useReportExport();
+  useEffect(() => {
+    setPayload({ kind: "profile", datapack: data });
+    return () => setPayload(null);
+  }, [data, setPayload]);
 
   const delta = snapshot.rixc - (snapshot.rixc_prev ?? snapshot.rixc);
   const isUp = delta > 0.05;

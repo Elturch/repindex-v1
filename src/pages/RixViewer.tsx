@@ -34,7 +34,8 @@ import type { FilterState } from "@/lib/reports/filterState";
 import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { ProfileReport } from "@/components/reports/ProfileReport";
-import { downloadReportPdf } from "@/lib/reports/downloadReportPdf";
+import { ReportExportProvider } from "@/contexts/ReportExportContext";
+import { DeterministicPdfButton } from "@/components/reports/DeterministicPdfButton";
 import {
   listReports,
   getActiveId,
@@ -283,38 +284,6 @@ export default function RixViewer() {
     (activeReport.filters?.tickers?.value?.length ?? 0) === 1
   );
   const isDeterministicActive = isComparativeActive || isProfileActive;
-
-  const reportCaptureRef = useRef<HTMLDivElement | null>(null);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-
-  const handleDownloadDeterministicPdf = useCallback(async () => {
-    if (!reportCaptureRef.current || isDownloadingPdf) return;
-    setIsDownloadingPdf(true);
-    try {
-      const entityLabel =
-        activeReport?.customName ||
-        activeReport?.title ||
-        (activeReport?.filters?.tickers?.value ?? []).join("-") ||
-        "informe";
-      const safe = entityLabel
-        .replace(/[^\p{L}\p{N}\-_ ]+/gu, "")
-        .trim()
-        .replace(/\s+/g, "-")
-        .slice(0, 80) || "informe";
-      const week = new Date().toISOString().slice(0, 10);
-      const filename = `RepIndex-${safe}-${week}.pdf`;
-      await downloadReportPdf(reportCaptureRef.current, filename);
-    } catch (err) {
-      console.error("[pdf] download failed", err);
-      toast({
-        title: "No se pudo generar el PDF",
-        description: "Inténtalo de nuevo en unos segundos.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDownloadingPdf(false);
-    }
-  }, [activeReport, isDownloadingPdf]);
 
   // If a pending auto-send belongs to a deterministic report (perfil o
   // comparativa), drop it silently — nunca llamamos al LLM en esos casos.
@@ -603,6 +572,7 @@ export default function RixViewer() {
   );
 
   return (
+    <ReportExportProvider>
     <div className="min-h-screen bg-background">
       <Helmet>
         <title>Visor de Informes RIX | RepIndex</title>
@@ -678,23 +648,9 @@ export default function RixViewer() {
                 </>
               )}
               {isDeterministicActive ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleDownloadDeterministicPdf}
-                  disabled={isDownloadingPdf}
-                >
-                  {isDownloadingPdf ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando PDF…
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-3.5 w-3.5" /> Descargar PDF
-                    </>
-                  )}
-                </Button>
+                <DeterministicPdfButton
+                  fallbackLabel={activeReport?.customName || activeReport?.title || "informe"}
+                />
               ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -739,66 +695,9 @@ export default function RixViewer() {
               {MemoryList}
             </aside>
             <Card
-              id="rix-report-capture"
-              ref={reportCaptureRef as any}
               className="rix-print-content min-w-0 max-w-full overflow-x-hidden shadow-card"
             >
               <CardContent className="pt-6 min-w-0 max-w-full overflow-x-hidden">
-                {isDeterministicActive && (
-                  <div
-                    className="rix-pdf-only"
-                    style={{
-                      display: "none",
-                      borderBottom: "2px solid #1a73e8",
-                      paddingBottom: "12px",
-                      marginBottom: "18px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-end",
-                        gap: "12px",
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "22px",
-                            fontWeight: 700,
-                            color: "#1a73e8",
-                            letterSpacing: "-0.01em",
-                          }}
-                        >
-                          RepIndex.ai
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#0f1419",
-                            marginTop: "2px",
-                          }}
-                        >
-                          Informe de Reputación Algorítmica
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "11px",
-                          color: "#0f1419",
-                          textAlign: "right",
-                        }}
-                      >
-                        {new Date().toLocaleDateString("es-ES", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
                 {isGenerating && (
                   <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-center gap-3">
                     <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
@@ -892,5 +791,6 @@ export default function RixViewer() {
         />
       )}
     </div>
+    </ReportExportProvider>
   );
 }
