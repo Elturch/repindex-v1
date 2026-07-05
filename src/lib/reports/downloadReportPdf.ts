@@ -5,6 +5,7 @@ const html2pdf: any = html2pdfImport;
 import { supabase } from "@/integrations/supabase/client";
 import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
 import type { ComparisonDatapack } from "@/hooks/useComparisonDatapack";
+import type { RankingDatapack, RankingDatapackParams } from "@/hooks/useRankingDatapack";
 import { buildDeterministicReportHtml } from "./buildDeterministicReportHtml";
 
 /**
@@ -100,13 +101,14 @@ async function waitForFramePaint(iframe: HTMLIFrameElement): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export interface DownloadDeterministicInput {
-  kind: "profile" | "comparison";
-  tickers: string[];
+  kind: "profile" | "comparison" | "ranking";
+  tickers?: string[];
+  rankingParams?: RankingDatapackParams | null;
   question?: string | null;
 }
 
 function analysisCacheKey(
-  kind: "profile" | "comparison",
+  kind: "profile" | "comparison" | "ranking",
   tickers: string[],
   week: string,
 ): string {
@@ -127,15 +129,36 @@ function sanitizeSegment(s: string): string {
 export async function downloadDeterministicReportPdf(
   input: DownloadDeterministicInput,
 ): Promise<void> {
-  const { kind, tickers, question } = input;
-  const cleanTickers = (tickers ?? []).map((t) => t.trim()).filter(Boolean);
-  if (cleanTickers.length === 0) {
-    throw new Error("No tickers provided");
-  }
+  const { kind, tickers, rankingParams, question } = input;
 
   // 1) Fetch datapack directly via RPC.
-  let datapack: ProfileDatapack | ComparisonDatapack;
-  if (kind === "profile") {
+  let datapack: ProfileDatapack | ComparisonDatapack | RankingDatapack;
+  let cleanTickers: string[] = [];
+
+  if (kind === "ranking") {
+    if (!rankingParams) throw new Error("rankingParams required for ranking PDF");
+    const p = rankingParams;
+    const norm = (arr?: string[] | null): string[] | null =>
+      arr && arr.length > 0 ? [...arr].map((s) => s.trim()).filter(Boolean).sort() : null;
+    const { data, error } = await (supabase.rpc as any)("rix_ranking_datapack", {
+      p_sector: p.sector?.trim() || null,
+      p_subsector: p.subsector?.trim() || null,
+      p_universe: norm(p.universe),
+      p_tickers: norm(p.tickers),
+      p_from: p.from || null,
+      p_to: p.to || null,
+      p_models: norm(p.models),
+      p_order_by: (p.orderBy || "rixc").toLowerCase(),
+      p_limit:
+        typeof p.limit === "number" && Number.isFinite(p.limit) && p.limit > 0
+          ? Math.floor(p.limit)
+          : null,
+    });
+    if (error) throw error;
+    datapack = data as RankingDatapack;
+  } else if (kind === "profile") {
+    cleanTickers = (tickers ?? []).map((t) => t.trim()).filter(Boolean);
+    if (cleanTickers.length === 0) throw new Error("No tickers provided");
     const { data, error } = await (supabase.rpc as any)(
       "rix_profile_datapack",
       { p_ticker: cleanTickers[0] },
@@ -143,6 +166,8 @@ export async function downloadDeterministicReportPdf(
     if (error) throw error;
     datapack = data as ProfileDatapack;
   } else {
+    cleanTickers = (tickers ?? []).map((t) => t.trim()).filter(Boolean);
+    if (cleanTickers.length === 0) throw new Error("No tickers provided");
     const sorted = [...cleanTickers].sort();
     const { data, error } = await (supabase.rpc as any)(
       "rix_comparison_datapack",
@@ -157,10 +182,21 @@ export async function downloadDeterministicReportPdf(
     (datapack as any)?.latest_week || new Date().toISOString().slice(0, 10);
   let analysisMarkdown = "";
   try {
-    const cached = localStorage.getItem(
-      analysisCacheKey(kind, cleanTickers, week),
-    );
-    if (cached) analysisMarkdown = cached;
+    if (kind === "ranking") {
+      const scope = {
+        sector: rankingParams?.sector ?? null,
+        subsector: rankingParams?.subsector ?? null,
+        universe: rankingParams?.universe ?? null,
+      };
+      const key = `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}`;
+      const cached = localStorage.getItem(key);
+      if (cached) analysisMarkdown = cached;
+    } else {
+      const cached = localStorage.getItem(
+        analysisCacheKey(kind, cleanTickers, week),
+      );
+      if (cached) analysisMarkdown = cached;
+    }
   } catch {
     /* ignore */
   }
@@ -174,12 +210,21 @@ export async function downloadDeterministicReportPdf(
   });
 
   // 4) Filename.
-  const label =
-    kind === "profile"
-      ? (datapack as ProfileDatapack).entity?.name || cleanTickers[0]
-      : ((datapack as ComparisonDatapack).entities ?? [])
-          .map((e) => e.ticker)
-          .join("-") || cleanTickers.join("-");
+  let label: string;
+  if (kind === "profile") {
+    label = (datapack as ProfileDatapack).entity?.name || cleanTickers[0];
+  } else if (kind === "comparison") {
+    label =
+      ((datapack as ComparisonDatapack).entities ?? [])
+        .map((e) => e.ticker)
+        .join("-") || cleanTickers.join("-");
+  } else {
+    const rp = rankingParams;
+    label =
+      rp?.sector ||
+      rp?.subsector ||
+      (rp?.universe && rp.universe.length > 0 ? rp.universe.join("-") : "ranking");
+  }
   const filename = `RepIndex-${sanitizeSegment(String(label))}-${week}.pdf`;
 
   // 5) Render + save.
