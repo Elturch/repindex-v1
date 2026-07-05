@@ -684,18 +684,24 @@ export default function RixViewer() {
                     </Button>
                   </div>
                 )}
-                <ChatMessages
-                  messages={messages}
-                  isLoading={isLoading}
-                  isLoadingHistory={isLoadingHistory}
-                  loadingMessage={loadingMessage}
-                  onSuggestedQuestion={() => undefined}
-                  onStarterPrompt={() => undefined}
-                  compact={false}
-                  sessionId={sessionId}
-                  languageCode={language.code}
-                  unboundedHeight
-                />
+                {isComparativeActive && activeReport ? (
+                  <ComparisonReport
+                    tickers={activeReport.filters.tickers.value}
+                  />
+                ) : (
+                  <ChatMessages
+                    messages={messages}
+                    isLoading={isLoading}
+                    isLoadingHistory={isLoadingHistory}
+                    loadingMessage={loadingMessage}
+                    onSuggestedQuestion={() => undefined}
+                    onStarterPrompt={() => undefined}
+                    compact={false}
+                    sessionId={sessionId}
+                    languageCode={language.code}
+                    unboundedHeight
+                  />
+                )}
               </CardContent>
             </Card>
           </div>
