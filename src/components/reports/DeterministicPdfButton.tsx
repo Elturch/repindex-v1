@@ -7,9 +7,10 @@ import { downloadDeterministicReportPdf } from "@/lib/reports/downloadReportPdf"
 interface Props {
   kind: "profile" | "comparison";
   tickers: string[];
+  question?: string | null;
 }
 
-export function DeterministicPdfButton({ kind, tickers }: Props) {
+export function DeterministicPdfButton({ kind, tickers, question }: Props) {
   const [busy, setBusy] = useState(false);
 
   const onClick = useCallback(async () => {
@@ -24,7 +25,7 @@ export function DeterministicPdfButton({ kind, tickers }: Props) {
     }
     setBusy(true);
     try {
-      await downloadDeterministicReportPdf({ kind, tickers });
+      await downloadDeterministicReportPdf({ kind, tickers, question: question ?? null });
     } catch (err) {
       console.error("[pdf] generation failed", err);
       toast({
@@ -35,7 +36,7 @@ export function DeterministicPdfButton({ kind, tickers }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [busy, kind, tickers]);
+  }, [busy, kind, tickers, question]);
 
   return (
     <Button
