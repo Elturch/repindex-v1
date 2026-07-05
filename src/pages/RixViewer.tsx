@@ -777,7 +777,13 @@ export default function RixViewer() {
                 </>
               )}
               {isDeterministicActive ? (
-                isRankingActive ? null : (
+                isRankingActive ? (
+                  <DeterministicPdfButton
+                    kind="ranking"
+                    rankingParams={rankingParams}
+                    question={activeReport?.question ?? null}
+                  />
+                ) : (
                   <DeterministicPdfButton
                     kind={isProfileActive ? "profile" : "comparison"}
                     tickers={activeReport?.filters?.tickers?.value ?? []}
