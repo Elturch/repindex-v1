@@ -902,18 +902,9 @@ export default function RixViewer() {
                     />
                   </div>
                 ) : (
-                  <ChatMessages
-                    messages={messages}
-                    isLoading={isLoading}
-                    isLoadingHistory={isLoadingHistory}
-                    loadingMessage={loadingMessage}
-                    onSuggestedQuestion={() => undefined}
-                    onStarterPrompt={() => undefined}
-                    compact={false}
-                    sessionId={sessionId}
-                    languageCode={language.code}
-                    unboundedHeight
-                  />
+                  // Fallback inalcanzable: todos los informes son deterministas
+                  // (perfil / comparativa / ranking). Nunca se llama al LLM.
+                  null
                 )}
               </CardContent>
             </Card>
