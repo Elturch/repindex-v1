@@ -173,18 +173,17 @@ export default function RixReports() {
                     coherence.state.subsector.value.length > 0 ||
                     coherence.state.universe.value.length > 0;
                   const isDeterministic = tickCount >= 1 || (tickCount === 0 && hasScope);
+                  // Todos los informes son deterministas: nunca se llama al LLM.
+                  // Perfil (1 ticker) → ProfileReport
+                  // Comparativa (≥2 tickers) → ComparisonReport
+                  // Ranking / visión general (0 tickers, con o sin scope) → RankingReport
+                  void tickCount; void hasScope; void isDeterministic;
                   navigate("/visor", {
-                    state: isDeterministic
-                      ? {
-                          reportId: entry.id,
-                          sessionId: newSessionId,
-                          deterministic: true,
-                        }
-                      : {
-                          autoSendQuestion: question,
-                          reportId: entry.id,
-                          sessionId: newSessionId,
-                        },
+                    state: {
+                      reportId: entry.id,
+                      sessionId: newSessionId,
+                      deterministic: true,
+                    },
                   });
                   // Reiniciar el panel para que la próxima visita a /informes
                   // arranque desde cero (sin Top N / orden residual).
