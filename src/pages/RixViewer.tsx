@@ -22,7 +22,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ChatMessages } from "@/components/chat/ChatMessages";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
@@ -301,17 +300,24 @@ export default function RixViewer() {
     activeReport &&
     (activeReport.filters?.tickers?.value?.length ?? 0) === 1
   );
+  // Cualquier informe sin tickers concretos es un ranking determinista.
+  // Si además NO hay sector/subsector/universo, se trata como "visión
+  // general global" y el datapack se ancla a todas las cotizadas.
   const isRankingActive = !!(
     activeReport &&
-    (activeReport.filters?.tickers?.value?.length ?? 0) === 0 &&
-    (
-      (activeReport.filters?.sector?.value?.length ?? 0) > 0 ||
-      (activeReport.filters?.subsector?.value?.length ?? 0) > 0 ||
-      (activeReport.filters?.universe?.value?.length ?? 0) > 0
-    )
+    (activeReport.filters?.tickers?.value?.length ?? 0) === 0
   );
   const isDeterministicActive =
     isComparativeActive || isProfileActive || isRankingActive;
+
+  // Universo por defecto cuando el usuario no acota nada: todas las cotizadas.
+  const DEFAULT_LISTED_UNIVERSE = [
+    "IBEX-35",
+    "IBEX-MC",
+    "IBEX-SC",
+    "BME-GROWTH",
+    "MC-OTHER",
+  ];
 
   // Map the report filters into params for the ranking datapack RPC.
   const rankingParams = useMemo(() => {
@@ -321,10 +327,17 @@ export default function RixViewer() {
       f.topN?.origin === "user-set" && typeof f.topN.value === "number" && f.topN.value > 0
         ? f.topN.value
         : null;
+    const hasScope =
+      (f.sector.value.length ?? 0) > 0 ||
+      (f.subsector.value.length ?? 0) > 0 ||
+      (f.universe.value.length ?? 0) > 0;
+    const universe = f.universe.value.length > 0
+      ? [...f.universe.value]
+      : (hasScope ? null : [...DEFAULT_LISTED_UNIVERSE]);
     return {
       sector: f.sector.value[0] ?? null,
       subsector: f.subsector.value[0] ?? null,
-      universe: f.universe.value.length > 0 ? [...f.universe.value] : null,
+      universe,
       tickers: null,
       from: f.window.value.from,
       to: f.window.value.to,
@@ -344,7 +357,7 @@ export default function RixViewer() {
     if (f.sector.value[0]) return f.sector.value[0];
     if (f.subsector.value[0]) return f.subsector.value[0];
     if (f.universe.value.length > 0) return f.universe.value.join(" · ");
-    return undefined;
+    return "Todas las cotizadas";
   }, [activeReport]);
 
   // If a pending auto-send belongs to a deterministic report (perfil o
@@ -888,18 +901,9 @@ export default function RixViewer() {
                     />
                   </div>
                 ) : (
-                  <ChatMessages
-                    messages={messages}
-                    isLoading={isLoading}
-                    isLoadingHistory={isLoadingHistory}
-                    loadingMessage={loadingMessage}
-                    onSuggestedQuestion={() => undefined}
-                    onStarterPrompt={() => undefined}
-                    compact={false}
-                    sessionId={sessionId}
-                    languageCode={language.code}
-                    unboundedHeight
-                  />
+                  // Fallback inalcanzable: todos los informes son deterministas
+                  // (perfil / comparativa / ranking). Nunca se llama al LLM.
+                  null
                 )}
               </CardContent>
             </Card>
