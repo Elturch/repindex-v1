@@ -528,18 +528,205 @@ function UnknownSection({ title, body }: { title: string; body: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// JSON schema renderers (preferred path)
+// ---------------------------------------------------------------------------
+
+type Tono = "verde" | "ambar" | "rojo" | "azul";
+
+export interface AnalysisJson {
+  titular?: string;
+  esencial?: Array<{ etiqueta?: string; texto: string; tono?: Tono }>;
+  que_pasa?: string[];
+  metricas?: Array<{
+    code: string;
+    nombre?: string;
+    valor: number | null;
+    contexto?: string | null;
+    texto?: string;
+  }>;
+  riesgos?: string[];
+  oportunidades?: string[];
+  recomendaciones?: Array<{ accion: string; porque?: string }>;
+}
+
+const TONE_MAP: Record<Tono, "red" | "amber" | "green" | "blue"> = {
+  verde: "green",
+  ambar: "amber",
+  rojo: "red",
+  azul: "blue",
+};
+
+function toneIcon(t: Tono | undefined) {
+  const k = t ?? "azul";
+  if (k === "verde") return <TrendingUp size={16} />;
+  if (k === "rojo") return <TrendingDown size={16} />;
+  if (k === "ambar") return <AlertTriangle size={16} />;
+  return <Info size={16} />;
+}
+
+function JsonTitular({ text }: { text: string }) {
+  return (
+    <section className="eav-section">
+      <div className="eav-eyebrow">Titular ejecutivo</div>
+      <div className="eav-headline">{renderInline(text, "j-hl")}</div>
+    </section>
+  );
+}
+
+function JsonEsencial({ items }: { items: NonNullable<AnalysisJson["esencial"]> }) {
+  return (
+    <section className="eav-section">
+      <div className="eav-eyebrow">Lo esencial en 20 segundos</div>
+      <div className="eav-tldr">
+        {items.map((it, i) => {
+          const tone = TONE_MAP[it.tono ?? "azul"] ?? "blue";
+          return (
+            <div className={`eav-kpi ${tone}`} key={`jk-${i}`}>
+              <div className="eav-kpi-k" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {toneIcon(it.tono)}
+                <span>{it.etiqueta || ""}</span>
+              </div>
+              <div className="eav-kpi-t">{renderInline(it.texto, `jkt-${i}`)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function JsonQuePasa({ paras }: { paras: string[] }) {
+  return (
+    <section className="eav-section">
+      <div className="eav-eyebrow">Qué está pasando y por qué</div>
+      <div className="eav-prose">
+        {paras.map((p, i) => (
+          <p key={`jp-${i}`}>{renderInline(p, `jpr-${i}`)}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function JsonMetricas({ items }: { items: NonNullable<AnalysisJson["metricas"]> }) {
+  return (
+    <section className="eav-section">
+      <div className="eav-eyebrow">Lectura por métrica</div>
+      <div className="eav-mlegend">
+        <span><i style={{ background: "var(--eav-red)" }} />0–39 crítico</span>
+        <span><i style={{ background: "var(--eav-amber)" }} />40–59 atención</span>
+        <span><i style={{ background: "var(--eav-blue)" }} />60–79 sólido</span>
+        <span><i style={{ background: "var(--eav-green)" }} />80–100 fuerte</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {items.map((m, i) => {
+          const codeUp = (m.code ?? "").toUpperCase();
+          const def = METRIC_BY_KEY[codeUp.toLowerCase() as MetricKey];
+          const na = m.valor == null || !Number.isFinite(m.valor as number);
+          const band = na ? null : bandForNum(m.valor as number);
+          const bandCls = band ? `b-${band}` : "";
+          return (
+            <div className={`eav-metric ${bandCls}${na ? " na" : ""}`} key={`jm-${i}`}>
+              <div className="eav-m-head">
+                <span className="eav-m-code">{codeUp}</span>
+                <span className="eav-m-name">{m.nombre || def?.name || codeUp}</span>
+                {def && <span className="eav-m-weight">peso {def.weight}%</span>}
+              </div>
+              <div className="eav-m-score">
+                <span className="eav-m-num">{na ? "N/A" : Math.round(m.valor as number)}</span>
+                <span className="eav-m-band">{na ? "No aplica" : bandLabel(band as "red"|"amber"|"blue"|"green")}</span>
+                {m.contexto && !na && (
+                  <span style={{ fontSize: 12, color: "var(--eav-text-muted)", marginLeft: 6 }}>
+                    {m.contexto}
+                  </span>
+                )}
+              </div>
+              <div className="eav-m-gauge">
+                <i style={{ width: na ? "100%" : `${Math.max(0, Math.min(100, m.valor as number))}%` }} />
+              </div>
+              {m.texto && <div className="eav-m-desc">{renderInline(m.texto, `jmd-${i}`)}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function JsonRiesgosOportunidades({
+  riesgos,
+  oportunidades,
+}: {
+  riesgos: string[];
+  oportunidades: string[];
+}) {
+  return (
+    <section className="eav-section">
+      <div className="eav-eyebrow">Riesgos y oportunidades</div>
+      <div className="eav-ro">
+        <div className="eav-ro-col risk">
+          <h3><AlertTriangle size={14} />Riesgos</h3>
+          {riesgos.length === 0 && <div className="eav-caption">Sin riesgos destacados.</div>}
+          {riesgos.map((r, i) => (
+            <div className="eav-item" key={`jr-${i}`}>
+              <span>{renderInline(r, `jr-${i}`)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="eav-ro-col opp">
+          <h3><ShieldCheck size={14} />Oportunidades</h3>
+          {oportunidades.length === 0 && <div className="eav-caption">Sin oportunidades destacadas.</div>}
+          {oportunidades.map((o, i) => (
+            <div className="eav-item" key={`jo-${i}`}>
+              <span>{renderInline(o, `jo-${i}`)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function JsonRecomendaciones({ items }: { items: NonNullable<AnalysisJson["recomendaciones"]> }) {
+  return (
+    <section className="eav-section">
+      <div className="eav-eyebrow">Recomendaciones priorizadas</div>
+      <div className="eav-recs">
+        {items.map((it, i) => (
+          <div className={`eav-rec${i === 0 ? " p1" : ""}`} key={`jrc-${i}`}>
+            <div className="eav-rec-n">{i + 1}</div>
+            <div>
+              <div className="eav-rec-title">{renderInline(it.accion, `jrt-${i}`)}</div>
+              {it.porque && (
+                <div className="eav-rec-why">
+                  <b>Por qué</b>
+                  <span>{renderInline(it.porque, `jrw-${i}`)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 interface Props {
-  markdown: string;
+  json?: AnalysisJson | null;
+  markdown?: string | null;
   subtitle?: string;
 }
 
-export function ExpertAnalysisView({ markdown, subtitle }: Props) {
+export function ExpertAnalysisView({ json, markdown, subtitle }: Props) {
   useEffect(() => {
     ensureEavStyles();
   }, []);
 
-  const sections = useMemo(() => splitSections(markdown ?? ""), [markdown]);
+  const md = markdown ?? "";
+  const sections = useMemo(() => (json ? [] : splitSections(md)), [json, md]);
   const hasSections = sections.length > 0;
+  const useJson = !!json;
 
   return (
     <div className="eav-panel">
@@ -547,7 +734,7 @@ export function ExpertAnalysisView({ markdown, subtitle }: Props) {
         <div className="eav-ribbon-left">
           <span className="eav-badge">Agente Rix</span>
           <div className="eav-ribbon-title">
-            Análisis del experto
+            Análisis del experto · Agente Rix
             {subtitle ? <small>{subtitle}</small> : null}
           </div>
         </div>
@@ -557,14 +744,37 @@ export function ExpertAnalysisView({ markdown, subtitle }: Props) {
         </span>
       </div>
       <div className="eav-body">
-        {!hasSections && (
+        {useJson && (
+          <>
+            {json!.titular && <JsonTitular text={json!.titular} />}
+            {json!.esencial && json!.esencial.length > 0 && (
+              <JsonEsencial items={json!.esencial} />
+            )}
+            {json!.que_pasa && json!.que_pasa.length > 0 && (
+              <JsonQuePasa paras={json!.que_pasa} />
+            )}
+            {json!.metricas && json!.metricas.length > 0 && (
+              <JsonMetricas items={json!.metricas} />
+            )}
+            {(json!.riesgos?.length || json!.oportunidades?.length) ? (
+              <JsonRiesgosOportunidades
+                riesgos={json!.riesgos ?? []}
+                oportunidades={json!.oportunidades ?? []}
+              />
+            ) : null}
+            {json!.recomendaciones && json!.recomendaciones.length > 0 && (
+              <JsonRecomendaciones items={json!.recomendaciones} />
+            )}
+          </>
+        )}
+        {!useJson && !hasSections && (
           <section className="eav-section">
             <div className="eav-prose">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown || ""}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
             </div>
           </section>
         )}
-        {hasSections &&
+        {!useJson && hasSections &&
           sections.map((s, i) => {
             switch (s.kind) {
               case "headline":
