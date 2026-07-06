@@ -12,7 +12,7 @@ import { DivergenceRow } from "./blocks/DivergenceRow";
 import { RecCard } from "./blocks/RecCard";
 import { BrandFooter } from "./blocks/BrandFooter";
 import { LineChart, type LineSeries } from "./blocks/LineChart";
-import { ExpertAnalysisView } from "./ExpertAnalysisView";
+import { ExpertAnalysisView, type AnalysisJson } from "./ExpertAnalysisView";
 import {
   useRankingDatapack,
   type RankingDatapackParams,
@@ -29,12 +29,13 @@ interface Props {
 // --- Ranking-specific expert analysis: soft-fails to "en preparación". ---
 function useRankingExpert(scope: object | null, week: string | null) {
   const [state, setState] = useState<{
+    json: AnalysisJson | null;
     md: string | null;
     loading: boolean;
     ready: boolean;
-  }>({ md: null, loading: false, ready: false });
+  }>({ json: null, md: null, loading: false, ready: false });
 
-  const key = scope && week ? `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}` : null;
+  const key = scope && week ? `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}.v2` : null;
   const lastKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -44,14 +45,23 @@ function useRankingExpert(scope: object | null, week: string | null) {
     try {
       const cached = localStorage.getItem(key);
       if (cached) {
-        setState({ md: cached, loading: false, ready: true });
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === "object" && "titular" in parsed) {
+            setState({ json: parsed as AnalysisJson, md: null, loading: false, ready: true });
+          } else {
+            setState({ json: null, md: cached, loading: false, ready: true });
+          }
+        } catch {
+          setState({ json: null, md: cached, loading: false, ready: true });
+        }
         return;
       }
     } catch {
       /* ignore */
     }
     let cancelled = false;
-    setState({ md: null, loading: true, ready: false });
+    setState({ json: null, md: null, loading: true, ready: false });
     (async () => {
       try {
         const { data, error } = await supabase.functions.invoke("report-analysis", {
@@ -59,17 +69,20 @@ function useRankingExpert(scope: object | null, week: string | null) {
         });
         if (cancelled) return;
         if (error) throw error;
+        const aj: AnalysisJson | undefined = (data as any)?.analysis_json;
         const md: string | undefined = (data as any)?.analysis;
-        if (!md) throw new Error("empty");
-        try {
-          localStorage.setItem(key, md);
-        } catch {
-          /* ignore */
+        if (aj && typeof aj === "object") {
+          try { localStorage.setItem(key, JSON.stringify(aj)); } catch { /* ignore */ }
+          setState({ json: aj, md: null, loading: false, ready: true });
+        } else if (md) {
+          try { localStorage.setItem(key, md); } catch { /* ignore */ }
+          setState({ json: null, md, loading: false, ready: true });
+        } else {
+          throw new Error("empty");
         }
-        setState({ md, loading: false, ready: true });
       } catch {
         if (cancelled) return;
-        setState({ md: null, loading: false, ready: true });
+        setState({ json: null, md: null, loading: false, ready: true });
       }
     })();
     return () => {
@@ -125,7 +138,15 @@ function isoWeekLabel(iso: string): string {
 // Panels
 // ---------------------------------------------------------------------------
 
-function ExpertPanel({ md, loading }: { md: string | null; loading: boolean }) {
+function ExpertPanel({
+  json,
+  md,
+  loading,
+}: {
+  json: AnalysisJson | null;
+  md: string | null;
+  loading: boolean;
+}) {
   return (
     <section className="rr-section">
       <SectionEyebrow>Análisis del experto</SectionEyebrow>
@@ -133,8 +154,8 @@ function ExpertPanel({ md, loading }: { md: string | null; loading: boolean }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rr-text-light)", fontSize: 13, padding: "18px 20px", border: "1px solid var(--rr-border)", borderRadius: 13, background: "linear-gradient(120deg,#eff6ff,#fff)" }}>
           <Loader2 className="h-4 w-4 animate-spin" /> Generando análisis del experto…
         </div>
-      ) : md ? (
-        <ExpertAnalysisView markdown={md} />
+      ) : json || md ? (
+        <ExpertAnalysisView json={json} markdown={md} />
       ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rr-text-muted)", fontSize: 13, padding: "18px 20px", border: "1px solid var(--rr-border)", borderRadius: 13, background: "var(--rr-bg-alt)" }}>
           <AlertTriangle className="h-4 w-4" /> Análisis en preparación — próximamente disponible para esta vista.
