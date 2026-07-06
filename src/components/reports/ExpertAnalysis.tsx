@@ -1,9 +1,8 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Loader2, Sparkles, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useReportAnalysis } from "@/hooks/useReportAnalysis";
+import { ExpertAnalysisView } from "./ExpertAnalysisView";
 
 interface ExpertAnalysisProps {
   type: "profile" | "comparison";
@@ -50,9 +49,7 @@ export function ExpertAnalysis({ type, tickers, week }: ExpertAnalysisProps) {
         )}
 
         {!isLoading && !isError && analysis && (
-          <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:leading-relaxed prose-li:my-0.5">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis}</ReactMarkdown>
-          </div>
+          <ExpertAnalysisView markdown={analysis} />
         )}
       </CardContent>
     </Card>
