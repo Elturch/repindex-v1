@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Loader2, AlertTriangle, Sparkles, TrendingUp, TrendingDown, Trophy, Search, ShieldCheck, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureRankingStylesInjected, bandFor } from "./blocks/rankingTokens";
@@ -14,6 +12,7 @@ import { DivergenceRow } from "./blocks/DivergenceRow";
 import { RecCard } from "./blocks/RecCard";
 import { BrandFooter } from "./blocks/BrandFooter";
 import { LineChart, type LineSeries } from "./blocks/LineChart";
+import { ExpertAnalysisView } from "./ExpertAnalysisView";
 import {
   useRankingDatapack,
   type RankingDatapackParams,
@@ -130,29 +129,17 @@ function ExpertPanel({ md, loading }: { md: string | null; loading: boolean }) {
   return (
     <section className="rr-section">
       <SectionEyebrow>Análisis del experto</SectionEyebrow>
-      <div style={{
-        border: "1px solid var(--rr-border)",
-        background: "linear-gradient(120deg,#eff6ff,#fff)",
-        borderRadius: 13,
-        padding: "18px 20px",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--rr-primary)", fontWeight: 700, fontSize: 13 }}>
-          <Sparkles className="h-4 w-4" /> Interpretación experta
+      {loading ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rr-text-light)", fontSize: 13, padding: "18px 20px", border: "1px solid var(--rr-border)", borderRadius: 13, background: "linear-gradient(120deg,#eff6ff,#fff)" }}>
+          <Loader2 className="h-4 w-4 animate-spin" /> Generando análisis del experto…
         </div>
-        {loading ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rr-text-light)", fontSize: 13 }}>
-            <Loader2 className="h-4 w-4 animate-spin" /> Generando análisis del experto…
-          </div>
-        ) : md ? (
-          <div className="prose prose-sm max-w-none" style={{ color: "var(--rr-text)" }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
-          </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rr-text-muted)", fontSize: 13 }}>
-            <AlertTriangle className="h-4 w-4" /> Análisis en preparación — próximamente disponible para esta vista.
-          </div>
-        )}
-      </div>
+      ) : md ? (
+        <ExpertAnalysisView markdown={md} />
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rr-text-muted)", fontSize: 13, padding: "18px 20px", border: "1px solid var(--rr-border)", borderRadius: 13, background: "var(--rr-bg-alt)" }}>
+          <AlertTriangle className="h-4 w-4" /> Análisis en preparación — próximamente disponible para esta vista.
+        </div>
+      )}
     </section>
   );
 }
