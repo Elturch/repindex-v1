@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Lock } from "lucide-react";
+import { Lock, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Info } from "lucide-react";
 import { METRIC_BY_KEY, type MetricKey } from "@/lib/reports/metricGlossary";
 
 /**
