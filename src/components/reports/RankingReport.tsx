@@ -416,7 +416,7 @@ function SectorView({
           </div>
         </section>
 
-        <ExpertPanel md={expert.md} loading={expert.loading} />
+        <ExpertPanel json={expert.json} md={expert.md} loading={expert.loading} />
 
         {/* Recommendations (deterministas) */}
         <section className="rr-section">
@@ -702,7 +702,7 @@ function EvolucionView({
           </div>
         </section>
 
-        <ExpertPanel md={expert.md} loading={expert.loading} />
+        <ExpertPanel json={expert.json} md={expert.md} loading={expert.loading} />
 
         {/* Claves de lectura */}
         <section className="rr-section">
