@@ -164,20 +164,10 @@ export default function RixReports() {
                     toast({ title: "No se pudo guardar el informe", description: "Inténtalo de nuevo.", variant: "destructive" });
                     return;
                   }
-                  // Deterministic frontend paths: profile (1 ticker),
-                  // comparison (>=2 tickers), and ranking (0 tickers + scope
-                  // defined by sector/subsector/universe).
-                  const tickCount = coherence.state.tickers.value.length;
-                  const hasScope =
-                    coherence.state.sector.value.length > 0 ||
-                    coherence.state.subsector.value.length > 0 ||
-                    coherence.state.universe.value.length > 0;
-                  const isDeterministic = tickCount >= 1 || (tickCount === 0 && hasScope);
                   // Todos los informes son deterministas: nunca se llama al LLM.
                   // Perfil (1 ticker) → ProfileReport
                   // Comparativa (≥2 tickers) → ComparisonReport
                   // Ranking / visión general (0 tickers, con o sin scope) → RankingReport
-                  void tickCount; void hasScope; void isDeterministic;
                   navigate("/visor", {
                     state: {
                       reportId: entry.id,
