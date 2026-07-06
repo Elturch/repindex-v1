@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, AlertTriangle, Sparkles, TrendingUp, TrendingDown, Trophy, Search, ShieldCheck, Activity } from "lucide-react";
+import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Trophy, Search, ShieldCheck, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureRankingStylesInjected, bandFor } from "./blocks/rankingTokens";
 import { Ribbon } from "./blocks/Ribbon";
@@ -742,6 +742,7 @@ export function RankingReport({ params, scopeLabel }: Props) {
   const windowTo = data?.window?.to ?? null;
   const modelsKey = (data?.models_used ?? []).join(",");
   const latestWeek = data?.latest_week ?? null;
+  const scopeLimit = data?.scope?.limit ?? params.limit ?? null;
 
   const expertScope = useMemo(() => {
     if (!data) return null;
@@ -753,6 +754,7 @@ export function RankingReport({ params, scopeLabel }: Props) {
       from: windowFrom,
       to: windowTo,
       models: modelsKey ? modelsKey.split(",") : [],
+      limit: scopeLimit,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -765,6 +767,7 @@ export function RankingReport({ params, scopeLabel }: Props) {
     windowTo,
     modelsKey,
     latestWeek,
+    scopeLimit,
   ]);
 
   const expert = useRankingExpert(expertScope, latestWeek);
