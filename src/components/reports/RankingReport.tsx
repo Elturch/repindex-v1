@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Loader2, AlertTriangle, Sparkles, TrendingUp, TrendingDown, Trophy, Search, ShieldCheck, Activity } from "lucide-react";
@@ -35,9 +35,13 @@ function useRankingExpert(scope: object | null, week: string | null) {
     ready: boolean;
   }>({ md: null, loading: false, ready: false });
 
+  const key = scope && week ? `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}` : null;
+  const lastKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!scope || !week) return;
-    const key = `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}`;
+    if (!key) return;
+    if (lastKeyRef.current === key) return;
+    lastKeyRef.current = key;
     try {
       const cached = localStorage.getItem(key);
       if (cached) {
@@ -72,7 +76,7 @@ function useRankingExpert(scope: object | null, week: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [scope, week]);
+  }, [key]);
 
   return state;
 }
@@ -743,18 +747,40 @@ export function RankingReport({ params, scopeLabel }: Props) {
     return "Alcance seleccionado";
   }, [scopeLabel, params]);
 
-  const expert = useRankingExpert(
-    data ? {
-      sector: data.scope.sector,
-      subsector: data.scope.subsector,
-      universe: data.scope.universe,
-      tickers: data.scope.tickers,
-      from: data.window.from,
-      to: data.window.to,
-      models: data.models_used,
-    } : null,
-    data?.latest_week ?? null,
-  );
+  const scopeSector = data?.scope?.sector ?? null;
+  const scopeSubsector = data?.scope?.subsector ?? null;
+  const scopeUniverseKey = (data?.scope?.universe ?? []).join(",");
+  const scopeTickersKey = (data?.scope?.tickers ?? []).join(",");
+  const windowFrom = data?.window?.from ?? null;
+  const windowTo = data?.window?.to ?? null;
+  const modelsKey = (data?.models_used ?? []).join(",");
+  const latestWeek = data?.latest_week ?? null;
+
+  const expertScope = useMemo(() => {
+    if (!data) return null;
+    return {
+      sector: scopeSector,
+      subsector: scopeSubsector,
+      universe: scopeUniverseKey ? scopeUniverseKey.split(",") : [],
+      tickers: scopeTickersKey ? scopeTickersKey.split(",") : [],
+      from: windowFrom,
+      to: windowTo,
+      models: modelsKey ? modelsKey.split(",") : [],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    !!data,
+    scopeSector,
+    scopeSubsector,
+    scopeUniverseKey,
+    scopeTickersKey,
+    windowFrom,
+    windowTo,
+    modelsKey,
+    latestWeek,
+  ]);
+
+  const expert = useRankingExpert(expertScope, latestWeek);
 
   if (isLoading) {
     return (
