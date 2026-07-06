@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { AnalysisJson } from "@/components/reports/ExpertAnalysisView";
 
 type AnalysisType = "profile" | "comparison";
 
 function cacheKey(type: AnalysisType, tickers: string[], week: string) {
   const sorted = [...tickers].sort().join("-");
-  return `repindex.analysis.${type}.${sorted}.${week}`;
+  return `repindex.analysis.${type}.${sorted}.${week}.v2`;
 }
 
 export function useReportAnalysis(
@@ -14,6 +15,7 @@ export function useReportAnalysis(
   week: string,
 ) {
   const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisJson, setAnalysisJson] = useState<AnalysisJson | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isError, setIsError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -29,7 +31,19 @@ export function useReportAnalysis(
     try {
       const cached = localStorage.getItem(key);
       if (cached) {
-        setAnalysis(cached);
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === "object" && "titular" in parsed) {
+            setAnalysisJson(parsed as AnalysisJson);
+            setAnalysis(null);
+          } else {
+            setAnalysis(cached);
+            setAnalysisJson(null);
+          }
+        } catch {
+          setAnalysis(cached);
+          setAnalysisJson(null);
+        }
         setIsLoading(false);
         return;
       }
@@ -38,6 +52,7 @@ export function useReportAnalysis(
     }
 
     setAnalysis(null);
+    setAnalysisJson(null);
     setIsLoading(true);
 
     (async () => {
@@ -48,14 +63,27 @@ export function useReportAnalysis(
         );
         if (cancelled) return;
         if (error) throw error;
+        const aj: AnalysisJson | undefined = (data as any)?.analysis_json;
         const md: string | undefined = (data as any)?.analysis;
-        if (!md) throw new Error("empty analysis");
-        try {
-          localStorage.setItem(key, md);
-        } catch {
-          /* ignore quota */
+        if (aj && typeof aj === "object") {
+          try {
+            localStorage.setItem(key, JSON.stringify(aj));
+          } catch {
+            /* ignore quota */
+          }
+          setAnalysisJson(aj);
+          setAnalysis(null);
+        } else if (md) {
+          try {
+            localStorage.setItem(key, md);
+          } catch {
+            /* ignore quota */
+          }
+          setAnalysis(md);
+          setAnalysisJson(null);
+        } else {
+          throw new Error("empty analysis");
         }
-        setAnalysis(md);
         setIsLoading(false);
       } catch (_err) {
         if (cancelled) return;
@@ -81,5 +109,5 @@ export function useReportAnalysis(
     setAttempt((n) => n + 1);
   }, [key]);
 
-  return { analysis, isLoading, isError, retry };
+  return { analysis, analysisJson, isLoading, isError, retry };
 }
