@@ -11,7 +11,7 @@ interface ExpertAnalysisProps {
 }
 
 export function ExpertAnalysis({ type, tickers, week }: ExpertAnalysisProps) {
-  const { analysis, isLoading, isError, retry } = useReportAnalysis(
+  const { analysis, analysisJson, isLoading, isError, retry } = useReportAnalysis(
     type,
     tickers,
     week,
@@ -48,8 +48,8 @@ export function ExpertAnalysis({ type, tickers, week }: ExpertAnalysisProps) {
           </div>
         )}
 
-        {!isLoading && !isError && analysis && (
-          <ExpertAnalysisView markdown={analysis} />
+        {!isLoading && !isError && (analysisJson || analysis) && (
+          <ExpertAnalysisView json={analysisJson} markdown={analysis} />
         )}
       </CardContent>
     </Card>
