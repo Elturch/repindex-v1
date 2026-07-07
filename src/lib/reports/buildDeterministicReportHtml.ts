@@ -145,6 +145,239 @@ const EXPERT_STYLES = `
 .consensus-panel .co-spark{margin:6px 0 4px;}
 `;
 
+// ---------- Deterministic block styles (print-safe, same design language) ----------
+const DET_STYLES = `
+.det-headline{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #e5e7eb;border-left:4px solid #1a73e8;background:linear-gradient(135deg,#f0f4f8 0%,#ffffff 60%);border-radius:10px;padding:14px 18px;margin:0 0 14px;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.det-headline .h-l{min-width:0;}
+.det-headline .h-eyebrow{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#8899a6;margin-bottom:4px;}
+.det-headline .h-val{font-size:34px;font-weight:700;color:#0f1419;line-height:1;letter-spacing:-.02em;}
+.det-headline .h-delta{font-size:13px;font-weight:600;margin-left:10px;}
+.det-headline .h-delta.up{color:#10a37f;} .det-headline .h-delta.down{color:#dc2626;} .det-headline .h-delta.flat{color:#8899a6;}
+.det-headline .h-r{text-align:right;font-size:12px;color:#536471;}
+.det-headline .h-rank{font-size:20px;font-weight:700;color:#1a3a5c;}
+
+.det-metrics{display:block;}
+.det-metric{border:1px solid #e5e7eb;border-radius:11px;padding:12px 14px;margin-bottom:10px;background:#fff;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.det-metric .dm-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.det-metric .dm-code{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:3px 7px;border-radius:6px;background:#1a3a5c;color:#fff;letter-spacing:.03em;}
+.det-metric .dm-name{font-size:12.5px;font-weight:700;color:#0f1419;}
+.det-metric .dm-desc{font-size:11.5px;color:#8899a6;margin-left:auto;max-width:55%;text-align:right;line-height:1.35;}
+.det-metric .dm-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;}
+.det-metric .dm-val{font-size:22px;font-weight:700;line-height:1;color:#0f1419;min-width:52px;text-align:right;}
+.det-metric .dm-bar-wrap{position:relative;height:10px;}
+.det-metric .dm-bar{position:absolute;inset:0;height:10px;background:#eef2f6;border-radius:999px;overflow:hidden;}
+.det-metric .dm-bar>i{display:block;height:100%;border-radius:999px;background:#1a73e8;}
+.det-metric .dm-mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:#0f1419;border-radius:2px;}
+.det-metric .dm-mark::after{content:"";position:absolute;left:50%;top:-4px;transform:translateX(-50%);width:6px;height:6px;background:#0f1419;border-radius:50%;}
+.det-metric .dm-diff{font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;min-width:56px;text-align:right;}
+.det-metric .dm-diff.up{color:#10a37f;} .det-metric .dm-diff.down{color:#dc2626;} .det-metric .dm-diff.flat{color:#8899a6;}
+.det-metric .dm-scale{display:flex;justify-content:space-between;font-size:9.5px;color:#8899a6;font-family:'JetBrains Mono',monospace;margin-top:4px;letter-spacing:.06em;}
+.det-metric .dm-legend{font-size:10.5px;color:#8899a6;margin-top:6px;}
+.det-metric .dm-legend b{color:#0f1419;font-family:'JetBrains Mono',monospace;font-weight:600;}
+.det-metric.b-green .dm-bar>i{background:#10a37f;} .det-metric.b-green .dm-val{color:#10a37f;}
+.det-metric.b-blue .dm-bar>i{background:#1a73e8;}   .det-metric.b-blue .dm-val{color:#1a73e8;}
+.det-metric.b-amber .dm-bar>i{background:#f97316;}  .det-metric.b-amber .dm-val{color:#f97316;}
+.det-metric.b-red .dm-bar>i{background:#dc2626;}    .det-metric.b-red .dm-val{color:#dc2626;}
+
+/* Divergence per-model horizontal bars */
+.det-div{border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fff;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.det-div .dv-row{display:grid;grid-template-columns:110px 1fr 44px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #f0f4f8;}
+.det-div .dv-row:first-child{border-top:none;}
+.det-div .dv-name{font-size:12px;font-weight:600;color:#0f1419;}
+.det-div .dv-bar{position:relative;height:9px;background:#eef2f6;border-radius:999px;overflow:hidden;}
+.det-div .dv-bar>i{display:block;height:100%;border-radius:999px;background:#1a73e8;}
+.det-div .dv-val{font-size:12px;font-weight:700;font-family:'JetBrains Mono',monospace;color:#0f1419;text-align:right;}
+.det-div .dv-row.max .dv-bar>i{background:#10a37f;} .det-div .dv-row.max .dv-val{color:#10a37f;}
+.det-div .dv-row.min .dv-bar>i{background:#dc2626;} .det-div .dv-row.min .dv-val{color:#dc2626;}
+.det-div .dv-foot{margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:11.5px;color:#536471;}
+.det-div .dv-foot b{color:#f97316;font-family:'JetBrains Mono',monospace;}
+
+/* Evolution sparkline */
+.det-evo{border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fff;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.det-evo svg{display:block;width:100%;height:auto;}
+.det-evo .ev-legend{display:flex;justify-content:space-between;font-size:10.5px;color:#8899a6;font-family:'JetBrains Mono',monospace;margin-top:6px;letter-spacing:.06em;}
+
+/* Citations grid grouped by domain */
+.det-cites{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.det-cite{border:1px solid #e5e7eb;border-radius:10px;padding:9px 12px;background:#fff;page-break-inside:avoid;}
+.det-cite .dc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px;}
+.det-cite .dc-dom{font-size:12px;font-weight:700;color:#0f1419;word-break:break-word;}
+.det-cite .dc-n{font-size:10.5px;font-weight:600;font-family:'JetBrains Mono',monospace;color:#1a73e8;background:#eff6ff;border:1px solid rgba(26,115,232,.25);padding:1px 6px;border-radius:5px;white-space:nowrap;}
+.det-cite .dc-mods{font-size:10.5px;color:#8899a6;line-height:1.4;}
+`;
+
+// ---------- Inline SVG icons (print-safe, replace emoji) ----------
+const IC_CAL = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const IC_BOT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M9 14h.01M15 14h.01M2 14h2M20 14h2"/></svg>';
+const IC_CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+// ---------- Deterministic block renderers ----------
+function renderMetricGauge(opts: {
+  code: string;
+  name: string;
+  what: string;
+  mine: number | null;
+  avg: number | null;
+  na?: boolean;
+  entityLabel: string;
+  avgLabel: string;
+}): string {
+  const { code, name, what, mine, avg, entityLabel, avgLabel } = opts;
+  const na = opts.na || mine === null || mine === undefined || !Number.isFinite(mine);
+  const v = na ? 0 : (mine as number);
+  const band = na ? "" : bandOf(v);
+  const width = na ? 0 : Math.max(0, Math.min(100, v));
+  const diff =
+    !na && avg !== null && avg !== undefined && Number.isFinite(avg)
+      ? v - (avg as number)
+      : null;
+  const diffCls = diff === null ? "flat" : diff > 0.05 ? "up" : diff < -0.05 ? "down" : "flat";
+  const diffTxt = diff === null ? "—" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}`;
+  const markPct =
+    avg !== null && avg !== undefined && Number.isFinite(avg)
+      ? Math.max(0, Math.min(100, avg as number))
+      : null;
+  return `<div class="det-metric ${band}">
+    <div class="dm-head">
+      <span class="dm-code">${escapeHtml(code)}</span>
+      <span class="dm-name">${escapeHtml(name)}</span>
+      <span class="dm-desc">${escapeHtml(what)}</span>
+    </div>
+    <div class="dm-row">
+      <div class="dm-val">${na ? "N/A" : Math.round(v)}</div>
+      <div class="dm-bar-wrap">
+        <div class="dm-bar"><i style="width:${width}%;"></i></div>
+        ${markPct !== null ? `<div class="dm-mark" style="left:${markPct}%;" title="Media del sector"></div>` : ""}
+      </div>
+      <div class="dm-diff ${diffCls}">${diffTxt}</div>
+    </div>
+    <div class="dm-scale"><span>0</span><span>50</span><span>100</span></div>
+    <div class="dm-legend">
+      <b>${escapeHtml(entityLabel)}</b> ${na ? "sin dato" : Math.round(v)} ·
+      marcador negro = media <b>${escapeHtml(avgLabel)}</b>
+      ${avg !== null && avg !== undefined && Number.isFinite(avg) ? Math.round(avg as number) : "—"}
+    </div>
+  </div>`;
+}
+
+function renderDivergenceBars(
+  permodel: { model: string; rix: number }[],
+): string {
+  const vals = permodel.map((p) => p.rix).filter((v) => Number.isFinite(v));
+  if (!vals.length) return "";
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min;
+  const sorted = [...permodel].sort((a, b) => (b.rix ?? 0) - (a.rix ?? 0));
+  const rows = sorted
+    .map((p) => {
+      const v = Number.isFinite(p.rix) ? Math.max(0, Math.min(100, p.rix)) : 0;
+      const cls =
+        p.rix === max && range > 0.5 ? " max" : p.rix === min && range > 0.5 ? " min" : "";
+      return `<div class="dv-row${cls}">
+        <div class="dv-name">${escapeHtml(p.model)}</div>
+        <div class="dv-bar"><i style="width:${v}%;"></i></div>
+        <div class="dv-val">${Number.isFinite(p.rix) ? Math.round(p.rix) : "—"}</div>
+      </div>`;
+    })
+    .join("");
+  return `<div class="det-div">
+    ${rows}
+    <div class="dv-foot">
+      <span>Rango entre máximo y mínimo</span>
+      <span><b>${range.toFixed(1)}</b> puntos</span>
+    </div>
+  </div>`;
+}
+
+function renderEvolutionSpark(
+  evolution: { week: string; rixc: number }[],
+): string {
+  const pts = evolution
+    .slice()
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .filter((r) => Number.isFinite(r.rixc));
+  if (pts.length < 2) return "";
+  const W = 720;
+  const H = 160;
+  const PL = 34, PR = 12, PT = 12, PB = 22;
+  const vals = pts.map((p) => p.rixc);
+  let vMin = Math.min(...vals);
+  let vMax = Math.max(...vals);
+  const pad = Math.max(2, (vMax - vMin) * 0.15);
+  vMin = Math.max(0, vMin - pad);
+  vMax = Math.min(100, vMax + pad);
+  if (vMax - vMin < 4) { vMax = Math.min(100, vMax + 2); vMin = Math.max(0, vMin - 2); }
+  const xFor = (i: number) => PL + (i * (W - PL - PR)) / (pts.length - 1);
+  const yFor = (v: number) => PT + (H - PT - PB) * (1 - (v - vMin) / (vMax - vMin));
+  const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(i).toFixed(1)},${yFor(p.rixc).toFixed(1)}`).join(" ");
+  const areaD = `${d} L${xFor(pts.length - 1).toFixed(1)},${(H - PB).toFixed(1)} L${xFor(0).toFixed(1)},${(H - PB).toFixed(1)} Z`;
+  const dots = pts
+    .map((p, i) => `<circle cx="${xFor(i).toFixed(1)}" cy="${yFor(p.rixc).toFixed(1)}" r="2.4" fill="#1a73e8" />`)
+    .join("");
+  const yTicks = 4;
+  const gridLines: string[] = [];
+  const yLabels: string[] = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const v = vMin + ((vMax - vMin) * i) / yTicks;
+    const y = yFor(v);
+    gridLines.push(`<line x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}" stroke="#eef2f6" stroke-width="1" />`);
+    yLabels.push(`<text x="${PL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#8899a6" font-family="JetBrains Mono,monospace">${v.toFixed(0)}</text>`);
+  }
+  const xLabelIdx = pts.length <= 8 ? pts.map((_, i) => i) : [0, Math.floor(pts.length / 4), Math.floor(pts.length / 2), Math.floor((pts.length * 3) / 4), pts.length - 1];
+  const xLabels = xLabelIdx
+    .map((i) => {
+      const w = pts[i].week;
+      const short = w.length >= 10 ? w.slice(5) : w;
+      return `<text x="${xFor(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="#8899a6" font-family="JetBrains Mono,monospace">${escapeHtml(short)}</text>`;
+    })
+    .join("");
+  return `<div class="det-evo">
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+      ${gridLines.join("")}
+      <path d="${areaD}" fill="rgba(26,115,232,0.10)" />
+      <path d="${d}" fill="none" stroke="#1a73e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      ${dots}
+      ${yLabels.join("")}
+      ${xLabels}
+    </svg>
+    <div class="ev-legend">
+      <span>${escapeHtml(pts[0].week)}</span>
+      <span>${pts.length} semanas · RIXc</span>
+      <span>${escapeHtml(pts[pts.length - 1].week)}</span>
+    </div>
+  </div>`;
+}
+
+function renderCitationsGrid(
+  items: { url: string; domain: string; models: string[] }[],
+): string {
+  if (!items || !items.length) return "";
+  const byDom = new Map<string, { count: number; models: Set<string> }>();
+  for (const it of items) {
+    const dom = it.domain || (() => {
+      try { return new URL(it.url).hostname.replace(/^www\./, ""); } catch { return it.url; }
+    })();
+    if (!byDom.has(dom)) byDom.set(dom, { count: 0, models: new Set() });
+    const bucket = byDom.get(dom)!;
+    bucket.count += 1;
+    (it.models || []).forEach((m) => bucket.models.add(m));
+  }
+  const rows = Array.from(byDom.entries())
+    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
+    .map(
+      ([dom, info]) => `<div class="det-cite">
+        <div class="dc-head">
+          <div class="dc-dom">${escapeHtml(dom)}</div>
+          <span class="dc-n">${info.count}</span>
+        </div>
+        <div class="dc-mods">${escapeHtml(Array.from(info.models).join(" · ") || "—")}</div>
+      </div>`,
+    )
+    .join("");
+  return `<div class="det-cites">${rows}</div>`;
+}
+
 const LEVEL_LABEL: Record<string, string> = {
   unanime: "Unánime",
   fuerte: "Fuerte",
@@ -403,104 +636,70 @@ function buildProfileBody(
 
   const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
-  // Headline callout
+  // Headline
   const rankLine = sector.size
-    ? `#${sector.rank} de ${sector.size} en ${escapeHtml(sector.name || entity.sector || "su sector")}`
+    ? `#<span class="h-rank">${sector.rank}</span> <span style="color:#8899a6;">de ${sector.size}</span><br/><span style="font-size:11px;">${escapeHtml(sector.name || entity.sector || "su sector")}</span>`
     : "—";
   const headline = `
-    <div class="headline-callout">
-      <div class="kpi-label">RIXc semana ${escapeHtml(fmtWeek(dp.latest_week))}</div>
-      <div>
-        <span class="kpi">${fmtNum(snapshot.rixc)}</span>
-        <span class="kpi-delta ${deltaClass(delta)}">${fmtDelta(delta)}</span>
+    <div class="det-headline">
+      <div class="h-l">
+        <div class="h-eyebrow">RIXc · semana ${escapeHtml(fmtWeek(dp.latest_week))}</div>
+        <div>
+          <span class="h-val">${fmtNum(snapshot.rixc, 1)}</span>
+          <span class="h-delta ${deltaClass(delta)}">${fmtDelta(delta)}</span>
+        </div>
       </div>
-      <div style="font-size:12px;color:#536471;margin-top:6px;">${rankLine}</div>
+      <div class="h-r">${rankLine}</div>
     </div>`;
 
-  // Sector comparison table (8 metrics)
-  const sectorRows = METRIC_KEYS.map((k) => {
+  // Sector comparison — gauge cards for the 8 metrics + RIXc
+  const metricCards = METRIC_KEYS.map((k) => {
     const info = metricDef(k);
     const mine = (snapshot as any)[k] as number | null;
     const avg = (sector as any)[`avg_${k}`] as number | null;
-    const diff =
-      mine !== null && mine !== undefined && avg !== null && avg !== undefined
-        ? mine - avg
-        : null;
-    return `<tr>
-      <td><strong>${info.code}</strong> · ${escapeHtml(info.name)}</td>
-      <td style="color:#536471;">${escapeHtml(info.what)}</td>
-      <td style="text-align:right;">${fmtNum(mine)}</td>
-      <td style="text-align:right;color:#536471;">${fmtNum(avg)}</td>
-      <td style="text-align:right;color:${
-        diff === null ? "#8899a6" : diff > 0 ? "#059669" : diff < 0 ? "#dc2626" : "#8899a6"
-      };font-weight:600;">${fmtDelta(diff)}</td>
-    </tr>`;
+    return renderMetricGauge({
+      code: info.code,
+      name: info.name,
+      what: info.what,
+      mine,
+      avg,
+      entityLabel: entity.name,
+      avgLabel: sector.name || entity.sector || "sector",
+    });
   }).join("");
 
   const sectorTable = `
     <section class="report-section">
       <h2>La empresa frente a su sector</h2>
       ${headline}
-      <table>
-        <thead>
-          <tr>
-            <th>Métrica</th>
-            <th>Qué mide</th>
-            <th style="text-align:right;">${escapeHtml(entity.name)}</th>
-            <th style="text-align:right;">Media del sector</th>
-            <th style="text-align:right;">Diferencia</th>
-          </tr>
-        </thead>
-        <tbody>${sectorRows}</tbody>
-      </table>
+      <div class="det-metrics">${metricCards}</div>
     </section>`;
 
-  // Divergence
-  const rixVals = permodel.map((p) => p.rix).filter((v) => Number.isFinite(v));
-  const range = rixVals.length ? Math.max(...rixVals) - Math.min(...rixVals) : 0;
-  const permodelRows = permodel
-    .map(
-      (p) => `<tr>
-        <td><strong>${escapeHtml(p.model)}</strong></td>
-        <td style="text-align:right;">${fmtNum(p.rix)}</td>
-      </tr>`,
-    )
-    .join("");
+  // Divergence — horizontal bar per model
   const divergence = `
     <section class="report-section">
       <h2>Divergencia entre los 6 modelos</h2>
-      <p style="font-size:12px;color:#536471;">Rango entre modelo más alto y más bajo: <strong>${fmtNum(range)}</strong> puntos.</p>
-      <table>
-        <thead>
-          <tr><th>Modelo</th><th style="text-align:right;">RIX</th></tr>
-        </thead>
-        <tbody>${permodelRows}</tbody>
-      </table>
+      <p style="font-size:12px;color:#536471;margin-bottom:10px;">Cada IA responde con su propia lectura. Verde = máximo · rojo = mínimo.</p>
+      ${renderDivergenceBars(permodel)}
     </section>`;
 
-  // Evolution
-  const evoRows = evolution
-    .slice()
-    .sort((a, b) => a.week.localeCompare(b.week))
-    .map(
-      (r) => `<tr>
-        <td>${escapeHtml(r.week)}</td>
-        <td style="text-align:right;">${fmtNum(r.rixc)}</td>
-      </tr>`,
-    )
-    .join("");
-  const evoSection = evolution.length
+  // Evolution sparkline
+  const evoSection = evolution.length >= 2
     ? `<section class="report-section">
-        <h2>Evolución semanal</h2>
-        <table>
-          <thead><tr><th>Semana</th><th style="text-align:right;">RIXc</th></tr></thead>
-          <tbody>${evoRows}</tbody>
-        </table>
+        <h2>Evolución semanal del RIXc</h2>
+        ${renderEvolutionSpark(evolution)}
       </section>`
     : "";
 
-  // Citations
-  const citeSection = buildCitationsSection(citations.items || []);
+  // Citations grid
+  const citeItems = citations.items || [];
+  const citeSection = citeItems.length
+    ? `<section class="report-section">
+        <h2>Menciones y fuentes citadas</h2>
+        <p style="font-size:12px;color:#536471;margin-bottom:10px;">${citeItems.length} fuentes citadas por los modelos, agrupadas por dominio.</p>
+        ${renderCitationsGrid(citeItems)}
+      </section>`
+    : "";
 
   const consensusSection = buildConsensusSection(consensus);
 
@@ -657,7 +856,13 @@ function buildComparisonBody(
     seen.add(it.url);
     return true;
   });
-  const citeSection = buildCitationsSection(unique);
+  const citeSection = unique.length
+    ? `<section class="report-section">
+        <h2>Menciones y fuentes citadas</h2>
+        <p style="font-size:12px;color:#536471;margin-bottom:10px;">${unique.length} fuentes únicas citadas por los modelos, agrupadas por dominio.</p>
+        ${renderCitationsGrid(unique)}
+      </section>`
+    : "";
 
   const consensusSection = buildConsensusSection(consensus);
 
@@ -675,6 +880,8 @@ function buildComparisonBody(
 
 // ---------- Shared: citations ----------
 
+// Legacy simple-list citations (kept for reference; grid version is used now).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildCitationsSection(
   items: { url: string; domain: string; models: string[]; models_count?: number }[],
 ): string {
@@ -775,29 +982,25 @@ function buildRankingBody(
     </section>`;
 
   // Sector average per metric
-  const avgRows = avg
+  const avgCards = avg
     ? METRIC_KEYS.map((k) => {
         const info = metricDef(k);
-        return `<tr>
-          <td><strong>${info.code}</strong> · ${escapeHtml(info.name)}</td>
-          <td style="color:#536471;">${escapeHtml(info.what)}</td>
-          <td style="text-align:right;font-weight:600;">${fmtNum((avg as any)[k] as number | null)}</td>
-        </tr>`;
+        const v = (avg as any)[k] as number | null;
+        return renderMetricGauge({
+          code: info.code,
+          name: info.name,
+          what: info.what,
+          mine: v,
+          avg: null,
+          entityLabel: "Media",
+          avgLabel: "—",
+        });
       }).join("")
     : "";
   const avgTable = avg
     ? `<section class="report-section">
         <h2>Huella del sector · media por métrica</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Métrica</th>
-              <th>Qué mide</th>
-              <th style="text-align:right;">Media</th>
-            </tr>
-          </thead>
-          <tbody>${avgRows}</tbody>
-        </table>
+        <div class="det-metrics">${avgCards}</div>
        </section>`
     : "";
 
@@ -869,9 +1072,9 @@ export function buildDeterministicReportHtml(
   }
 
   const metaItems: BrandedReportMetaItem[] = [
-    { icon: "📅", label: `Semana: ${latestWeek}` },
-    { icon: "🤖", label: "6 modelos de IA" },
-    { icon: "✓", label: "Datos deterministas · sin IA generativa" },
+    { iconHtml: IC_CAL, label: `Semana: ${latestWeek}` },
+    { iconHtml: IC_BOT, label: "6 modelos de IA" },
+    { iconHtml: IC_CHECK, label: "Datos deterministas · sin IA generativa" },
   ];
 
   const questionSection = question && question.trim()
@@ -887,7 +1090,7 @@ export function buildDeterministicReportHtml(
     title,
     subtitle,
     metaItems,
-    bodyHtml: `<style>${EXPERT_STYLES}</style>` + questionSection + bodyHtml,
+    bodyHtml: `<style>${EXPERT_STYLES}${DET_STYLES}</style>` + questionSection + bodyHtml,
     documentTitle: `RepIndex — ${title}`,
   });
 }

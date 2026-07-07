@@ -9,6 +9,7 @@ import { technicalSheetStyles } from "@/lib/technicalSheetHtml";
 
 export interface BrandedReportMetaItem {
   icon?: string; // small emoji or symbol
+  iconHtml?: string; // optional raw SVG/HTML that replaces `icon`
   label: string; // full label text
 }
 
@@ -119,6 +120,8 @@ export function brandedReportStyles(): string {
       align-items: center;
       gap: 6px;
     }
+    .report-header .meta-ico { display: inline-flex; align-items: center; color: #1a73e8; }
+    .report-header .meta-ico svg { display: block; width: 14px; height: 14px; }
 
     /* Editorial sections */
     .report-section { margin: 32px 0; }
@@ -298,8 +301,14 @@ export function wrapBrandedReport(input: WrapBrandedReportInput): string {
 
   const metaHtml = metaItems
     .map(
-      (m) =>
-        `<div class="meta-item">${m.icon ? `${m.icon} ` : ""}${escapeHtml(m.label)}</div>`,
+      (m) => {
+        const ico = m.iconHtml
+          ? `<span class="meta-ico">${m.iconHtml}</span>`
+          : m.icon
+            ? `${escapeHtml(m.icon)} `
+            : "";
+        return `<div class="meta-item">${ico}${escapeHtml(m.label)}</div>`;
+      },
     )
     .join("");
 
