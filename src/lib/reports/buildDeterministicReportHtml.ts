@@ -838,7 +838,7 @@ function buildRankingBody(
 export function buildDeterministicReportHtml(
   input: BuildDeterministicReportInput,
 ): string {
-  const { kind, datapack, analysisMarkdown, question } = input;
+  const { kind, datapack, analysisMarkdown, analysisJson, consensus, question } = input;
 
   let title: string;
   let subtitle = "Informe de Reputación Algorítmica";
@@ -849,12 +849,12 @@ export function buildDeterministicReportHtml(
     const dp = datapack as ProfileDatapack;
     title = dp.entity.name;
     latestWeek = dp.latest_week;
-    bodyHtml = buildProfileBody(dp, analysisMarkdown);
+    bodyHtml = buildProfileBody(dp, analysisMarkdown, analysisJson, consensus);
   } else if (kind === "comparison") {
     const dp = datapack as ComparisonDatapack;
     title = `Comparativa: ${dp.entities.map((e) => e.name).join(" · ")}`;
     latestWeek = dp.latest_week;
-    bodyHtml = buildComparisonBody(dp, analysisMarkdown);
+    bodyHtml = buildComparisonBody(dp, analysisMarkdown, analysisJson, consensus);
   } else {
     const dp = datapack as RankingDatapack;
     const scopeLabel =
@@ -865,7 +865,7 @@ export function buildDeterministicReportHtml(
         : "Ranking");
     title = `Ranking del sector: ${scopeLabel}`;
     latestWeek = dp.latest_week;
-    bodyHtml = buildRankingBody(dp, analysisMarkdown);
+    bodyHtml = buildRankingBody(dp, analysisMarkdown, analysisJson);
   }
 
   const metaItems: BrandedReportMetaItem[] = [
