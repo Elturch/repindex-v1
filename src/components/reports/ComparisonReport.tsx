@@ -331,8 +331,6 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         week={latest_week}
       />
 
-      <ConsensusCompact entities={entities.map((e) => ({ ticker: e.ticker, name: e.name }))} />
-
       {/* Verdict */}
       {verdict && (
         <Card>
