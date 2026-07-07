@@ -84,13 +84,13 @@ const EXPERT_STYLES = `
 .expert-panel .er-kpi-k{font-size:12px;font-weight:700;color:#0f1419;margin-bottom:4px;}
 .expert-panel .er-kpi-t{font-size:12px;color:#536471;line-height:1.5;}
 .expert-panel .er-prose p{font-size:13px;color:#0f1419;line-height:1.7;margin:0 0 8px;}
-.expert-panel .er-metric{border:1px solid #e5e7eb;border-radius:11px;padding:12px 14px;margin-bottom:10px;background:#fff;}
+.expert-panel .er-metric{border:1px solid #e5e7eb;border-radius:11px;padding:11px 13px;margin-bottom:8px;background:#fff;}
 .expert-panel .er-m-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
-.expert-panel .er-m-code{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:3px 7px;border-radius:6px;background:#1a3a5c;color:#fff;letter-spacing:.03em;}
+/* .er-m-code styled by unified DET_STYLES chip rule */
 .expert-panel .er-m-name{font-size:12.5px;font-weight:700;color:#0f1419;}
 .expert-panel .er-m-score{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
 .expert-panel .er-m-num{font-size:22px;font-weight:700;line-height:1;color:#0f1419;}
-.expert-panel .er-m-band{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:6px;background:#f0f4f8;color:#536471;}
+/* .er-m-band styled by unified DET_STYLES chip rule */
 .expert-panel .er-m-ctx{font-size:11px;color:#8899a6;}
 .expert-panel .er-m-gauge{height:6px;background:#eef2f6;border-radius:999px;overflow:hidden;margin-bottom:8px;}
 .expert-panel .er-m-gauge>i{display:block;height:100%;border-radius:999px;background:#1a73e8;}
@@ -107,7 +107,7 @@ const EXPERT_STYLES = `
 .expert-panel .er-recs{display:flex;flex-direction:column;gap:10px;}
 .expert-panel .er-rec{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#fff;}
 .expert-panel .er-rec.p1{background:linear-gradient(120deg,#eff6ff,#fff);border-color:#bfdbfe;}
-.expert-panel .er-rec-n{width:36px;height:36px;border-radius:9px;background:#1a3a5c;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;}
+.expert-panel .er-rec-n{width:36px;height:36px;line-height:36px;text-align:center;display:block;border-radius:9px;background:#1a3a5c;color:#fff;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;}
 .expert-panel .er-rec.p1 .er-rec-n{background:#1a73e8;}
 .expert-panel .er-rec-title{font-size:13.5px;font-weight:700;color:#0f1419;margin-bottom:6px;line-height:1.35;}
 .expert-panel .er-rec-why{display:flex;gap:8px;padding:8px 11px;background:#f7f9fa;border-left:3px solid #20808d;border-radius:0 8px 8px 0;}
@@ -116,14 +116,14 @@ const EXPERT_STYLES = `
 
 /* Consensus */
 .consensus-panel{border:1px solid #e5e7eb;border-radius:14px;padding:20px 22px;background:#fff;}
-.consensus-panel .co-card{border:1px solid #e5e7eb;border-radius:11px;padding:14px 16px;margin-bottom:12px;background:#fff;}
+.consensus-panel .co-card{border:1px solid #e5e7eb;border-radius:11px;padding:13px 15px;margin-bottom:12px;background:#fff;}
 .consensus-panel .co-card:last-child{margin-bottom:0;}
 .consensus-panel .co-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px;}
 .consensus-panel .co-name{font-size:14px;font-weight:700;color:#0f1419;}
 .consensus-panel .co-ticker{font-size:11px;color:#8899a6;font-family:'JetBrains Mono',monospace;}
 .consensus-panel .co-val{font-size:26px;font-weight:700;color:#0f1419;line-height:1;}
 .consensus-panel .co-val small{font-size:11px;color:#8899a6;margin-left:4px;font-weight:400;}
-.consensus-panel .co-lvl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:6px;border:1px solid transparent;}
+/* .co-lvl styled by unified DET_STYLES chip rule */
 .consensus-panel .lvl-unanime{color:#10a37f;background:#ecfdf5;border-color:rgba(16,163,127,.35);}
 .consensus-panel .lvl-fuerte{color:#1a73e8;background:#eff6ff;border-color:rgba(26,115,232,.35);}
 .consensus-panel .lvl-debil{color:#f97316;background:#fff7ed;border-color:rgba(249,115,22,.35);}
@@ -134,12 +134,12 @@ const EXPERT_STYLES = `
 .consensus-panel .co-blk{margin-top:10px;}
 .consensus-panel .co-blk h5{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#8899a6;margin-bottom:6px;}
 .consensus-panel .co-chips{display:flex;flex-wrap:wrap;gap:6px;}
-.consensus-panel .co-chip{font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid rgba(26,115,232,.3);background:#eff6ff;color:#0f1419;}
+/* .co-chip styled by unified DET_STYLES chip rule */
 .consensus-panel .co-chip .n{color:#1a73e8;font-family:'JetBrains Mono',monospace;font-weight:600;margin-left:4px;}
 .consensus-panel .co-list{list-style:none;padding:0;margin:0;}
-.consensus-panel .co-list li{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px;color:#0f1419;display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+.consensus-panel .co-list li{border:none;box-shadow:inset 0 0 0 1px #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px;color:#0f1419;display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
 .consensus-panel .co-list li .m{font-size:10.5px;color:#8899a6;white-space:nowrap;}
-.consensus-panel .co-badge{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:5px;margin-left:6px;}
+/* .co-badge styled by unified DET_STYLES chip rule */
 .consensus-panel .co-badge.ok{background:#ecfdf5;color:#10a37f;border:1px solid rgba(16,163,127,.35);}
 .consensus-panel .co-badge.ko{background:#fff7ed;color:#f97316;border:1px solid rgba(249,115,22,.35);}
 .consensus-panel .co-spark{margin:6px 0 4px;}
@@ -147,6 +147,13 @@ const EXPERT_STYLES = `
 
 // ---------- Deterministic block styles (print-safe, same design language) ----------
 const DET_STYLES = `
+/* Unified centered colour chips (no flex, html2canvas-safe) */
+.dm-code,.er-m-code{height:20px;line-height:20px;padding:0 8px;text-align:center;display:inline-block;vertical-align:middle;border-radius:6px;background:#1a3a5c;color:#fff;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.03em;}
+.er-m-band{height:19px;line-height:19px;padding:0 9px;text-align:center;display:inline-block;vertical-align:middle;border-radius:6px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;background:#f0f4f8;color:#536471;}
+.co-lvl{height:22px;line-height:22px;padding:0 10px;text-align:center;display:inline-block;vertical-align:middle;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;border:1px solid transparent;}
+.co-badge{height:18px;line-height:18px;padding:0 8px;text-align:center;display:inline-block;vertical-align:middle;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-radius:5px;margin-left:6px;}
+.dc-n{height:19px;line-height:19px;padding:0 7px;text-align:center;display:inline-block;vertical-align:middle;font-size:10.5px;font-weight:600;font-family:'JetBrains Mono',monospace;color:#1a73e8;background:#eff6ff;border:1px solid rgba(26,115,232,.25);border-radius:5px;white-space:nowrap;}
+.co-chip{padding:4px 9px;line-height:1;display:inline-block;font-size:11px;border-radius:6px;border:1px solid rgba(26,115,232,.3);background:#eff6ff;color:#0f1419;}
 .det-headline{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #e5e7eb;border-left:4px solid #1a73e8;background:linear-gradient(135deg,#f0f4f8 0%,#ffffff 60%);border-radius:10px;padding:14px 18px;margin:0 0 14px;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .det-headline .h-l{min-width:0;}
 .det-headline .h-eyebrow{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#8899a6;margin-bottom:4px;}
@@ -157,11 +164,11 @@ const DET_STYLES = `
 .det-headline .h-rank{font-size:20px;font-weight:700;color:#1a3a5c;}
 
 .det-metrics{display:block;}
-.det-metric{border:1px solid #e5e7eb;border-radius:11px;padding:12px 14px;margin-bottom:10px;background:#fff;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.det-metric{border:1px solid #e5e7eb;border-radius:11px;padding:11px 14px;margin-bottom:8px;background:#fff;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .det-metric .dm-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
-.det-metric .dm-code{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:3px 7px;border-radius:6px;background:#1a3a5c;color:#fff;letter-spacing:.03em;}
+/* .dm-code styled by unified chip rule */
 .det-metric .dm-name{font-size:12.5px;font-weight:700;color:#0f1419;}
-.det-metric .dm-desc{font-size:11.5px;color:#8899a6;margin-left:auto;max-width:55%;text-align:right;line-height:1.35;}
+.det-metric .dm-desc{font-size:11.5px;color:#8899a6;margin-left:auto;max-width:52%;text-align:right;line-height:1.35;}
 .det-metric .dm-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;}
 .det-metric .dm-val{font-size:22px;font-weight:700;line-height:1;color:#0f1419;min-width:52px;text-align:right;}
 .det-metric .dm-bar-wrap{position:relative;height:10px;}
@@ -199,10 +206,10 @@ const DET_STYLES = `
 
 /* Citations grid grouped by domain */
 .det-cites{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
-.det-cite{border:1px solid #e5e7eb;border-radius:10px;padding:9px 12px;background:#fff;page-break-inside:avoid;}
+.det-cite{border:1px solid #e5e7eb;border-radius:10px;padding:8px 11px;background:#fff;page-break-inside:avoid;}
 .det-cite .dc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px;}
 .det-cite .dc-dom{font-size:12px;font-weight:700;color:#0f1419;word-break:break-word;}
-.det-cite .dc-n{font-size:10.5px;font-weight:600;font-family:'JetBrains Mono',monospace;color:#1a73e8;background:#eff6ff;border:1px solid rgba(26,115,232,.25);padding:1px 6px;border-radius:5px;white-space:nowrap;}
+/* .dc-n styled by unified chip rule */
 .det-cite .dc-mods{font-size:10.5px;color:#8899a6;line-height:1.4;}
 `;
 
