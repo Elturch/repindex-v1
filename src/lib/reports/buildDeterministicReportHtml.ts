@@ -636,104 +636,70 @@ function buildProfileBody(
 
   const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
-  // Headline callout
+  // Headline
   const rankLine = sector.size
-    ? `#${sector.rank} de ${sector.size} en ${escapeHtml(sector.name || entity.sector || "su sector")}`
+    ? `#<span class="h-rank">${sector.rank}</span> <span style="color:#8899a6;">de ${sector.size}</span><br/><span style="font-size:11px;">${escapeHtml(sector.name || entity.sector || "su sector")}</span>`
     : "—";
   const headline = `
-    <div class="headline-callout">
-      <div class="kpi-label">RIXc semana ${escapeHtml(fmtWeek(dp.latest_week))}</div>
-      <div>
-        <span class="kpi">${fmtNum(snapshot.rixc)}</span>
-        <span class="kpi-delta ${deltaClass(delta)}">${fmtDelta(delta)}</span>
+    <div class="det-headline">
+      <div class="h-l">
+        <div class="h-eyebrow">RIXc · semana ${escapeHtml(fmtWeek(dp.latest_week))}</div>
+        <div>
+          <span class="h-val">${fmtNum(snapshot.rixc, 1)}</span>
+          <span class="h-delta ${deltaClass(delta)}">${fmtDelta(delta)}</span>
+        </div>
       </div>
-      <div style="font-size:12px;color:#536471;margin-top:6px;">${rankLine}</div>
+      <div class="h-r">${rankLine}</div>
     </div>`;
 
-  // Sector comparison table (8 metrics)
-  const sectorRows = METRIC_KEYS.map((k) => {
+  // Sector comparison — gauge cards for the 8 metrics + RIXc
+  const metricCards = METRIC_KEYS.map((k) => {
     const info = metricDef(k);
     const mine = (snapshot as any)[k] as number | null;
     const avg = (sector as any)[`avg_${k}`] as number | null;
-    const diff =
-      mine !== null && mine !== undefined && avg !== null && avg !== undefined
-        ? mine - avg
-        : null;
-    return `<tr>
-      <td><strong>${info.code}</strong> · ${escapeHtml(info.name)}</td>
-      <td style="color:#536471;">${escapeHtml(info.what)}</td>
-      <td style="text-align:right;">${fmtNum(mine)}</td>
-      <td style="text-align:right;color:#536471;">${fmtNum(avg)}</td>
-      <td style="text-align:right;color:${
-        diff === null ? "#8899a6" : diff > 0 ? "#059669" : diff < 0 ? "#dc2626" : "#8899a6"
-      };font-weight:600;">${fmtDelta(diff)}</td>
-    </tr>`;
+    return renderMetricGauge({
+      code: info.code,
+      name: info.name,
+      what: info.what,
+      mine,
+      avg,
+      entityLabel: entity.name,
+      avgLabel: sector.name || entity.sector || "sector",
+    });
   }).join("");
 
   const sectorTable = `
     <section class="report-section">
       <h2>La empresa frente a su sector</h2>
       ${headline}
-      <table>
-        <thead>
-          <tr>
-            <th>Métrica</th>
-            <th>Qué mide</th>
-            <th style="text-align:right;">${escapeHtml(entity.name)}</th>
-            <th style="text-align:right;">Media del sector</th>
-            <th style="text-align:right;">Diferencia</th>
-          </tr>
-        </thead>
-        <tbody>${sectorRows}</tbody>
-      </table>
+      <div class="det-metrics">${metricCards}</div>
     </section>`;
 
-  // Divergence
-  const rixVals = permodel.map((p) => p.rix).filter((v) => Number.isFinite(v));
-  const range = rixVals.length ? Math.max(...rixVals) - Math.min(...rixVals) : 0;
-  const permodelRows = permodel
-    .map(
-      (p) => `<tr>
-        <td><strong>${escapeHtml(p.model)}</strong></td>
-        <td style="text-align:right;">${fmtNum(p.rix)}</td>
-      </tr>`,
-    )
-    .join("");
+  // Divergence — horizontal bar per model
   const divergence = `
     <section class="report-section">
       <h2>Divergencia entre los 6 modelos</h2>
-      <p style="font-size:12px;color:#536471;">Rango entre modelo más alto y más bajo: <strong>${fmtNum(range)}</strong> puntos.</p>
-      <table>
-        <thead>
-          <tr><th>Modelo</th><th style="text-align:right;">RIX</th></tr>
-        </thead>
-        <tbody>${permodelRows}</tbody>
-      </table>
+      <p style="font-size:12px;color:#536471;margin-bottom:10px;">Cada IA responde con su propia lectura. Verde = máximo · rojo = mínimo.</p>
+      ${renderDivergenceBars(permodel)}
     </section>`;
 
-  // Evolution
-  const evoRows = evolution
-    .slice()
-    .sort((a, b) => a.week.localeCompare(b.week))
-    .map(
-      (r) => `<tr>
-        <td>${escapeHtml(r.week)}</td>
-        <td style="text-align:right;">${fmtNum(r.rixc)}</td>
-      </tr>`,
-    )
-    .join("");
-  const evoSection = evolution.length
+  // Evolution sparkline
+  const evoSection = evolution.length >= 2
     ? `<section class="report-section">
-        <h2>Evolución semanal</h2>
-        <table>
-          <thead><tr><th>Semana</th><th style="text-align:right;">RIXc</th></tr></thead>
-          <tbody>${evoRows}</tbody>
-        </table>
+        <h2>Evolución semanal del RIXc</h2>
+        ${renderEvolutionSpark(evolution)}
       </section>`
     : "";
 
-  // Citations
-  const citeSection = buildCitationsSection(citations.items || []);
+  // Citations grid
+  const citeItems = citations.items || [];
+  const citeSection = citeItems.length
+    ? `<section class="report-section">
+        <h2>Menciones y fuentes citadas</h2>
+        <p style="font-size:12px;color:#536471;margin-bottom:10px;">${citeItems.length} fuentes citadas por los modelos, agrupadas por dominio.</p>
+        ${renderCitationsGrid(citeItems)}
+      </section>`
+    : "";
 
   const consensusSection = buildConsensusSection(consensus);
 
