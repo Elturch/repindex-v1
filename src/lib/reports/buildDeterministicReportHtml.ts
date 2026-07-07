@@ -107,7 +107,7 @@ const EXPERT_STYLES = `
 .expert-panel .er-recs{display:flex;flex-direction:column;gap:10px;}
 .expert-panel .er-rec{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#fff;}
 .expert-panel .er-rec.p1{background:linear-gradient(120deg,#eff6ff,#fff);border-color:#bfdbfe;}
-.expert-panel .er-rec-n{width:36px;height:36px;line-height:36px;text-align:center;display:block;border-radius:9px;background:#1a3a5c;color:#fff;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;}
+.expert-panel .er-rec-n{width:36px;height:36px;display:flex;align-items:center;justify-content:center;line-height:1;text-align:center;border-radius:9px;background:#1a3a5c;color:#fff;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;}
 .expert-panel .er-rec.p1 .er-rec-n{background:#1a73e8;}
 .expert-panel .er-rec-title{font-size:13.5px;font-weight:700;color:#0f1419;margin-bottom:6px;line-height:1.35;}
 .expert-panel .er-rec-why{display:flex;gap:8px;padding:8px 11px;background:#f7f9fa;border-left:3px solid #20808d;border-radius:0 8px 8px 0;}
@@ -148,11 +148,11 @@ const EXPERT_STYLES = `
 // ---------- Deterministic block styles (print-safe, same design language) ----------
 const DET_STYLES = `
 /* Unified centered colour chips (no flex, html2canvas-safe) */
-.dm-code,.er-m-code{height:20px;line-height:20px;padding:0 8px;text-align:center;display:inline-block;vertical-align:middle;border-radius:6px;background:#1a3a5c;color:#fff;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.03em;}
-.er-m-band{height:19px;line-height:19px;padding:0 9px;text-align:center;display:inline-block;vertical-align:middle;border-radius:6px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;background:#f0f4f8;color:#536471;}
-.co-lvl{height:22px;line-height:22px;padding:0 10px;text-align:center;display:inline-block;vertical-align:middle;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;border:1px solid transparent;}
-.co-badge{height:18px;line-height:18px;padding:0 8px;text-align:center;display:inline-block;vertical-align:middle;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-radius:5px;margin-left:6px;}
-.dc-n{height:19px;line-height:19px;padding:0 7px;text-align:center;display:inline-block;vertical-align:middle;font-size:10.5px;font-weight:600;font-family:'JetBrains Mono',monospace;color:#1a73e8;background:#eff6ff;border:1px solid rgba(26,115,232,.25);border-radius:5px;white-space:nowrap;}
+.dm-code,.er-m-code{padding:5px 8px;line-height:1;text-align:center;display:inline-block;vertical-align:middle;border-radius:6px;background:#1a3a5c;color:#fff;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.03em;}
+.er-m-band{padding:5px 9px;line-height:1;text-align:center;display:inline-block;vertical-align:middle;border-radius:6px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;background:#f0f4f8;color:#536471;}
+.co-lvl{padding:6px 10px;line-height:1;text-align:center;display:inline-block;vertical-align:middle;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-radius:6px;border:1px solid transparent;}
+.co-badge{padding:5px 8px;line-height:1;text-align:center;display:inline-block;vertical-align:middle;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-radius:5px;margin-left:6px;}
+.dc-n{padding:5px 7px;line-height:1;text-align:center;display:inline-block;vertical-align:middle;font-size:10.5px;font-weight:600;font-family:'JetBrains Mono',monospace;color:#1a73e8;background:#eff6ff;border:1px solid rgba(26,115,232,.25);border-radius:5px;white-space:nowrap;}
 .co-chip{padding:4px 9px;line-height:1;display:inline-block;font-size:11px;border-radius:6px;border:1px solid rgba(26,115,232,.3);background:#eff6ff;color:#0f1419;}
 .det-headline{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #e5e7eb;border-left:4px solid #1a73e8;background:linear-gradient(135deg,#f0f4f8 0%,#ffffff 60%);border-radius:10px;padding:14px 18px;margin:0 0 14px;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .det-headline .h-l{min-width:0;}
