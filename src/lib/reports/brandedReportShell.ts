@@ -48,116 +48,21 @@ export function brandedReportStyles(): string {
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Report header (identical to downloadAsHtml) */
-    .report-header {
-      background: #f0f4f8;
-      color: #0f1419;
-      padding: 40px 36px;
-      border-radius: 12px;
-      margin-bottom: 40px;
-      border: 1px solid #e5e7eb;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      page-break-inside: avoid;
-      break-inside: avoid;
-      page-break-after: avoid;
-      break-after: avoid;
-    }
-    .report-header .header-top {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 24px;
-    }
-    .report-header .header-top td {
-      vertical-align: top;
-      padding: 0;
-      border: 0;
-    }
-    .report-header .header-top td.right {
-      text-align: right;
-      white-space: nowrap;
-    }
-    .report-header .logo {
-      font-size: 26px;
-      font-weight: 700;
-      color: #0f1419;
-      letter-spacing: -0.02em;
-      margin-bottom: 4px;
-    }
-    .report-header .logo span { color: #8899a6; }
-    .report-header .company-tagline {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: #8899a6;
-      font-weight: 500;
-    }
-    .report-header .header-badge {
-      display: inline-block;
-      background: #ffffff;
-      border: 1px solid #1a73e8;
-      color: #1a73e8;
-      padding: 6px 14px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    .report-header .divider {
-      height: 1px;
-      background: #e5e7eb;
-      margin-bottom: 18px;
-    }
-    .report-header .report-title {
-      font-size: 22px;
-      font-weight: 600;
-      color: #0f1419;
-      margin-bottom: 4px;
-      line-height: 1.3;
-    }
-    .report-header .subtitle {
-      font-size: 13px;
-      color: #536471;
-      font-weight: 400;
-      margin-bottom: 18px;
-    }
-    .report-header .meta {
-      font-size: 12px;
-      color: #536471;
-      font-weight: 400;
-      line-height: 1.8;
-    }
-    .report-header .meta-item {
-      display: inline-block;
-      background: #ffffff;
-      border: 1px solid #e5e7eb;
-      border-radius: 999px;
-      padding: 4px 12px 4px 10px;
-      margin: 0 8px 6px 0;
-      vertical-align: middle;
-      line-height: 1.4;
-    }
-    .report-header .meta-ico {
-      display: inline-block;
-      vertical-align: middle;
-      color: #1a73e8;
-      width: 14px;
-      height: 14px;
-      margin-right: 6px;
-      position: relative;
-      top: -1px;
-    }
-    .report-header .meta-ico svg {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      vertical-align: middle;
-    }
-    .report-header .meta-label {
-      display: inline-block;
-      vertical-align: middle;
-    }
+    /* Report header (float-based, html2canvas-safe) */
+    .report-header{background:#f0f4f8;color:#0f1419;padding:34px 36px 28px;border-radius:12px;margin-bottom:36px;border:1px solid #e5e7eb;-webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid;break-inside:avoid;page-break-after:avoid;break-after:avoid;}
+    .report-header .header-top{overflow:hidden;margin-bottom:22px;}
+    .report-header .header-badge{float:right;display:inline-block;background:#fff;border:1px solid #1a73e8;color:#1a73e8;padding:7px 14px;border-radius:6px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;line-height:1;}
+    .report-header .logo{font-size:26px;font-weight:700;color:#0f1419;letter-spacing:-.02em;line-height:1.15;margin-bottom:5px;}
+    .report-header .logo span{color:#8899a6;}
+    .report-header .company-tagline{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#8899a6;font-weight:500;line-height:1.45;}
+    .report-header .divider{height:1px;background:#e5e7eb;margin:0 0 18px;clear:both;}
+    .report-header .report-title{font-size:22px;font-weight:600;color:#0f1419;margin-bottom:4px;line-height:1.3;}
+    .report-header .subtitle{font-size:13px;color:#536471;font-weight:400;margin-bottom:18px;}
+    .report-header .meta{font-size:12px;color:#536471;font-weight:400;line-height:1.8;}
+    .report-header .meta-item{display:inline-block;background:#fff;border:1px solid #e5e7eb;border-radius:999px;padding:5px 12px;margin:0 8px 6px 0;vertical-align:middle;line-height:1;}
+    .report-header .meta-ico{display:inline-block;vertical-align:middle;color:#1a73e8;width:14px;height:14px;margin-right:6px;position:relative;top:-1px;}
+    .report-header .meta-ico svg{display:inline-block;width:14px;height:14px;vertical-align:middle;}
+    .report-header .meta-label{display:inline-block;vertical-align:middle;line-height:1;}
 
     /* Editorial sections */
     .report-section { margin: 32px 0; }
@@ -384,15 +289,11 @@ export function wrapBrandedReport(input: WrapBrandedReportInput): string {
 <body>
   <style>${brandedReportStyles()}</style>
   <header class="report-header">
-    <table class="header-top"><tbody><tr>
-      <td class="left">
-        <div class="logo">Rep<span>Index</span></div>
-        <div class="company-tagline">Inteligencia Reputacional Corporativa</div>
-      </td>
-      <td class="right">
-        <span class="header-badge">${escapeHtml(badgeText)}</span>
-      </td>
-    </tr></tbody></table>
+    <div class="header-top">
+      <span class="header-badge">${escapeHtml(badgeText)}</span>
+      <div class="logo">Rep<span>Index</span></div>
+      <div class="company-tagline">Inteligencia Reputacional Corporativa</div>
+    </div>
     <div class="divider"></div>
     <div class="report-title">${escapeHtml(title)}</div>
     <div class="subtitle">${escapeHtml(subtitle)}</div>
