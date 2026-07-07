@@ -382,6 +382,7 @@ export function wrapBrandedReport(input: WrapBrandedReportInput): string {
   <style>${brandedReportStyles()}</style>
 </head>
 <body>
+  <style>${brandedReportStyles()}</style>
   <header class="report-header">
     <table class="header-top"><tbody><tr>
       <td class="left">
