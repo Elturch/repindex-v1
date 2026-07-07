@@ -9,6 +9,8 @@ import {
   type BrandedReportMetaItem,
 } from "./brandedReportShell";
 import { METRIC_GLOSSARY, type MetricKey } from "./metricGlossary";
+import type { AnalysisJson } from "@/components/reports/ExpertAnalysisView";
+import type { ConsensusForPdf } from "./downloadReportPdf";
 
 type Kind = "profile" | "comparison" | "ranking";
 
@@ -16,6 +18,8 @@ export interface BuildDeterministicReportInput {
   kind: Kind;
   datapack: ProfileDatapack | ComparisonDatapack | RankingDatapack;
   analysisMarkdown: string | null;
+  analysisJson?: AnalysisJson | null;
+  consensus?: ConsensusForPdf[];
   question?: string | null;
 }
 
