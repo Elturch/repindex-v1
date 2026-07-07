@@ -391,20 +391,17 @@ function buildConsensusSection(consensus: ConsensusForPdf[] | undefined): string
 
 // ---------- PROFILE ----------
 
-function buildProfileBody(dp: ProfileDatapack, analysisMarkdown: string | null): string {
+function buildProfileBody(
+  dp: ProfileDatapack,
+  analysisMarkdown: string | null,
+  analysisJson: AnalysisJson | null | undefined,
+  consensus: ConsensusForPdf[] | undefined,
+): string {
   const { entity, snapshot, sector, permodel, evolution } = dp;
   const citations = dp.citations ?? { total_sources: 0, items: [] };
   const delta = snapshot.rixc - (snapshot.rixc_prev ?? snapshot.rixc);
 
-  const analysisSection = analysisMarkdown
-    ? `<section class="report-section">
-        <h2>Análisis del experto</h2>
-        <div class="expert-analysis">${markdownToHtml(analysisMarkdown)}</div>
-       </section>`
-    : `<section class="report-section">
-        <h2>Análisis del experto</h2>
-        <p style="color:#536471;font-style:italic;">Análisis no disponible en el momento de la exportación.</p>
-       </section>`;
+  const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
   // Headline callout
   const rankLine = sector.size
@@ -505,31 +502,31 @@ function buildProfileBody(dp: ProfileDatapack, analysisMarkdown: string | null):
   // Citations
   const citeSection = buildCitationsSection(citations.items || []);
 
+  const consensusSection = buildConsensusSection(consensus);
+
   return [
     analysisSection,
     sectorTable,
     divergence,
     evoSection,
     citeSection,
+    consensusSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
 
 // ---------- COMPARISON ----------
 
-function buildComparisonBody(dp: ComparisonDatapack, analysisMarkdown: string | null): string {
+function buildComparisonBody(
+  dp: ComparisonDatapack,
+  analysisMarkdown: string | null,
+  analysisJson: AnalysisJson | null | undefined,
+  consensus: ConsensusForPdf[] | undefined,
+): string {
   const { entities, snapshot, permodel, evolution, citations } = dp;
   const ranked = [...snapshot].sort((a, b) => (b.rixc ?? 0) - (a.rixc ?? 0));
 
-  const analysisSection = analysisMarkdown
-    ? `<section class="report-section">
-        <h2>Análisis del experto</h2>
-        <div class="expert-analysis">${markdownToHtml(analysisMarkdown)}</div>
-       </section>`
-    : `<section class="report-section">
-        <h2>Análisis del experto</h2>
-        <p style="color:#536471;font-style:italic;">Análisis no disponible en el momento de la exportación.</p>
-       </section>`;
+  const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
   // Ranking table
   const rankingRows = ranked
@@ -662,6 +659,8 @@ function buildComparisonBody(dp: ComparisonDatapack, analysisMarkdown: string | 
   });
   const citeSection = buildCitationsSection(unique);
 
+  const consensusSection = buildConsensusSection(consensus);
+
   return [
     analysisSection,
     rankingTable,
@@ -669,6 +668,7 @@ function buildComparisonBody(dp: ComparisonDatapack, analysisMarkdown: string | 
     divTable,
     evoSection,
     citeSection,
+    consensusSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
@@ -699,6 +699,7 @@ function buildCitationsSection(
 function buildRankingBody(
   dp: RankingDatapack,
   analysisMarkdown: string | null,
+  analysisJson: AnalysisJson | null | undefined,
 ): string {
   const rows = dp.ranking ?? [];
   const avg = dp.sector_avg;
@@ -712,15 +713,7 @@ function buildRankingBody(
   const nTotal = dp.scope?.n_entities ?? rows.length;
   const topLabel = dp.scope?.limit ? ` · Top ${dp.scope.limit}` : "";
 
-  const analysisSection = analysisMarkdown
-    ? `<section class="report-section">
-        <h2>Análisis del experto</h2>
-        <div class="expert-analysis">${markdownToHtml(analysisMarkdown)}</div>
-       </section>`
-    : `<section class="report-section">
-        <h2>Análisis del experto</h2>
-        <p style="color:#536471;font-style:italic;">Análisis no disponible en el momento de la exportación.</p>
-       </section>`;
+  const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
   const best = rows[0];
   const worst = rows[rows.length - 1];
