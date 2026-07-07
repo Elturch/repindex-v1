@@ -493,6 +493,9 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
         </CardContent>
       </Card>
 
+      {/* Consenso de las IAs — evidencia temática (al final) */}
+      <ConsensusBlock ticker={entity.ticker} />
+
       {/* Methodology */}
       <Card>
         <CardHeader className="pb-2">
