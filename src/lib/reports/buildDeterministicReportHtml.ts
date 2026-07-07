@@ -887,7 +887,7 @@ export function buildDeterministicReportHtml(
     title,
     subtitle,
     metaItems,
-    bodyHtml: questionSection + bodyHtml,
+    bodyHtml: `<style>${EXPERT_STYLES}</style>` + questionSection + bodyHtml,
     documentTitle: `RepIndex — ${title}`,
   });
 }
