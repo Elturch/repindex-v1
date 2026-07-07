@@ -67,7 +67,21 @@ export async function downloadReportPdf(
           windowWidth: 900,
         },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
+        pagebreak: {
+          mode: ["css", "legacy"],
+          avoid: [
+            "h2",
+            "h3",
+            "h4",
+            ".rr-eyebrow",
+            ".report-header",
+            ".headline-callout",
+            ".metric-card",
+            ".consensus-card",
+            ".divergence-row",
+            "tr",
+          ],
+        },
       } as any)
       .from(body)
       .save();

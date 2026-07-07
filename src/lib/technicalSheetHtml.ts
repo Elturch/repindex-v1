@@ -27,103 +27,131 @@ export const technicalSheetStyles = `
      =========================================== */
   .technical-sheet {
     margin-top: 60px;
-    padding-top: 24px;
+    padding-top: 28px;
     border-top: 2px solid #e5e7eb;
-    font-size: 9px;
-    color: #536471;
-    line-height: 1.4;
+    font-size: 10.5px;
+    color: #334155;
+    line-height: 1.55;
     font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    page-break-before: always;
   }
 
   .technical-sheet-header {
     text-align: center;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 2px;
+    letter-spacing: 3px;
     text-transform: uppercase;
-    color: #8899a6;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed #d1d5db;
+    color: #1a3a5c;
+    margin-bottom: 6px;
+    padding-bottom: 0;
+    border-bottom: 0;
   }
 
   .technical-sheet-subheader {
     text-align: center;
-    font-size: 8px;
+    font-size: 10px;
     color: #8899a6;
-    margin-top: -16px;
-    margin-bottom: 20px;
+    margin-top: 0;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e7eb;
   }
 
   .technical-sheet h4 {
-    font-size: 9px;
+    font-size: 14px;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    text-transform: none;
+    letter-spacing: -0.01em;
     color: #0f1419;
-    margin-top: 16px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid #e5e7eb;
-    padding-bottom: 4px;
+    margin-top: 22px;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #1a73e8;
+    padding-bottom: 6px;
+    page-break-after: avoid;
+    break-after: avoid;
   }
 
   .technical-sheet p {
-    margin: 6px 0;
-    text-align: justify;
+    margin: 8px 0;
+    text-align: left;
   }
 
   .technical-sheet table {
     width: 100%;
-    font-size: 8px;
+    font-size: 10px;
     border-collapse: collapse;
-    margin: 8px 0;
+    margin: 10px 0 14px 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
   }
 
   .technical-sheet th {
-    padding: 4px 8px;
-    border: 1px solid #e5e7eb;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e5e7eb;
     text-align: left;
-    background: #f0f4f8;
+    background: #1a3a5c;
+    color: #ffffff;
     font-weight: 600;
-    color: #536471;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .technical-sheet td {
-    padding: 4px 8px;
-    border: 1px solid #e5e7eb;
+    padding: 7px 10px;
+    border-bottom: 1px solid #eef2f6;
     text-align: left;
+    vertical-align: top;
+  }
+  .technical-sheet tbody tr:nth-child(even) td {
+    background: #f7f9fa;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .technical-sheet tbody tr:last-child td {
+    border-bottom: 0;
   }
 
   .technical-sheet .disclaimer-box {
     background: #f7f9fa;
     border: 1px solid #e5e7eb;
+    border-left: 3px solid #1a73e8;
     border-radius: 6px;
-    padding: 12px;
-    margin-top: 16px;
+    padding: 14px 16px;
+    margin-top: 18px;
+    font-size: 10px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .technical-sheet .disclaimer-box p {
-    margin: 4px 0;
+    margin: 5px 0;
   }
 
   .technical-sheet .two-column {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: 12px;
+    gap: 14px;
+    margin-top: 16px;
   }
 
   .technical-sheet .column-box {
     border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    padding: 8px;
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: #ffffff;
   }
 
   .technical-sheet .column-box h5 {
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
-    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
     color: #0f1419;
   }
 
@@ -142,29 +170,34 @@ export const technicalSheetStyles = `
   }
 
   .technical-sheet .column-box li {
-    font-size: 8px;
-    padding: 2px 0;
+    font-size: 10px;
+    padding: 3px 0;
   }
 
   .technical-sheet .formula {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     background: #f0f4f8;
-    padding: 2px 6px;
-    border-radius: 2px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.92em;
   }
 
   .technical-sheet .report-specific {
-    background: rgba(26, 115, 232, 0.05);
-    border: 1px solid rgba(26, 115, 232, 0.2);
-    border-radius: 4px;
-    padding: 8px;
-    margin-bottom: 12px;
+    background: #eff5fd;
+    border: 1px solid #cfe0f7;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 18px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .technical-sheet .report-specific h4 {
     border: none;
     color: #1a73e8;
     margin-top: 0;
+    padding-bottom: 4px;
+    font-size: 12px;
   }
 
   /* ===========================================
@@ -198,15 +231,19 @@ export const technicalSheetStyles = `
   @media print {
     .technical-sheet {
       page-break-before: always;
-      font-size: 7pt;
+      font-size: 9pt;
     }
     
     .technical-sheet table {
-      font-size: 6.5pt;
+      font-size: 8.5pt;
+      page-break-inside: auto;
     }
+    .technical-sheet tr { page-break-inside: avoid; }
+    .technical-sheet thead { display: table-header-group; }
     
     .technical-sheet h4 {
-      font-size: 7.5pt;
+      font-size: 11pt;
+      page-break-after: avoid;
     }
 
     .report-header-card {
