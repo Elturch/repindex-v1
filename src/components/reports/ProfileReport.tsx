@@ -190,8 +190,6 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
         </CardContent>
       </Card>
 
-      <ConsensusBlock ticker={entity.ticker} />
-
       <ExpertAnalysis
         type="profile"
         tickers={[entity.ticker]}
@@ -494,6 +492,9 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Consenso de las IAs — evidencia temática (al final) */}
+      <ConsensusBlock ticker={entity.ticker} />
 
       {/* Methodology */}
       <Card>

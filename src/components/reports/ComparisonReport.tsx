@@ -331,8 +331,6 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         week={latest_week}
       />
 
-      <ConsensusCompact entities={entities.map((e) => ({ ticker: e.ticker, name: e.name }))} />
-
       {/* Verdict */}
       {verdict && (
         <Card>
@@ -730,6 +728,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
           </CardContent>
         </Card>
       )}
+
+      {/* Consenso de las IAs — evidencia temática (al final) */}
+      <ConsensusCompact entities={entities.map((e) => ({ ticker: e.ticker, name: e.name }))} />
 
       {/* Methodology */}
       <Card>

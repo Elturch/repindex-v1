@@ -7,6 +7,9 @@ import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
 import type { ComparisonDatapack } from "@/hooks/useComparisonDatapack";
 import type { RankingDatapack, RankingDatapackParams } from "@/hooks/useRankingDatapack";
 import { buildDeterministicReportHtml } from "./buildDeterministicReportHtml";
+import type { AnalysisJson } from "@/components/reports/ExpertAnalysisView";
+import type { ConsensusData, ConsensusSeriesPoint } from "@/hooks/useConsensus";
+import type { ConsensusForPdf } from "./buildDeterministicReportHtml";
 
 /**
  * Generate a PDF from a full, self-contained HTML document string.
@@ -113,7 +116,7 @@ function analysisCacheKey(
   week: string,
 ): string {
   const sorted = [...tickers].sort().join("-");
-  return `repindex.analysis.${kind}.${sorted}.${week}`;
+  return `repindex.analysis.${kind}.${sorted}.${week}.v2`;
 }
 
 function sanitizeSegment(s: string): string {
@@ -181,6 +184,27 @@ export async function downloadDeterministicReportPdf(
   const week =
     (datapack as any)?.latest_week || new Date().toISOString().slice(0, 10);
   let analysisMarkdown = "";
+  let analysisJson: AnalysisJson | null = null;
+
+  const readCache = (key: string): void => {
+    try {
+      const cached = localStorage.getItem(key);
+      if (!cached) return;
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === "object" && "titular" in parsed) {
+          analysisJson = parsed as AnalysisJson;
+          return;
+        }
+      } catch {
+        /* not json */
+      }
+      analysisMarkdown = cached;
+    } catch {
+      /* ignore */
+    }
+  };
+
   try {
     if (kind === "ranking") {
       const scope = {
@@ -188,28 +212,64 @@ export async function downloadDeterministicReportPdf(
         subsector: rankingParams?.subsector ?? null,
         universe: rankingParams?.universe ?? null,
       };
-      const key = `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}`;
-      const cached = localStorage.getItem(key);
-      if (cached) analysisMarkdown = cached;
+      const key = `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}.v2`;
+      readCache(key);
     } else {
-      const cached = localStorage.getItem(
-        analysisCacheKey(kind, cleanTickers, week),
-      );
-      if (cached) analysisMarkdown = cached;
+      readCache(analysisCacheKey(kind, cleanTickers, week));
     }
   } catch {
     /* ignore */
   }
 
-  // 3) Build branded HTML.
+  // 3) Fetch consensus (profile/comparison) — no-op on ranking for now.
+  let consensus: ConsensusForPdf[] = [];
+  try {
+    if (kind === "profile") {
+      const dp = datapack as ProfileDatapack;
+      const tk = dp.entity?.ticker;
+      if (tk) {
+        const [getRes, serRes] = await Promise.all([
+          (supabase.rpc as any)("rix_consensus_get", { p_ticker: tk }),
+          (supabase.rpc as any)("rix_consensus_series", { p_ticker: tk }),
+        ]);
+        consensus = [{
+          ticker: tk,
+          name: dp.entity?.name ?? tk,
+          data: (getRes?.data as ConsensusData | null) ?? null,
+          series: Array.isArray(serRes?.data) ? (serRes.data as ConsensusSeriesPoint[]) : [],
+        }];
+      }
+    } else if (kind === "comparison") {
+      const dp = datapack as ComparisonDatapack;
+      const ents = dp.entities ?? [];
+      const results = await Promise.all(
+        ents.map(async (e) => {
+          const { data } = await (supabase.rpc as any)("rix_consensus_get", { p_ticker: e.ticker });
+          return {
+            ticker: e.ticker,
+            name: e.name,
+            data: (data as ConsensusData | null) ?? null,
+            series: [] as ConsensusSeriesPoint[],
+          };
+        }),
+      );
+      consensus = results;
+    }
+  } catch {
+    /* soft-fail: consensus block will simply not render */
+  }
+
+  // 4) Build branded HTML.
   const html = buildDeterministicReportHtml({
     kind,
     datapack,
     analysisMarkdown: analysisMarkdown || null,
+    analysisJson,
+    consensus,
     question: question ?? null,
   });
 
-  // 4) Filename.
+  // 5) Filename.
   let label: string;
   if (kind === "profile") {
     label = (datapack as ProfileDatapack).entity?.name || cleanTickers[0];
@@ -227,6 +287,6 @@ export async function downloadDeterministicReportPdf(
   }
   const filename = `RepIndex-${sanitizeSegment(String(label))}-${week}.pdf`;
 
-  // 5) Render + save.
+  // 6) Render + save.
   await downloadReportPdf(html, filename);
 }
