@@ -13,6 +13,8 @@ import { RecCard } from "./blocks/RecCard";
 import { BrandFooter } from "./blocks/BrandFooter";
 import { LineChart, type LineSeries } from "./blocks/LineChart";
 import { ExpertAnalysisView, type AnalysisJson } from "./ExpertAnalysisView";
+import { ConsensusBadge } from "./ConsensusBadge";
+import { useConsensusBatch } from "@/hooks/useConsensus";
 import {
   useRankingDatapack,
   type RankingDatapackParams,
@@ -179,6 +181,8 @@ function SectorView({
   expert: { json: AnalysisJson | null; md: string | null; loading: boolean };
 }) {
   const rows = data.ranking ?? [];
+  const tickers = useMemo(() => rows.map((r) => r.tk), [rows]);
+  const { data: consensusMap } = useConsensusBatch(tickers);
   const avg = data.sector_avg?.rixc ?? 0;
   const best = rows[0];
   const worst = rows[rows.length - 1];
@@ -308,6 +312,14 @@ function SectorView({
                 avg={avg}
                 delta={r.delta}
                 isLead={i === 0}
+                badge={
+                  consensusMap && consensusMap[r.tk] ? (
+                    <ConsensusBadge
+                      value={consensusMap[r.tk].consenso}
+                      level={consensusMap[r.tk].level}
+                    />
+                  ) : null
+                }
               />
             ))}
           </div>
