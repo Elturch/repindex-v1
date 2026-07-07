@@ -880,6 +880,8 @@ function buildComparisonBody(
 
 // ---------- Shared: citations ----------
 
+// Legacy simple-list citations (kept for reference; grid version is used now).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildCitationsSection(
   items: { url: string; domain: string; models: string[]; models_count?: number }[],
 ): string {
