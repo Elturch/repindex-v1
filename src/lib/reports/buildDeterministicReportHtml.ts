@@ -64,6 +64,331 @@ function markdownToHtml(md: string): string {
   return marked.parse(md) as string;
 }
 
+// ---------- Expert analysis (JSON → branded HTML) ----------
+
+const EXPERT_STYLES = `
+.expert-panel{border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;background:#fff;margin:0 0 8px;}
+.expert-panel .er-ribbon{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 20px;background:linear-gradient(90deg,#12343f 0%,#20808d 100%);color:#fff;font-family:'DM Sans',sans-serif;}
+.expert-panel .er-badge{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;font-weight:600;text-transform:uppercase;padding:4px 9px;background:rgba(255,255,255,.14);border-radius:6px;color:#eafcff;}
+.expert-panel .er-title{font-size:13px;font-weight:600;letter-spacing:.02em;}
+.expert-panel .er-lock{font-size:11px;font-weight:500;color:#eafcff;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);padding:5px 10px;border-radius:999px;}
+.expert-panel .er-body{padding:20px 22px 8px;}
+.expert-panel .er-sec{padding:16px 0;border-top:1px solid #f0f4f8;}
+.expert-panel .er-sec:first-child{border-top:none;padding-top:2px;}
+.expert-panel .er-eyebrow{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#20808d;margin-bottom:10px;}
+.expert-panel .er-headline{font-size:20px;line-height:1.35;font-weight:700;color:#1a3a5c;letter-spacing:-.01em;}
+.expert-panel .er-tldr{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.expert-panel .er-kpi{position:relative;background:#fff;border:1px solid #e5e7eb;border-radius:11px;padding:12px 12px 11px;overflow:hidden;}
+.expert-panel .er-kpi::before{content:"";position:absolute;left:0;top:0;right:0;height:3px;background:#1a73e8;}
+.expert-panel .er-kpi.t-verde::before{background:#10a37f;} .expert-panel .er-kpi.t-rojo::before{background:#dc2626;} .expert-panel .er-kpi.t-ambar::before{background:#f97316;} .expert-panel .er-kpi.t-azul::before{background:#1a73e8;}
+.expert-panel .er-kpi-k{font-size:12px;font-weight:700;color:#0f1419;margin-bottom:4px;}
+.expert-panel .er-kpi-t{font-size:12px;color:#536471;line-height:1.5;}
+.expert-panel .er-prose p{font-size:13px;color:#0f1419;line-height:1.7;margin:0 0 8px;}
+.expert-panel .er-metric{border:1px solid #e5e7eb;border-radius:11px;padding:12px 14px;margin-bottom:10px;background:#fff;}
+.expert-panel .er-m-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.expert-panel .er-m-code{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:3px 7px;border-radius:6px;background:#1a3a5c;color:#fff;letter-spacing:.03em;}
+.expert-panel .er-m-name{font-size:12.5px;font-weight:700;color:#0f1419;}
+.expert-panel .er-m-score{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
+.expert-panel .er-m-num{font-size:22px;font-weight:700;line-height:1;color:#0f1419;}
+.expert-panel .er-m-band{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:6px;background:#f0f4f8;color:#536471;}
+.expert-panel .er-m-ctx{font-size:11px;color:#8899a6;}
+.expert-panel .er-m-gauge{height:6px;background:#eef2f6;border-radius:999px;overflow:hidden;margin-bottom:8px;}
+.expert-panel .er-m-gauge>i{display:block;height:100%;border-radius:999px;background:#1a73e8;}
+.expert-panel .er-m-desc{font-size:12px;color:#536471;line-height:1.55;}
+.expert-panel .b-green .er-m-num,.expert-panel .b-green .er-m-band{color:#10a37f;} .expert-panel .b-green .er-m-band{background:#ecfdf5;} .expert-panel .b-green .er-m-gauge>i{background:#10a37f;}
+.expert-panel .b-blue .er-m-num,.expert-panel .b-blue .er-m-band{color:#1a73e8;} .expert-panel .b-blue .er-m-band{background:#eff6ff;} .expert-panel .b-blue .er-m-gauge>i{background:#1a73e8;}
+.expert-panel .b-amber .er-m-num,.expert-panel .b-amber .er-m-band{color:#f97316;} .expert-panel .b-amber .er-m-band{background:#fff7ed;} .expert-panel .b-amber .er-m-gauge>i{background:#f97316;}
+.expert-panel .b-red .er-m-num,.expert-panel .b-red .er-m-band{color:#dc2626;} .expert-panel .b-red .er-m-band{background:#fef2f2;} .expert-panel .b-red .er-m-gauge>i{background:#dc2626;}
+.expert-panel .er-ro{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.expert-panel .er-ro h4{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:10px;}
+.expert-panel .er-ro .risk h4{color:#dc2626;} .expert-panel .er-ro .opp h4{color:#10a37f;}
+.expert-panel .er-item{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff;font-size:12px;color:#0f1419;line-height:1.55;}
+.expert-panel .er-ro .risk .er-item{border-left:3px solid #dc2626;} .expert-panel .er-ro .opp .er-item{border-left:3px solid #10a37f;}
+.expert-panel .er-recs{display:flex;flex-direction:column;gap:10px;}
+.expert-panel .er-rec{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#fff;}
+.expert-panel .er-rec.p1{background:linear-gradient(120deg,#eff6ff,#fff);border-color:#bfdbfe;}
+.expert-panel .er-rec-n{width:36px;height:36px;border-radius:9px;background:#1a3a5c;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;}
+.expert-panel .er-rec.p1 .er-rec-n{background:#1a73e8;}
+.expert-panel .er-rec-title{font-size:13.5px;font-weight:700;color:#0f1419;margin-bottom:6px;line-height:1.35;}
+.expert-panel .er-rec-why{display:flex;gap:8px;padding:8px 11px;background:#f7f9fa;border-left:3px solid #20808d;border-radius:0 8px 8px 0;}
+.expert-panel .er-rec-why b{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#20808d;padding-top:1px;white-space:nowrap;}
+.expert-panel .er-rec-why span{font-size:12px;color:#536471;line-height:1.5;}
+
+/* Consensus */
+.consensus-panel{border:1px solid #e5e7eb;border-radius:14px;padding:20px 22px;background:#fff;}
+.consensus-panel .co-card{border:1px solid #e5e7eb;border-radius:11px;padding:14px 16px;margin-bottom:12px;background:#fff;}
+.consensus-panel .co-card:last-child{margin-bottom:0;}
+.consensus-panel .co-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.consensus-panel .co-name{font-size:14px;font-weight:700;color:#0f1419;}
+.consensus-panel .co-ticker{font-size:11px;color:#8899a6;font-family:'JetBrains Mono',monospace;}
+.consensus-panel .co-val{font-size:26px;font-weight:700;color:#0f1419;line-height:1;}
+.consensus-panel .co-val small{font-size:11px;color:#8899a6;margin-left:4px;font-weight:400;}
+.consensus-panel .co-lvl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:6px;border:1px solid transparent;}
+.consensus-panel .lvl-unanime{color:#10a37f;background:#ecfdf5;border-color:rgba(16,163,127,.35);}
+.consensus-panel .lvl-fuerte{color:#1a73e8;background:#eff6ff;border-color:rgba(26,115,232,.35);}
+.consensus-panel .lvl-debil{color:#f97316;background:#fff7ed;border-color:rgba(249,115,22,.35);}
+.consensus-panel .lvl-disperso{color:#dc2626;background:#fef2f2;border-color:rgba(220,38,38,.35);}
+.consensus-panel .co-gauge{height:6px;background:#eef2f6;border-radius:999px;overflow:hidden;margin:6px 0 10px;}
+.consensus-panel .co-gauge>i{display:block;height:100%;border-radius:999px;}
+.consensus-panel .co-meta{font-size:11px;color:#8899a6;margin-bottom:8px;}
+.consensus-panel .co-blk{margin-top:10px;}
+.consensus-panel .co-blk h5{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#8899a6;margin-bottom:6px;}
+.consensus-panel .co-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.consensus-panel .co-chip{font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid rgba(26,115,232,.3);background:#eff6ff;color:#0f1419;}
+.consensus-panel .co-chip .n{color:#1a73e8;font-family:'JetBrains Mono',monospace;font-weight:600;margin-left:4px;}
+.consensus-panel .co-list{list-style:none;padding:0;margin:0;}
+.consensus-panel .co-list li{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px;color:#0f1419;display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+.consensus-panel .co-list li .m{font-size:10.5px;color:#8899a6;white-space:nowrap;}
+.consensus-panel .co-badge{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:5px;margin-left:6px;}
+.consensus-panel .co-badge.ok{background:#ecfdf5;color:#10a37f;border:1px solid rgba(16,163,127,.35);}
+.consensus-panel .co-badge.ko{background:#fff7ed;color:#f97316;border:1px solid rgba(249,115,22,.35);}
+.consensus-panel .co-spark{margin:6px 0 4px;}
+`;
+
+const LEVEL_LABEL: Record<string, string> = {
+  unanime: "Unánime",
+  fuerte: "Fuerte",
+  debil: "Débil",
+  disperso: "Disperso",
+};
+const LEVEL_BAR: Record<string, string> = {
+  unanime: "#10a37f",
+  fuerte: "#1a73e8",
+  debil: "#f97316",
+  disperso: "#dc2626",
+};
+
+function bandOf(v: number): "b-green" | "b-blue" | "b-amber" | "b-red" {
+  if (v >= 80) return "b-green";
+  if (v >= 60) return "b-blue";
+  if (v >= 40) return "b-amber";
+  return "b-red";
+}
+function bandLbl(v: number): string {
+  if (v >= 80) return "Fuerte";
+  if (v >= 60) return "Sólido";
+  if (v >= 40) return "Atención";
+  return "Crítico";
+}
+
+function inlineBold(text: string): string {
+  const esc = escapeHtml(text);
+  return esc.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderExpertJson(json: AnalysisJson): string {
+  const parts: string[] = [];
+  if (json.titular) {
+    parts.push(`
+      <div class="er-sec">
+        <div class="er-eyebrow">Titular ejecutivo</div>
+        <div class="er-headline">${inlineBold(json.titular)}</div>
+      </div>`);
+  }
+  if (json.esencial && json.esencial.length) {
+    const cards = json.esencial
+      .map(
+        (it) => `
+        <div class="er-kpi t-${escapeHtml(it.tono ?? "azul")}">
+          ${it.etiqueta ? `<div class="er-kpi-k">${escapeHtml(it.etiqueta)}</div>` : ""}
+          <div class="er-kpi-t">${inlineBold(it.texto)}</div>
+        </div>`,
+      )
+      .join("");
+    parts.push(`
+      <div class="er-sec">
+        <div class="er-eyebrow">Lo esencial en 20 segundos</div>
+        <div class="er-tldr">${cards}</div>
+      </div>`);
+  }
+  if (json.que_pasa && json.que_pasa.length) {
+    parts.push(`
+      <div class="er-sec">
+        <div class="er-eyebrow">Qué está pasando y por qué</div>
+        <div class="er-prose">${json.que_pasa.map((p) => `<p>${inlineBold(p)}</p>`).join("")}</div>
+      </div>`);
+  }
+  if (json.metricas && json.metricas.length) {
+    const rows = json.metricas
+      .map((m) => {
+        const na = m.valor == null || !Number.isFinite(m.valor as number);
+        const v = na ? 0 : (m.valor as number);
+        const band = na ? "" : bandOf(v);
+        const width = na ? 100 : Math.max(0, Math.min(100, v));
+        return `
+          <div class="er-metric ${band}">
+            <div class="er-m-head">
+              <span class="er-m-code">${escapeHtml(m.code)}</span>
+              <span class="er-m-name">${escapeHtml(m.nombre ?? m.code)}</span>
+            </div>
+            <div class="er-m-score">
+              <span class="er-m-num">${na ? "N/A" : Math.round(v)}</span>
+              <span class="er-m-band">${na ? "No aplica" : bandLbl(v)}</span>
+              ${m.contexto && !na ? `<span class="er-m-ctx">${escapeHtml(m.contexto)}</span>` : ""}
+            </div>
+            <div class="er-m-gauge"><i style="width:${width}%;"></i></div>
+            ${m.texto ? `<div class="er-m-desc">${inlineBold(m.texto)}</div>` : ""}
+          </div>`;
+      })
+      .join("");
+    parts.push(`
+      <div class="er-sec">
+        <div class="er-eyebrow">Lectura por métrica</div>
+        ${rows}
+      </div>`);
+  }
+  if ((json.riesgos && json.riesgos.length) || (json.oportunidades && json.oportunidades.length)) {
+    const risks = (json.riesgos ?? []).map((r) => `<div class="er-item">${inlineBold(r)}</div>`).join("");
+    const opps = (json.oportunidades ?? []).map((o) => `<div class="er-item">${inlineBold(o)}</div>`).join("");
+    parts.push(`
+      <div class="er-sec">
+        <div class="er-eyebrow">Riesgos y oportunidades</div>
+        <div class="er-ro">
+          <div class="risk"><h4>Riesgos</h4>${risks || '<div style="font-size:12px;color:#8899a6;">Sin riesgos destacados.</div>'}</div>
+          <div class="opp"><h4>Oportunidades</h4>${opps || '<div style="font-size:12px;color:#8899a6;">Sin oportunidades destacadas.</div>'}</div>
+        </div>
+      </div>`);
+  }
+  if (json.recomendaciones && json.recomendaciones.length) {
+    const cards = json.recomendaciones
+      .map(
+        (it, i) => `
+        <div class="er-rec${i === 0 ? " p1" : ""}">
+          <div class="er-rec-n">${i + 1}</div>
+          <div>
+            <div class="er-rec-title">${inlineBold(it.accion)}</div>
+            ${it.porque ? `<div class="er-rec-why"><b>Por qué</b><span>${inlineBold(it.porque)}</span></div>` : ""}
+          </div>
+        </div>`,
+      )
+      .join("");
+    parts.push(`
+      <div class="er-sec">
+        <div class="er-eyebrow">Recomendaciones priorizadas</div>
+        <div class="er-recs">${cards}</div>
+      </div>`);
+  }
+  return `
+    <div class="expert-panel">
+      <div class="er-ribbon">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="er-badge">Agente Rix</span>
+          <span class="er-title">Análisis del experto · Agente Rix</span>
+        </div>
+        <span class="er-lock">Universo cerrado · sin fuentes externas</span>
+      </div>
+      <div class="er-body">${parts.join("")}</div>
+    </div>`;
+}
+
+function buildExpertSection(
+  json: AnalysisJson | null | undefined,
+  md: string | null,
+): string {
+  const inner = json
+    ? renderExpertJson(json)
+    : md
+      ? `<div class="expert-analysis">${markdownToHtml(md)}</div>`
+      : `<p style="color:#536471;font-style:italic;">Análisis no disponible en el momento de la exportación.</p>`;
+  return `<section class="report-section">
+      <h2>Análisis del experto</h2>
+      ${inner}
+    </section>`;
+}
+
+// Consensus block for PDF
+function sparklineSvg(series: { week: string; consenso: number }[]): string {
+  if (!series || series.length < 2) return "";
+  const W = 320;
+  const H = 44;
+  const P = 4;
+  const xs = series.map((_, i) => P + (i * (W - P * 2)) / (series.length - 1));
+  const ys = series.map((s) => {
+    const v = Math.max(0, Math.min(100, s.consenso));
+    return H - P - (v / 100) * (H - P * 2);
+  });
+  const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
+  const dots = xs
+    .map((x, i) => `<circle cx="${x.toFixed(1)}" cy="${ys[i].toFixed(1)}" r="2" fill="#1a73e8" />`)
+    .join("");
+  return `<svg class="co-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    <line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" stroke="#e5e7eb" stroke-dasharray="3 3" />
+    <path d="${d}" fill="none" stroke="#1a73e8" stroke-width="1.8" />
+    ${dots}
+  </svg>`;
+}
+
+function renderConsensusCard(c: ConsensusForPdf): string {
+  const d = c.data;
+  if (!d) {
+    return `<div class="co-card">
+      <div class="co-head"><div><div class="co-name">${escapeHtml(c.name)}</div><div class="co-ticker">${escapeHtml(c.ticker)}</div></div></div>
+      <div style="font-size:12px;color:#8899a6;font-style:italic;">Consenso no disponible esta semana.</div>
+    </div>`;
+  }
+  const value = Math.max(0, Math.min(100, Math.round(d.consenso)));
+  const lvl = String(d.level);
+  const barColor = LEVEL_BAR[lvl] ?? "#8899a6";
+  const lvlLabel = LEVEL_LABEL[lvl] ?? lvl;
+  const core = (d.core ?? [])
+    .map(
+      (c2) =>
+        `<span class="co-chip">${escapeHtml(c2.theme)}<span class="n">${c2.coverage}/${d.models_count}</span></span>`,
+    )
+    .join("");
+  const shared = (d.shared_events ?? [])
+    .map(
+      (ev) => `<li>
+        <div style="min-width:0;">
+          <div>${escapeHtml(ev.label)}</div>
+          ${ev.theme ? `<div style="font-size:10.5px;color:#8899a6;margin-top:2px;">${escapeHtml(ev.theme)}</div>` : ""}
+        </div>
+        <span class="m">${escapeHtml((ev.models ?? []).join(", "))}</span>
+      </li>`,
+    )
+    .join("");
+  const blind = (d.blind_spots ?? [])
+    .map((bs) => {
+      const ok = bs.corroboration === "corroborado";
+      const badge = `<span class="co-badge ${ok ? "ok" : "ko"}">${ok ? "corroborado" : "no verificado"}</span>`;
+      return `<li>
+        <div style="min-width:0;">
+          <div>${escapeHtml(bs.label)} ${badge}</div>
+          ${bs.theme ? `<div style="font-size:10.5px;color:#8899a6;margin-top:2px;">${escapeHtml(bs.theme)}</div>` : ""}
+        </div>
+        <span class="m">${escapeHtml(bs.model)}</span>
+      </li>`;
+    })
+    .join("");
+  const spark = c.series && c.series.length >= 2 ? sparklineSvg(c.series) : "";
+
+  return `<div class="co-card">
+    <div class="co-head">
+      <div><div class="co-name">${escapeHtml(c.name)}</div><div class="co-ticker">${escapeHtml(c.ticker)}</div></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="co-val">${value}<small>/100</small></div>
+        <span class="co-lvl lvl-${escapeHtml(lvl)}">${escapeHtml(lvlLabel)}</span>
+      </div>
+    </div>
+    <div class="co-gauge"><i style="width:${value}%;background:${barColor};"></i></div>
+    <div class="co-meta">Dispersión ${d.dispersion} pts · ${d.distinct_themes} temas · ${d.models_count} IAs</div>
+    ${core ? `<div class="co-blk"><h5>Núcleo de coincidencia</h5><div class="co-chips">${core}</div></div>` : ""}
+    ${shared ? `<div class="co-blk"><h5>Hechos compartidos</h5><ul class="co-list">${shared}</ul></div>` : ""}
+    ${blind ? `<div class="co-blk"><h5>Puntos ciegos</h5><ul class="co-list">${blind}</ul></div>` : ""}
+    ${spark ? `<div class="co-blk"><h5>Evolución del consenso</h5>${spark}</div>` : ""}
+  </div>`;
+}
+
+function buildConsensusSection(consensus: ConsensusForPdf[] | undefined): string {
+  if (!consensus || consensus.length === 0) return "";
+  const cards = consensus.map(renderConsensusCard).join("");
+  return `<section class="report-section">
+    <h2>Consenso de las IAs</h2>
+    <p style="font-size:12px;color:#536471;margin-bottom:10px;">En qué grado las 6 IAs coinciden temáticamente sobre cada empresa esta semana. No es una media de notas.</p>
+    <div class="consensus-panel">${cards}</div>
+  </section>`;
+}
+
 // ---------- PROFILE ----------
 
 function buildProfileBody(dp: ProfileDatapack, analysisMarkdown: string | null): string {
