@@ -1070,9 +1070,9 @@ export function buildDeterministicReportHtml(
   }
 
   const metaItems: BrandedReportMetaItem[] = [
-    { icon: "📅", label: `Semana: ${latestWeek}` },
-    { icon: "🤖", label: "6 modelos de IA" },
-    { icon: "✓", label: "Datos deterministas · sin IA generativa" },
+    { iconHtml: IC_CAL, label: `Semana: ${latestWeek}` },
+    { iconHtml: IC_BOT, label: "6 modelos de IA" },
+    { iconHtml: IC_CHECK, label: "Datos deterministas · sin IA generativa" },
   ];
 
   const questionSection = question && question.trim()
@@ -1088,7 +1088,7 @@ export function buildDeterministicReportHtml(
     title,
     subtitle,
     metaItems,
-    bodyHtml: `<style>${EXPERT_STYLES}</style>` + questionSection + bodyHtml,
+    bodyHtml: `<style>${EXPERT_STYLES}${DET_STYLES}</style>` + questionSection + bodyHtml,
     documentTitle: `RepIndex — ${title}`,
   });
 }
