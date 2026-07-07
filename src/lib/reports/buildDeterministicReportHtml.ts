@@ -10,7 +10,14 @@ import {
 } from "./brandedReportShell";
 import { METRIC_GLOSSARY, type MetricKey } from "./metricGlossary";
 import type { AnalysisJson } from "@/components/reports/ExpertAnalysisView";
-import type { ConsensusForPdf } from "./downloadReportPdf";
+import type { ConsensusData, ConsensusSeriesPoint } from "@/hooks/useConsensus";
+
+export interface ConsensusForPdf {
+  ticker: string;
+  name: string;
+  data: ConsensusData | null;
+  series: ConsensusSeriesPoint[];
+}
 
 type Kind = "profile" | "comparison" | "ranking";
 
