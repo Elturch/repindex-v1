@@ -1,4 +1,5 @@
 import { bandFor, type Band } from "./rankingTokens";
+import type { ReactNode } from "react";
 
 interface Props {
   rank: number;
@@ -9,7 +10,7 @@ interface Props {
   delta: number | null;
   isLead?: boolean;
   bandOverride?: Band;
-  badge?: React.ReactNode;
+  badge?: ReactNode;
 }
 
 export function RankBar({ rank, name, sub, score, avg, delta, isLead, bandOverride, badge }: Props) {
