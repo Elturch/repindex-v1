@@ -176,7 +176,7 @@ function SectorView({
 }: {
   data: RankingDatapack;
   scopeLabel: string;
-  expert: { md: string | null; loading: boolean };
+  expert: { json: AnalysisJson | null; md: string | null; loading: boolean };
 }) {
   const rows = data.ranking ?? [];
   const avg = data.sector_avg?.rixc ?? 0;
@@ -463,7 +463,7 @@ function EvolucionView({
 }: {
   data: RankingDatapack;
   scopeLabel: string;
-  expert: { md: string | null; loading: boolean };
+  expert: { json: AnalysisJson | null; md: string | null; loading: boolean };
 }) {
   const series = data.sector_series ?? [];
   const entities = data.entity_series ?? [];

@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ExpertAnalysis } from "./ExpertAnalysis";
+import { ConsensusBlock } from "./ConsensusBlock";
 import {
   Table,
   TableBody,
@@ -188,6 +189,8 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
           </div>
         </CardContent>
       </Card>
+
+      <ConsensusBlock ticker={entity.ticker} />
 
       <ExpertAnalysis
         type="profile"
