@@ -1,8 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Eye, AlertCircle, CheckCircle2 } from "lucide-react";
-import { useConsensus, type ConsensusLevel } from "@/hooks/useConsensus";
+import { Users, Eye, AlertCircle, CheckCircle2, LineChart as LineChartIcon } from "lucide-react";
+import { useConsensus, useConsensusSeries, type ConsensusLevel } from "@/hooks/useConsensus";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
 
 interface Props {
   ticker: string;
@@ -37,6 +47,7 @@ function levelMeta(level: ConsensusLevel) {
 
 export function ConsensusBlock({ ticker }: Props) {
   const { data, isLoading } = useConsensus(ticker);
+  const { data: series } = useConsensusSeries(ticker);
 
   if (isLoading) return null;
   if (!data) {
@@ -51,6 +62,12 @@ export function ConsensusBlock({ ticker }: Props) {
 
   const meta = levelMeta(data.level);
   const value = Math.max(0, Math.min(100, Math.round(data.consenso)));
+
+  const chartData = (series ?? []).map((p) => ({
+    week: p.week,
+    consenso: Math.max(0, Math.min(100, Math.round(p.consenso))),
+  }));
+  const showEvolution = chartData.length >= 2;
 
   return (
     <Card>
@@ -220,6 +237,70 @@ export function ConsensusBlock({ ticker }: Props) {
             </ul>
           )}
         </div>
+
+        {/* Evolución del consenso */}
+        {showEvolution && (
+          <div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+              <LineChartIcon className="h-3.5 w-3.5" /> Evolución del consenso
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              Sube = las IAs convergen con el tiempo. Baja = se dispersan.
+            </p>
+            <div className="h-[180px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.4} />
+                  <XAxis
+                    dataKey="week"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => {
+                      try {
+                        const d = new Date(`${v}T00:00:00Z`);
+                        return d.toLocaleDateString("es-ES", {
+                          day: "2-digit",
+                          month: "short",
+                        });
+                      } catch {
+                        return v;
+                      }
+                    }}
+                  />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} width={30} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--background))",
+                      border: "1px solid hsl(var(--border))",
+                      fontSize: 12,
+                    }}
+                    labelFormatter={(v) => {
+                      try {
+                        const d = new Date(`${v}T00:00:00Z`);
+                        return d.toLocaleDateString("es-ES", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        });
+                      } catch {
+                        return String(v);
+                      }
+                    }}
+                    formatter={(val: number) => [`${val}/100`, "Consenso"]}
+                  />
+                  <ReferenceLine y={50} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" strokeOpacity={0.4} />
+                  <Line
+                    type="monotone"
+                    dataKey="consenso"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

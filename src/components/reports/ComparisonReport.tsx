@@ -3,6 +3,7 @@ import { Loader2, AlertTriangle, ShieldCheck, ArrowUp, ArrowDown, Minus } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ExpertAnalysis } from "./ExpertAnalysis";
+import { ConsensusCompact } from "./ConsensusCompact";
 import {
   Table,
   TableBody,
@@ -329,6 +330,8 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         tickers={entities.map((e) => e.ticker)}
         week={latest_week}
       />
+
+      <ConsensusCompact entities={entities.map((e) => ({ ticker: e.ticker, name: e.name }))} />
 
       {/* Verdict */}
       {verdict && (
