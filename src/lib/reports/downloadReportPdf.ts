@@ -9,13 +9,7 @@ import type { RankingDatapack, RankingDatapackParams } from "@/hooks/useRankingD
 import { buildDeterministicReportHtml } from "./buildDeterministicReportHtml";
 import type { AnalysisJson } from "@/components/reports/ExpertAnalysisView";
 import type { ConsensusData, ConsensusSeriesPoint } from "@/hooks/useConsensus";
-
-export interface ConsensusForPdf {
-  ticker: string;
-  name: string;
-  data: ConsensusData | null;
-  series: ConsensusSeriesPoint[];
-}
+import type { ConsensusForPdf } from "./buildDeterministicReportHtml";
 
 /**
  * Generate a PDF from a full, self-contained HTML document string.
