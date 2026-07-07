@@ -9,9 +9,10 @@ interface Props {
   delta: number | null;
   isLead?: boolean;
   bandOverride?: Band;
+  badge?: React.ReactNode;
 }
 
-export function RankBar({ rank, name, sub, score, avg, delta, isLead, bandOverride }: Props) {
+export function RankBar({ rank, name, sub, score, avg, delta, isLead, bandOverride, badge }: Props) {
   const band = bandOverride ?? bandFor(score);
   const w = Math.max(0, Math.min(100, score));
   const avgClamped = Math.max(0, Math.min(100, avg));
@@ -23,6 +24,7 @@ export function RankBar({ rank, name, sub, score, avg, delta, isLead, bandOverri
       <span className="rr-rb-rank">{rank}</span>
       <div className="rr-rb-name">
         {name} {sub ? <small>· {sub}</small> : null}
+        {badge ? <span style={{ marginLeft: 6, verticalAlign: "middle" }}>{badge}</span> : null}
       </div>
       <div className="rr-rb-track">
         <div className={`rr-rb-fill ${band}`} style={{ width: `${w}%` }}>
