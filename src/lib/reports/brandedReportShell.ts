@@ -54,14 +54,28 @@ export function brandedReportStyles(): string {
       color: #0f1419;
       padding: 40px 36px;
       border-radius: 12px;
-      margin-bottom: 32px;
+      margin-bottom: 40px;
       border: 1px solid #e5e7eb;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      break-after: avoid;
     }
     .report-header .header-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
+      width: 100%;
+      border-collapse: collapse;
       margin-bottom: 24px;
+    }
+    .report-header .header-top td {
+      vertical-align: top;
+      padding: 0;
+      border: 0;
+    }
+    .report-header .header-top td.right {
+      text-align: right;
+      white-space: nowrap;
     }
     .report-header .logo {
       font-size: 26px;
@@ -79,7 +93,8 @@ export function brandedReportStyles(): string {
       font-weight: 500;
     }
     .report-header .header-badge {
-      background: transparent;
+      display: inline-block;
+      background: #ffffff;
       border: 1px solid #1a73e8;
       color: #1a73e8;
       padding: 6px 14px;
@@ -108,20 +123,41 @@ export function brandedReportStyles(): string {
       margin-bottom: 18px;
     }
     .report-header .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 20px;
       font-size: 12px;
       color: #536471;
       font-weight: 400;
+      line-height: 1.8;
     }
     .report-header .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      display: inline-block;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 4px 12px 4px 10px;
+      margin: 0 8px 6px 0;
+      vertical-align: middle;
+      line-height: 1.4;
     }
-    .report-header .meta-ico { display: inline-flex; align-items: center; color: #1a73e8; }
-    .report-header .meta-ico svg { display: block; width: 14px; height: 14px; }
+    .report-header .meta-ico {
+      display: inline-block;
+      vertical-align: middle;
+      color: #1a73e8;
+      width: 14px;
+      height: 14px;
+      margin-right: 6px;
+      position: relative;
+      top: -1px;
+    }
+    .report-header .meta-ico svg {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      vertical-align: middle;
+    }
+    .report-header .meta-label {
+      display: inline-block;
+      vertical-align: middle;
+    }
 
     /* Editorial sections */
     .report-section { margin: 32px 0; }
@@ -133,12 +169,22 @@ export function brandedReportStyles(): string {
       padding-bottom: 8px;
       margin-bottom: 16px;
       letter-spacing: -0.01em;
+      page-break-after: avoid;
+      break-after: avoid;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
     .report-section > h3 {
       font-size: 15px;
       font-weight: 600;
       color: #1a3a5c;
       margin: 20px 0 10px 0;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .rr-eyebrow {
+      page-break-after: avoid;
+      break-after: avoid;
     }
     .report-section p { margin: 8px 0 12px 0; }
     .report-section ul, .report-section ol { margin: 8px 0 14px 22px; }
@@ -272,8 +318,20 @@ export function brandedReportStyles(): string {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
-      .report-header { break-after: avoid; }
-      .report-section { break-inside: avoid-page; }
+      .report-header {
+        break-after: avoid;
+        page-break-after: avoid;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .report-section > h2,
+      .report-section > h3,
+      .rr-eyebrow {
+        break-after: avoid;
+        page-break-after: avoid;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
       .report-footer { break-before: avoid; }
       table { page-break-inside: auto; }
       thead { display: table-header-group; }
