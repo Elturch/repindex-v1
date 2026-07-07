@@ -2312,6 +2312,126 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_consenso_runs: {
+        Row: {
+          created_at: string | null
+          payload: Json
+          ticker: string
+          week: string
+        }
+        Insert: {
+          created_at?: string | null
+          payload: Json
+          ticker: string
+          week: string
+        }
+        Update: {
+          created_at?: string | null
+          payload?: Json
+          ticker?: string
+          week?: string
+        }
+        Relationships: []
+      }
+      rix_consensus_weekly: {
+        Row: {
+          computed_at: string
+          consenso: number | null
+          dispersion: number | null
+          distinct_themes: number | null
+          level: string | null
+          payload: Json
+          source: string | null
+          ticker: string
+          week: string
+        }
+        Insert: {
+          computed_at?: string
+          consenso?: number | null
+          dispersion?: number | null
+          distinct_themes?: number | null
+          level?: string | null
+          payload: Json
+          source?: string | null
+          ticker: string
+          week: string
+        }
+        Update: {
+          computed_at?: string
+          consenso?: number | null
+          dispersion?: number | null
+          distinct_themes?: number | null
+          level?: string | null
+          payload?: Json
+          source?: string | null
+          ticker?: string
+          week?: string
+        }
+        Relationships: []
+      }
+      rix_methodology_checks: {
+        Row: {
+          checked_at: string
+          id: number
+          missing: Json
+          note: string | null
+          ok: boolean
+          version: string
+        }
+        Insert: {
+          checked_at?: string
+          id?: never
+          missing?: Json
+          note?: string | null
+          ok: boolean
+          version: string
+        }
+        Update: {
+          checked_at?: string
+          id?: never
+          missing?: Json
+          note?: string | null
+          ok?: boolean
+          version?: string
+        }
+        Relationships: []
+      }
+      rix_methodology_lock: {
+        Row: {
+          canonical_string: string
+          component: string
+          fn_slug: string | null
+          id: number
+          locked: boolean
+          locked_at: string
+          must_be_present: boolean
+          note: string | null
+          version: string
+        }
+        Insert: {
+          canonical_string: string
+          component: string
+          fn_slug?: string | null
+          id?: never
+          locked?: boolean
+          locked_at?: string
+          must_be_present?: boolean
+          note?: string | null
+          version: string
+        }
+        Update: {
+          canonical_string?: string
+          component?: string
+          fn_slug?: string | null
+          id?: never
+          locked?: boolean
+          locked_at?: string
+          must_be_present?: boolean
+          note?: string | null
+          version?: string
+        }
+        Relationships: []
+      }
       rix_reports: {
         Row: {
           created_at: string
@@ -4545,6 +4665,10 @@ export type Database = {
       release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
       rix_comparison_datapack: { Args: { p_tickers: string[] }; Returns: Json }
+      rix_consensus_get: {
+        Args: { p_ticker: string; p_week?: string }
+        Returns: Json
+      }
       rix_profile_datapack: { Args: { p_ticker: string }; Returns: Json }
       rix_qualitative_signals: { Args: { p_tickers: string[] }; Returns: Json }
       rix_ranking_datapack: {
