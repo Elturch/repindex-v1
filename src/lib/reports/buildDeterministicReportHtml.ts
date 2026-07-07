@@ -708,8 +708,8 @@ function buildProfileBody(
     sectorTable,
     divergence,
     evoSection,
-    citeSection,
     consensusSection,
+    citeSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
@@ -872,8 +872,8 @@ function buildComparisonBody(
     metricsTable,
     divTable,
     evoSection,
-    citeSection,
     consensusSection,
+    citeSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
