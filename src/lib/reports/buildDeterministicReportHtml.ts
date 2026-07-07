@@ -856,7 +856,13 @@ function buildComparisonBody(
     seen.add(it.url);
     return true;
   });
-  const citeSection = buildCitationsSection(unique);
+  const citeSection = unique.length
+    ? `<section class="report-section">
+        <h2>Menciones y fuentes citadas</h2>
+        <p style="font-size:12px;color:#536471;margin-bottom:10px;">${unique.length} fuentes únicas citadas por los modelos, agrupadas por dominio.</p>
+        ${renderCitationsGrid(unique)}
+      </section>`
+    : "";
 
   const consensusSection = buildConsensusSection(consensus);
 
