@@ -50,3 +50,47 @@ export function useConsensus(ticker: string | null | undefined) {
     },
   });
 }
+
+export interface ConsensusSeriesPoint {
+  week: string;
+  consenso: number;
+  level: ConsensusLevel;
+}
+
+export function useConsensusSeries(ticker: string | null | undefined) {
+  return useQuery<ConsensusSeriesPoint[]>({
+    queryKey: ["rix-consensus-series", ticker],
+    enabled: !!ticker,
+    staleTime: 1000 * 60 * 60,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rix_consensus_series", {
+        p_ticker: ticker as string,
+      });
+      if (error) throw error;
+      if (!Array.isArray(data)) return [];
+      return data as unknown as ConsensusSeriesPoint[];
+    },
+  });
+}
+
+export interface ConsensusBatchEntry {
+  consenso: number;
+  level: ConsensusLevel;
+}
+
+export function useConsensusBatch(tickers: string[] | null | undefined) {
+  const key = (tickers ?? []).slice().sort().join(",");
+  return useQuery<Record<string, ConsensusBatchEntry>>({
+    queryKey: ["rix-consensus-batch", key],
+    enabled: !!tickers && tickers.length > 0,
+    staleTime: 1000 * 60 * 60,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rix_consensus_batch", {
+        p_tickers: tickers as string[],
+      });
+      if (error) throw error;
+      if (!data || typeof data !== "object") return {};
+      return data as unknown as Record<string, ConsensusBatchEntry>;
+    },
+  });
+}
