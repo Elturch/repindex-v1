@@ -365,7 +365,7 @@ export function wrapBrandedReport(input: WrapBrandedReportInput): string {
           : m.icon
             ? `${escapeHtml(m.icon)} `
             : "";
-        return `<div class="meta-item">${ico}${escapeHtml(m.label)}</div>`;
+        return `<span class="meta-item">${ico}<span class="meta-label">${escapeHtml(m.label)}</span></span>`;
       },
     )
     .join("");
@@ -383,13 +383,15 @@ export function wrapBrandedReport(input: WrapBrandedReportInput): string {
 </head>
 <body>
   <header class="report-header">
-    <div class="header-top">
-      <div class="logo-section">
+    <table class="header-top"><tbody><tr>
+      <td class="left">
         <div class="logo">Rep<span>Index</span></div>
         <div class="company-tagline">Inteligencia Reputacional Corporativa</div>
-      </div>
-      <div class="header-badge">${escapeHtml(badgeText)}</div>
-    </div>
+      </td>
+      <td class="right">
+        <span class="header-badge">${escapeHtml(badgeText)}</span>
+      </td>
+    </tr></tbody></table>
     <div class="divider"></div>
     <div class="report-title">${escapeHtml(title)}</div>
     <div class="subtitle">${escapeHtml(subtitle)}</div>
