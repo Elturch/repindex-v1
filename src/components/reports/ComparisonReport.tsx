@@ -729,6 +729,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         </Card>
       )}
 
+      {/* Consenso de las IAs — evidencia temática (al final) */}
+      <ConsensusCompact entities={entities.map((e) => ({ ticker: e.ticker, name: e.name }))} />
+
       {/* Methodology */}
       <Card>
         <CardHeader className="pb-2">
