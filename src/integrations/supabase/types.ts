@@ -4665,10 +4665,12 @@ export type Database = {
       release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
       rix_comparison_datapack: { Args: { p_tickers: string[] }; Returns: Json }
+      rix_consensus_batch: { Args: { p_tickers: string[] }; Returns: Json }
       rix_consensus_get: {
         Args: { p_ticker: string; p_week?: string }
         Returns: Json
       }
+      rix_consensus_series: { Args: { p_ticker: string }; Returns: Json }
       rix_profile_datapack: { Args: { p_ticker: string }; Returns: Json }
       rix_qualitative_signals: { Args: { p_tickers: string[] }; Returns: Json }
       rix_ranking_datapack: {
