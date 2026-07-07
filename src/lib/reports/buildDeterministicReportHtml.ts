@@ -980,29 +980,25 @@ function buildRankingBody(
     </section>`;
 
   // Sector average per metric
-  const avgRows = avg
+  const avgCards = avg
     ? METRIC_KEYS.map((k) => {
         const info = metricDef(k);
-        return `<tr>
-          <td><strong>${info.code}</strong> · ${escapeHtml(info.name)}</td>
-          <td style="color:#536471;">${escapeHtml(info.what)}</td>
-          <td style="text-align:right;font-weight:600;">${fmtNum((avg as any)[k] as number | null)}</td>
-        </tr>`;
+        const v = (avg as any)[k] as number | null;
+        return renderMetricGauge({
+          code: info.code,
+          name: info.name,
+          what: info.what,
+          mine: v,
+          avg: null,
+          entityLabel: "Media",
+          avgLabel: "—",
+        });
       }).join("")
     : "";
   const avgTable = avg
     ? `<section class="report-section">
         <h2>Huella del sector · media por métrica</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Métrica</th>
-              <th>Qué mide</th>
-              <th style="text-align:right;">Media</th>
-            </tr>
-          </thead>
-          <tbody>${avgRows}</tbody>
-        </table>
+        <div class="det-metrics">${avgCards}</div>
        </section>`
     : "";
 
