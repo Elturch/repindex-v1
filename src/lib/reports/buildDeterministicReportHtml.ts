@@ -27,6 +27,7 @@ export interface BuildDeterministicReportInput {
   analysisMarkdown: string | null;
   analysisJson?: AnalysisJson | null;
   consensus?: ConsensusForPdf[];
+  consensusBatch?: Record<string, { consenso: number; level: string }>;
   question?: string | null;
 }
 
