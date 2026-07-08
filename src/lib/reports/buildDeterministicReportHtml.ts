@@ -915,6 +915,7 @@ function buildRankingBody(
   dp: RankingDatapack,
   analysisMarkdown: string | null,
   analysisJson: AnalysisJson | null | undefined,
+  consensusBatch: Record<string, { consenso: number; level: string }> = {},
 ): string {
   const rows = dp.ranking ?? [];
   const avg = dp.sector_avg;
@@ -962,9 +963,19 @@ function buildRankingBody(
         (k) =>
           `<td style="text-align:right;">${fmtNum((r as any)[k] as number | null, 0)}</td>`,
       ).join("");
+      const cb = consensusBatch[r.tk];
+      let chip: string;
+      if (cb && typeof cb.consenso === "number") {
+        const lvl = String(cb.level || "").toLowerCase();
+        const color = LEVEL_BAR[lvl] ?? "#8899a6";
+        const label = LEVEL_LABEL[lvl] ?? (lvl || "—");
+        chip = `<div style="font-size:9px;color:#536471;margin-top:2px;line-height:1.2;"><span style="color:${color};font-weight:700;">●</span> ${escapeHtml(label)} · ${Math.round(cb.consenso)}</div>`;
+      } else {
+        chip = `<div style="font-size:9px;color:#a0adb8;margin-top:2px;line-height:1.2;font-style:italic;">consenso s/d</div>`;
+      }
       return `<tr>
         <td style="text-align:center;font-weight:700;color:#1a73e8;">#${r.rank}</td>
-        <td><strong>${escapeHtml(r.name)}</strong> <span style="color:#8899a6;">${escapeHtml(r.tk)}</span></td>
+        <td><strong>${escapeHtml(r.name)}</strong> <span style="color:#8899a6;">${escapeHtml(r.tk)}</span>${chip}</td>
         <td style="text-align:right;font-weight:600;">${fmtNum(r.rixc)}</td>
         <td style="text-align:right;color:${dColor};font-weight:600;">${fmtDelta(d)}</td>
         ${cells}
@@ -1035,11 +1046,68 @@ function buildRankingBody(
        </section>`
     : "";
 
+  // Sector consensus block
+  const nameByTk = new Map<string, string>();
+  for (const r of rows) if (r.tk) nameByTk.set(r.tk, r.name || r.tk);
+  for (const p of dp.period ?? []) if (p.tk && !nameByTk.has(p.tk)) nameByTk.set(p.tk, p.tk);
+
+  const nEntities = dp.scope?.n_entities ?? rows.length;
+  const withData: Array<{ tk: string; consenso: number; level: string }> = [];
+  for (const tk of nameByTk.keys()) {
+    const cb = consensusBatch[tk];
+    if (cb && typeof cb.consenso === "number") {
+      withData.push({ tk, consenso: cb.consenso, level: String(cb.level || "").toLowerCase() });
+    }
+  }
+  const nWith = withData.length;
+  const avgCons = nWith > 0 ? withData.reduce((a, b) => a + b.consenso, 0) / nWith : null;
+  const levelCounts: Record<string, number> = { unanime: 0, fuerte: 0, debil: 0, disperso: 0 };
+  for (const w of withData) if (w.level in levelCounts) levelCounts[w.level]++;
+  const nSinDato = Math.max(0, nEntities - nWith);
+
+  const levelRow = (lvl: string) => {
+    const n = levelCounts[lvl];
+    const pct = nWith > 0 ? ((n / nWith) * 100).toFixed(0) : "0";
+    return `<tr><td><span style="color:${LEVEL_BAR[lvl]};font-weight:700;">■</span> ${LEVEL_LABEL[lvl]}</td><td style="text-align:right;">${n}</td><td style="text-align:right;color:#536471;">${pct}%</td></tr>`;
+  };
+
+  const sorted = [...withData].sort((a, b) => b.consenso - a.consenso);
+  const top = sorted[0];
+  const bot = sorted[sorted.length - 1];
+  const closing = nWith > 0 && top && bot && top.tk !== bot.tk
+    ? `<p style="font-size:12px;color:#536471;margin-top:10px;">Mayor consenso: <strong>${escapeHtml(nameByTk.get(top.tk) || top.tk)}</strong> (${escapeHtml(LEVEL_LABEL[top.level] ?? top.level)}, ${Math.round(top.consenso)}) · Más disperso: <strong>${escapeHtml(nameByTk.get(bot.tk) || bot.tk)}</strong> (${escapeHtml(LEVEL_LABEL[bot.level] ?? bot.level)}, ${Math.round(bot.consenso)}).</p>`
+    : "";
+
+  const consensoSectorSection = `
+    <section class="report-section">
+      <h2>Consenso entre las 6 IAs</h2>
+      <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">Coincidencia temática entre los 6 modelos — no es una media de puntuaciones.</p>
+      <div class="headline-callout">
+        <div class="kpi-label">Consenso medio del sector</div>
+        <div><span class="kpi">${avgCons !== null ? Math.round(avgCons) : "—"}${avgCons !== null ? "/100" : ""}</span></div>
+        <div style="font-size:12px;color:#536471;margin-top:6px;">(${nWith} de ${nEntities} empresas con dato de consenso)</div>
+      </div>
+      <table style="margin-top:12px;">
+        <thead>
+          <tr><th>Nivel</th><th style="text-align:right;">Empresas</th><th style="text-align:right;">%</th></tr>
+        </thead>
+        <tbody>
+          ${levelRow("unanime")}
+          ${levelRow("fuerte")}
+          ${levelRow("debil")}
+          ${levelRow("disperso")}
+          <tr><td style="color:#8899a6;"><span style="color:#c0c7cf;font-weight:700;">■</span> Sin dato</td><td style="text-align:right;color:#8899a6;">${nSinDato}</td><td style="text-align:right;color:#8899a6;">—</td></tr>
+        </tbody>
+      </table>
+      ${closing}
+    </section>`;
+
   return [
     analysisSection,
     rankingTable,
     avgTable,
     distSection,
+    consensoSectorSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
