@@ -1065,10 +1065,14 @@ function buildRankingBody(
   const nSinDato = Math.max(0, nEntities - nWith);
   const robustos = (levelCounts.unanime || 0) + (levelCounts.fuerte || 0);
 
+  const tksByLevel = (lvl: string) => withData.filter((w) => w.level === lvl).sort((a, b) => b.consenso - a.consenso).map((w) => w.tk);
+  const sinDatoTks = Array.from(nameByTk.keys()).filter((tk) => !consensusBatch[tk]).sort();
+  const companiesCell = (tks: string[]) => (tks.length ? tks.map((t) => escapeHtml(t)).join(", ") : "—");
+
   const levelRow = (lvl: string) => {
     const n = levelCounts[lvl];
     const pct = nWith > 0 ? ((n / nWith) * 100).toFixed(0) : "0";
-    return `<tr><td><span style="color:${LEVEL_BAR[lvl]};font-weight:700;">■</span> ${LEVEL_LABEL[lvl]}</td><td style="text-align:right;">${n}</td><td style="text-align:right;color:#536471;">${pct}%</td></tr>`;
+    return `<tr><td><span style="color:${LEVEL_BAR[lvl]};font-weight:700;">■</span> ${LEVEL_LABEL[lvl]}</td><td style="text-align:right;">${n}</td><td style="text-align:right;color:#536471;">${pct}%</td><td style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#536471;line-height:1.5;">${companiesCell(tksByLevel(lvl))}</td></tr>`;
   };
 
   const sorted = [...withData].sort((a, b) => b.consenso - a.consenso);
@@ -1091,14 +1095,14 @@ function buildRankingBody(
       </div>
       <table style="margin-top:12px;">
         <thead>
-          <tr><th>Nivel</th><th style="text-align:right;">Empresas</th><th style="text-align:right;">%</th></tr>
+          <tr><th>Nivel</th><th style="text-align:right;">Nº</th><th style="text-align:right;">%</th><th style="text-align:left;">Empresas</th></tr>
         </thead>
         <tbody>
           ${levelRow("unanime")}
           ${levelRow("fuerte")}
           ${levelRow("debil")}
           ${levelRow("disperso")}
-          <tr><td style="color:#8899a6;"><span style="color:#c0c7cf;font-weight:700;">■</span> Sin dato</td><td style="text-align:right;color:#8899a6;">${nSinDato}</td><td style="text-align:right;color:#8899a6;">—</td></tr>
+          <tr><td style="color:#8899a6;"><span style="color:#c0c7cf;font-weight:700;">■</span> Sin dato</td><td style="text-align:right;color:#8899a6;">${nSinDato}</td><td style="text-align:right;color:#8899a6;">—</td><td style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8899a6;line-height:1.5;">${companiesCell(sinDatoTks)}</td></tr>
         </tbody>
       </table>
       ${closing}
