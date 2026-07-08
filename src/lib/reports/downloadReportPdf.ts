@@ -1,7 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - html2pdf.js has partial type coverage
-import html2pdfImport from "html2pdf.js";
-const html2pdf: any = html2pdfImport;
 import { supabase } from "@/integrations/supabase/client";
 import type { ProfileDatapack } from "@/hooks/useProfileDatapack";
 import type { ComparisonDatapack } from "@/hooks/useComparisonDatapack";
@@ -12,82 +8,61 @@ import type { ConsensusData, ConsensusSeriesPoint } from "@/hooks/useConsensus";
 import type { ConsensusForPdf } from "./buildDeterministicReportHtml";
 
 /**
- * Generate a PDF from a full, self-contained HTML document string.
- *
- * We render the HTML inside an off-screen iframe at A4 width so all layout,
- * fonts and colours resolve exactly as they will in the exported PDF. Then
- * we hand the iframe's `<body>` node to html2pdf.
- *
- * The input HTML uses explicit hex / hsl colours from the RepIndex branded
- * shell — there is no `oklch(...)` involved, so no colour sanitisation is
- * needed.
+ * Render the branded HTML with the browser's native print engine (real layout
+ * engine → perfect CSS, selectable text, tiny file). We mount an off-screen
+ * iframe, write the standalone branded HTML, wait for web fonts, then open the
+ * print dialog. The user chooses "Guardar como PDF".
  */
 export async function downloadReportPdf(
   html: string,
   filename: string,
 ): Promise<void> {
-  // 1) Mount an off-screen iframe at A4 width so the branded shell lays out
-  //    with the same measurements it will have in the PDF.
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.position = "fixed";
-  iframe.style.left = "-100000px";
+  iframe.style.left = "-99999px";
   iframe.style.top = "0";
-  iframe.style.width = "900px"; // matches body max-width in brandedReportStyles
-  iframe.style.height = "1400px";
+  iframe.style.width = "900px";
+  iframe.style.height = "1200px";
   iframe.style.border = "0";
-  iframe.style.background = "#ffffff";
   document.body.appendChild(iframe);
 
-  try {
-    // 2) Write the branded HTML into the iframe and wait for it to be ready
-    //    (including web fonts, which affect measurement and rendering).
-    const doc = iframe.contentDocument;
-    if (!doc) throw new Error("iframe document unavailable");
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    await waitForFramePaint(iframe);
-
-    const body = doc.body;
-    if (!body) throw new Error("iframe body unavailable");
-
-    // 3) Hand the fully-styled body to html2pdf.
-    await html2pdf()
-      .set({
-        margin: [12, 12, 14, 12],
-        filename,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-          logging: false,
-          windowWidth: 900,
-        },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: {
-          mode: ["css", "legacy"],
-          avoid: [
-            "h2",
-            "h3",
-            "h4",
-            ".rr-eyebrow",
-            ".report-header",
-            ".headline-callout",
-            ".metric-card",
-            ".consensus-card",
-            ".divergence-row",
-            "tr",
-          ],
-        },
-      } as any)
-      .from(body)
-      .save();
-  } finally {
+  const doc = iframe.contentDocument;
+  if (!doc) {
     iframe.remove();
+    throw new Error("iframe document unavailable");
   }
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  // Wait for load + web fonts (they affect layout/measurement).
+  await waitForFramePaint(iframe);
+
+  const win = iframe.contentWindow;
+  if (!win) {
+    iframe.remove();
+    throw new Error("iframe window unavailable");
+  }
+
+  // Default filename for "Save as PDF" = document title.
+  try {
+    doc.title = filename.replace(/\.pdf$/i, "");
+  } catch {
+    /* ignore */
+  }
+
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    setTimeout(() => iframe.remove(), 500);
+  };
+  win.addEventListener("afterprint", cleanup, { once: true });
+  setTimeout(cleanup, 120000); // fallback
+
+  win.focus();
+  win.print();
 }
 
 async function waitForFramePaint(iframe: HTMLIFrameElement): Promise<void> {

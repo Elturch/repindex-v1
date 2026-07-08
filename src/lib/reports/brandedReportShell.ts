@@ -35,7 +35,7 @@ export function brandedReportStyles(): string {
       --border: #e5e7eb;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: A4; margin: 20mm 18mm; }
+    @page { size: A4; margin: 12mm 12mm 14mm 12mm; }
     body {
       font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       max-width: 900px;
@@ -218,6 +218,8 @@ export function brandedReportStyles(): string {
 
     /* Print / PDF adjustments */
     @media print {
+      *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      html, body { margin: 0 !important; }
       body {
         padding: 0;
         -webkit-print-color-adjust: exact;
