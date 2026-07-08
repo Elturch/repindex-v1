@@ -194,20 +194,49 @@ export async function downloadDeterministicReportPdf(
     }
   };
 
-  try {
-    if (kind === "ranking") {
-      const scope = {
-        sector: rankingParams?.sector ?? null,
-        subsector: rankingParams?.subsector ?? null,
-        universe: rankingParams?.universe ?? null,
-      };
-      const key = `repindex.analysis.ranking.${JSON.stringify(scope)}.${week}.v2`;
-      readCache(key);
-    } else {
-      readCache(analysisCacheKey(kind, cleanTickers, week));
-    }
-  } catch {
-    /* ignore */
+  let analysisKey: string | null = null;
+  let analysisBody: Record<string, unknown> | null = null;
+
+  if (kind === "ranking") {
+    const dp = datapack as RankingDatapack;
+    const uni = (dp.scope?.universe ?? []).join(",");
+    const tks = (dp.scope?.tickers ?? []).join(",");
+    const mdl = (dp.models_used ?? []).join(",");
+    const expertScope = {
+      sector: dp.scope?.sector ?? null,
+      subsector: dp.scope?.subsector ?? null,
+      universe: uni ? uni.split(",") : [],
+      tickers: tks ? tks.split(",") : [],
+      from: dp.window?.from ?? null,
+      to: dp.window?.to ?? null,
+      models: mdl ? mdl.split(",") : [],
+      limit: dp.scope?.limit ?? rankingParams?.limit ?? null,
+    };
+    analysisKey = `repindex.analysis.ranking.${JSON.stringify(expertScope)}.${week}.v2`;
+    analysisBody = { type: "ranking", scope: expertScope };
+  } else {
+    analysisKey = analysisCacheKey(kind, cleanTickers, week);
+    analysisBody = { type: kind, tickers: cleanTickers };
+  }
+
+  try { if (analysisKey) readCache(analysisKey); } catch { /* ignore */ }
+
+  // Si no está cacheado, genera el análisis ahora para que el PDF salga completo.
+  if (analysisKey && analysisBody && !analysisJson && !analysisMarkdown) {
+    try {
+      const { data, error } = await supabase.functions.invoke("report-analysis", { body: analysisBody });
+      if (!error && data) {
+        const aj = (data as any)?.analysis_json;
+        const md = (data as any)?.analysis;
+        if (aj && typeof aj === "object") {
+          analysisJson = aj as AnalysisJson;
+          try { localStorage.setItem(analysisKey, JSON.stringify(aj)); } catch { /* ignore */ }
+        } else if (typeof md === "string" && md.trim()) {
+          analysisMarkdown = md;
+          try { localStorage.setItem(analysisKey, md); } catch { /* ignore */ }
+        }
+      }
+    } catch { /* soft-fail: el PDF mostrará "no disponible" */ }
   }
 
   // 3) Fetch consensus (profile/comparison) — no-op on ranking for now.
