@@ -29,6 +29,7 @@ export interface BuildDeterministicReportInput {
   consensus?: ConsensusForPdf[];
   consensusBatch?: Record<string, { consenso: number; level: string }>;
   question?: string | null;
+  rankingSources?: Array<{ domain: string; models_count: number; companies_count: number; urls_count: number }>;
 }
 
 // ---------- helpers ----------
@@ -398,6 +399,19 @@ const LEVEL_BAR: Record<string, string> = {
   debil: "#f97316",
   disperso: "#dc2626",
 };
+
+const TIER_1 = new Set(["cnmv.es","sec.gov","bde.es","boe.es","reuters.com","bloomberg.com","ft.com","wsj.com","marketscreener.com","investing.com","expansion.com","cincodias.elpais.com","eleconomista.es","elconfidencial.com","europapress.es","efe.com"]);
+const TIER_2 = new Set(["elpais.com","elmundo.es","abc.es","lavanguardia.com","larazon.es","20minutos.es","elespanol.com","eldiario.es","publico.es","rtve.es","cadenaser.com","cope.es","ondacero.es","antena3.com","lasexta.com","msn.com","yahoo.com"]);
+const TIER_4 = new Set(["instagram.com","facebook.com","twitter.com","x.com","youtube.com","linkedin.com","tiktok.com","reddit.com","trustpilot.com","forocoches.com","medium.com","quora.com"]);
+function tierOf(domain: string): 1 | 2 | 3 | 4 {
+  const d = domain.toLowerCase().replace(/^www\./, "");
+  if (TIER_1.has(d)) return 1;
+  if (TIER_2.has(d)) return 2;
+  if (TIER_4.has(d) || /(blogspot|wordpress)\./.test(d)) return 4;
+  return 3;
+}
+const TIER_LABEL: Record<number, string> = { 1: "T1 · Regulador / Financiero", 2: "T2 · Generalista", 3: "T3 · Especializado", 4: "T4 · Opinión / Redes" };
+const TIER_COLOR: Record<number, string> = { 1: "#10a37f", 2: "#1a73e8", 3: "#f97316", 4: "#8899a6" };
 
 function bandOf(v: number): "b-green" | "b-blue" | "b-amber" | "b-red" {
   if (v >= 80) return "b-green";
