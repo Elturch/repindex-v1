@@ -1158,7 +1158,7 @@ function buildRankingBody(
 export function buildDeterministicReportHtml(
   input: BuildDeterministicReportInput,
 ): string {
-  const { kind, datapack, analysisMarkdown, analysisJson, consensus, consensusBatch, question } = input;
+  const { kind, datapack, analysisMarkdown, analysisJson, consensus, consensusBatch, question, rankingSources } = input;
 
   let title: string;
   let subtitle = "Informe de Reputación Algorítmica";
@@ -1185,7 +1185,7 @@ export function buildDeterministicReportHtml(
         : "Ranking");
     title = `Ranking del sector: ${scopeLabel}`;
     latestWeek = dp.latest_week;
-    bodyHtml = buildRankingBody(dp, analysisMarkdown, analysisJson, consensusBatch ?? {});
+    bodyHtml = buildRankingBody(dp, analysisMarkdown, analysisJson, consensusBatch ?? {}, rankingSources ?? []);
   }
 
   const metaItems: BrandedReportMetaItem[] = [
