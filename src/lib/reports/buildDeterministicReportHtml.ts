@@ -29,6 +29,7 @@ export interface BuildDeterministicReportInput {
   consensus?: ConsensusForPdf[];
   consensusBatch?: Record<string, { consenso: number; level: string }>;
   question?: string | null;
+  rankingSources?: Array<{ domain: string; models_count: number; companies_count: number; urls_count: number }>;
 }
 
 // ---------- helpers ----------
@@ -398,6 +399,19 @@ const LEVEL_BAR: Record<string, string> = {
   debil: "#f97316",
   disperso: "#dc2626",
 };
+
+const TIER_1 = new Set(["cnmv.es","sec.gov","bde.es","boe.es","reuters.com","bloomberg.com","ft.com","wsj.com","marketscreener.com","investing.com","expansion.com","cincodias.elpais.com","eleconomista.es","elconfidencial.com","europapress.es","efe.com"]);
+const TIER_2 = new Set(["elpais.com","elmundo.es","abc.es","lavanguardia.com","larazon.es","20minutos.es","elespanol.com","eldiario.es","publico.es","rtve.es","cadenaser.com","cope.es","ondacero.es","antena3.com","lasexta.com","msn.com","yahoo.com"]);
+const TIER_4 = new Set(["instagram.com","facebook.com","twitter.com","x.com","youtube.com","linkedin.com","tiktok.com","reddit.com","trustpilot.com","forocoches.com","medium.com","quora.com"]);
+function tierOf(domain: string): 1 | 2 | 3 | 4 {
+  const d = domain.toLowerCase().replace(/^www\./, "");
+  if (TIER_1.has(d)) return 1;
+  if (TIER_2.has(d)) return 2;
+  if (TIER_4.has(d) || /(blogspot|wordpress)\./.test(d)) return 4;
+  return 3;
+}
+const TIER_LABEL: Record<number, string> = { 1: "T1 · Regulador / Financiero", 2: "T2 · Generalista", 3: "T3 · Especializado", 4: "T4 · Opinión / Redes" };
+const TIER_COLOR: Record<number, string> = { 1: "#10a37f", 2: "#1a73e8", 3: "#f97316", 4: "#8899a6" };
 
 function bandOf(v: number): "b-green" | "b-blue" | "b-amber" | "b-red" {
   if (v >= 80) return "b-green";
@@ -916,6 +930,7 @@ function buildRankingBody(
   analysisMarkdown: string | null,
   analysisJson: AnalysisJson | null | undefined,
   consensusBatch: Record<string, { consenso: number; level: string }> = {},
+  rankingSources: Array<{ domain: string; models_count: number; companies_count: number; urls_count: number }> = [],
 ): string {
   const rows = dp.ranking ?? [];
   const avg = dp.sector_avg;
@@ -1108,12 +1123,32 @@ function buildRankingBody(
       ${closing}
     </section>`;
 
+  const srcRows = [...(rankingSources ?? [])]
+    .map((s) => ({ ...s, tier: tierOf(s.domain) }))
+    .sort((a, b) => a.tier - b.tier || b.models_count - a.models_count || b.companies_count - a.companies_count);
+  const srcTop = srcRows.slice(0, 30);
+  const fuentesSection = srcTop.length
+    ? `
+      <section class="report-section">
+        <h2>Fuentes por canal</h2>
+        <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">Canales (medios/dominios) que las 6 IAs citan sobre el sector esta semana, ordenados por autoridad (Tier 1 = reguladores y prensa económica) y por cuántas IAs y empresas los referencian. Verificables externamente; se excluyen redirecciones técnicas.</p>
+        <table>
+          <thead><tr><th>Canal</th><th>Tier</th><th style="text-align:right;">IAs</th><th style="text-align:right;">Empresas</th></tr></thead>
+          <tbody>
+            ${srcTop.map((s) => `<tr><td style="font-family:'JetBrains Mono',monospace;font-size:11px;">${escapeHtml(s.domain)}</td><td><span style="color:${TIER_COLOR[s.tier]};font-weight:700;">■</span> ${TIER_LABEL[s.tier]}</td><td style="text-align:right;">${s.models_count}</td><td style="text-align:right;">${s.companies_count}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        ${srcRows.length > 30 ? `<p style="font-size:11px;color:#8899a6;margin-top:8px;">+ ${srcRows.length - 30} canales más, citados con menor frecuencia.</p>` : ""}
+      </section>`
+    : "";
+
   return [
     analysisSection,
     rankingTable,
     avgTable,
     distSection,
     consensoSectorSection,
+    fuentesSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
@@ -1123,7 +1158,7 @@ function buildRankingBody(
 export function buildDeterministicReportHtml(
   input: BuildDeterministicReportInput,
 ): string {
-  const { kind, datapack, analysisMarkdown, analysisJson, consensus, consensusBatch, question } = input;
+  const { kind, datapack, analysisMarkdown, analysisJson, consensus, consensusBatch, question, rankingSources } = input;
 
   let title: string;
   let subtitle = "Informe de Reputación Algorítmica";
@@ -1150,7 +1185,7 @@ export function buildDeterministicReportHtml(
         : "Ranking");
     title = `Ranking del sector: ${scopeLabel}`;
     latestWeek = dp.latest_week;
-    bodyHtml = buildRankingBody(dp, analysisMarkdown, analysisJson, consensusBatch ?? {});
+    bodyHtml = buildRankingBody(dp, analysisMarkdown, analysisJson, consensusBatch ?? {}, rankingSources ?? []);
   }
 
   const metaItems: BrandedReportMetaItem[] = [

@@ -242,6 +242,7 @@ export async function downloadDeterministicReportPdf(
   // 3) Fetch consensus (profile/comparison) — no-op on ranking for now.
   let consensus: ConsensusForPdf[] = [];
   let consensusBatch: Record<string, { consenso: number; level: string }> = {};
+  let rankingSources: Array<{ domain: string; models_count: number; companies_count: number; urls_count: number }> = [];
   try {
     if (kind === "profile") {
       const dp = datapack as ProfileDatapack;
@@ -292,6 +293,18 @@ export async function downloadDeterministicReportPdf(
     /* soft-fail: consensus block will simply not render */
   }
 
+  try {
+    if (kind === "ranking") {
+      const dpr = datapack as RankingDatapack;
+      const srcTks = Array.from(new Set((dpr.ranking ?? []).map((r) => r.tk))).filter(Boolean);
+      if (srcTks.length > 0) {
+        const { data: srcData } = await (supabase.rpc as any)("rix_citations_batch", { p_tickers: srcTks });
+        const items = (srcData as any)?.items;
+        if (Array.isArray(items)) rankingSources = items;
+      }
+    }
+  } catch { /* soft-fail: sin bloque de fuentes */ }
+
   // 4) Build branded HTML.
   const html = buildDeterministicReportHtml({
     kind,
@@ -301,6 +314,7 @@ export async function downloadDeterministicReportPdf(
     consensus,
     consensusBatch,
     question: question ?? null,
+    rankingSources,
   });
 
   // 5) Filename.
