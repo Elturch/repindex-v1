@@ -1060,10 +1060,10 @@ function buildRankingBody(
     }
   }
   const nWith = withData.length;
-  const avgCons = nWith > 0 ? withData.reduce((a, b) => a + b.consenso, 0) / nWith : null;
   const levelCounts: Record<string, number> = { unanime: 0, fuerte: 0, debil: 0, disperso: 0 };
   for (const w of withData) if (w.level in levelCounts) levelCounts[w.level]++;
   const nSinDato = Math.max(0, nEntities - nWith);
+  const robustos = (levelCounts.unanime || 0) + (levelCounts.fuerte || 0);
 
   const levelRow = (lvl: string) => {
     const n = levelCounts[lvl];
@@ -1084,8 +1084,9 @@ function buildRankingBody(
       <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">Coincidencia temática entre los 6 modelos — no es una media de puntuaciones.</p>
       <div class="det-headline">
         <div class="h-l">
-          <div class="h-eyebrow">Consenso medio del sector · ${nWith} de ${nEntities} con dato</div>
-          <div><span class="h-val">${avgCons !== null ? Math.round(avgCons) : "—"}</span><span style="font-size:15px;color:#536471;font-weight:600;margin-left:2px;">${avgCons !== null ? "/100" : ""}</span></div>
+          <div class="h-eyebrow">Empresas con consenso robusto (fuerte o unánime)</div>
+          <div><span class="h-val">${robustos}</span><span style="font-size:15px;color:#536471;font-weight:600;margin-left:2px;">de ${nWith} con dato</span></div>
+          <div style="font-size:12px;color:#536471;margin-top:6px;">${nWith} de ${nEntities} empresas del sector con dato de consenso esta semana</div>
         </div>
       </div>
       <table style="margin-top:12px;">
