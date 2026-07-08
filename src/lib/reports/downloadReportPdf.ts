@@ -212,6 +212,7 @@ export async function downloadDeterministicReportPdf(
 
   // 3) Fetch consensus (profile/comparison) — no-op on ranking for now.
   let consensus: ConsensusForPdf[] = [];
+  let consensusBatch: Record<string, { consenso: number; level: string }> = {};
   try {
     if (kind === "profile") {
       const dp = datapack as ProfileDatapack;
@@ -243,6 +244,20 @@ export async function downloadDeterministicReportPdf(
         }),
       );
       consensus = results;
+    } else if (kind === "ranking") {
+      const dp = datapack as RankingDatapack;
+      const tks = Array.from(
+        new Set([
+          ...((dp.ranking ?? []).map((r) => r.tk)),
+          ...((dp.period ?? []).map((p) => p.tk)),
+        ]),
+      ).filter(Boolean);
+      if (tks.length > 0) {
+        const { data } = await (supabase.rpc as any)("rix_consensus_batch", { p_tickers: tks });
+        if (data && typeof data === "object") {
+          consensusBatch = data as Record<string, { consenso: number; level: string }>;
+        }
+      }
     }
   } catch {
     /* soft-fail: consensus block will simply not render */
@@ -255,6 +270,7 @@ export async function downloadDeterministicReportPdf(
     analysisMarkdown: analysisMarkdown || null,
     analysisJson,
     consensus,
+    consensusBatch,
     question: question ?? null,
   });
 
