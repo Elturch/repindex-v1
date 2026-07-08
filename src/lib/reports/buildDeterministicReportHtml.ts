@@ -1081,7 +1081,7 @@ function buildRankingBody(
   const consensoSectorSection = `
     <section class="report-section">
       <h2>Consenso entre las 6 IAs</h2>
-      <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">Coincidencia temática entre los 6 modelos — no es una media de puntuaciones.</p>
+      <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">El consenso mide la coincidencia TEMÁTICA entre las 6 IAs —cuántos temas comparten al describir cada empresa—, no una media de sus puntuaciones. El reparto y los conteos de abajo son por empresas del sector, no entre IAs.</p>
       <div class="det-headline">
         <div class="h-l">
           <div class="h-eyebrow">Empresas con consenso robusto (fuerte o unánime)</div>
