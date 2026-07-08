@@ -1123,6 +1123,25 @@ function buildRankingBody(
       ${closing}
     </section>`;
 
+  const srcRows = [...(rankingSources ?? [])]
+    .map((s) => ({ ...s, tier: tierOf(s.domain) }))
+    .sort((a, b) => a.tier - b.tier || b.models_count - a.models_count || b.companies_count - a.companies_count);
+  const srcTop = srcRows.slice(0, 30);
+  const fuentesSection = srcTop.length
+    ? `
+      <section class="report-section">
+        <h2>Fuentes por canal</h2>
+        <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">Canales (medios/dominios) que las 6 IAs citan sobre el sector esta semana, ordenados por autoridad (Tier 1 = reguladores y prensa económica) y por cuántas IAs y empresas los referencian. Verificables externamente; se excluyen redirecciones técnicas.</p>
+        <table>
+          <thead><tr><th>Canal</th><th>Tier</th><th style="text-align:right;">IAs</th><th style="text-align:right;">Empresas</th></tr></thead>
+          <tbody>
+            ${srcTop.map((s) => `<tr><td style="font-family:'JetBrains Mono',monospace;font-size:11px;">${escapeHtml(s.domain)}</td><td><span style="color:${TIER_COLOR[s.tier]};font-weight:700;">■</span> ${TIER_LABEL[s.tier]}</td><td style="text-align:right;">${s.models_count}</td><td style="text-align:right;">${s.companies_count}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        ${srcRows.length > 30 ? `<p style="font-size:11px;color:#8899a6;margin-top:8px;">+ ${srcRows.length - 30} canales más, citados con menor frecuencia.</p>` : ""}
+      </section>`
+    : "";
+
   return [
     analysisSection,
     rankingTable,
