@@ -930,6 +930,7 @@ function buildRankingBody(
   analysisMarkdown: string | null,
   analysisJson: AnalysisJson | null | undefined,
   consensusBatch: Record<string, { consenso: number; level: string }> = {},
+  rankingSources: Array<{ domain: string; models_count: number; companies_count: number; urls_count: number }> = [],
 ): string {
   const rows = dp.ranking ?? [];
   const avg = dp.sector_avg;
@@ -1128,6 +1129,7 @@ function buildRankingBody(
     avgTable,
     distSection,
     consensoSectorSection,
+    fuentesSection,
     generateTechnicalSheetHtml(),
   ].join("\n");
 }
