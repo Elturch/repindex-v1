@@ -1082,10 +1082,11 @@ function buildRankingBody(
     <section class="report-section">
       <h2>Consenso entre las 6 IAs</h2>
       <p style="font-size:12px;color:#536471;margin:-4px 0 12px;">Coincidencia temática entre los 6 modelos — no es una media de puntuaciones.</p>
-      <div class="headline-callout">
-        <div class="kpi-label">Consenso medio del sector</div>
-        <div><span class="kpi">${avgCons !== null ? Math.round(avgCons) : "—"}${avgCons !== null ? "/100" : ""}</span></div>
-        <div style="font-size:12px;color:#536471;margin-top:6px;">(${nWith} de ${nEntities} empresas con dato de consenso)</div>
+      <div class="det-headline">
+        <div class="h-l">
+          <div class="h-eyebrow">Consenso medio del sector · ${nWith} de ${nEntities} con dato</div>
+          <div><span class="h-val">${avgCons !== null ? Math.round(avgCons) : "—"}</span><span style="font-size:15px;color:#536471;font-weight:600;margin-left:2px;">${avgCons !== null ? "/100" : ""}</span></div>
+        </div>
       </div>
       <table style="margin-top:12px;">
         <thead>
