@@ -4664,6 +4664,7 @@ export type Database = {
       }
       release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
+      rix_citations_batch: { Args: { p_tickers: string[] }; Returns: Json }
       rix_comparison_datapack: { Args: { p_tickers: string[] }; Returns: Json }
       rix_consensus_batch: { Args: { p_tickers: string[] }; Returns: Json }
       rix_consensus_get: {
