@@ -10,9 +10,11 @@ interface Props {
   tickers?: string[];
   rankingParams?: RankingDatapackParams | null;
   question?: string | null;
+  from?: string | null;
+  to?: string | null;
 }
 
-export function DeterministicPdfButton({ kind, tickers, rankingParams, question }: Props) {
+export function DeterministicPdfButton({ kind, tickers, rankingParams, question, from, to }: Props) {
   const [busy, setBusy] = useState(false);
 
   const onClick = useCallback(async () => {
@@ -40,6 +42,8 @@ export function DeterministicPdfButton({ kind, tickers, rankingParams, question 
         tickers: tickers ?? [],
         rankingParams: rankingParams ?? null,
         question: question ?? null,
+        from: from ?? null,
+        to: to ?? null,
       });
     } catch (err) {
       console.error("[pdf] generation failed", err);
@@ -51,7 +55,7 @@ export function DeterministicPdfButton({ kind, tickers, rankingParams, question 
     } finally {
       setBusy(false);
     }
-  }, [busy, kind, tickers, rankingParams, question]);
+  }, [busy, kind, tickers, rankingParams, question, from, to]);
 
   return (
     <Button
