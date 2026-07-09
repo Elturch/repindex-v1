@@ -654,7 +654,11 @@ function buildProfileBody(
 ): string {
   const { entity, snapshot, sector, permodel, evolution } = dp;
   const citations = dp.citations ?? { total_sources: 0, items: [] };
-  const delta = snapshot.rixc - (snapshot.rixc_prev ?? snapshot.rixc);
+  const isPeriod = dp.mode === "period";
+  const delta =
+    isPeriod && snapshot.rixc_last != null && snapshot.rixc_first != null
+      ? snapshot.rixc_last - snapshot.rixc_first
+      : snapshot.rixc - (snapshot.rixc_prev ?? snapshot.rixc);
 
   const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
@@ -665,7 +669,11 @@ function buildProfileBody(
   const headline = `
     <div class="det-headline">
       <div class="h-l">
-        <div class="h-eyebrow">RIXc · semana ${escapeHtml(fmtWeek(dp.latest_week))}</div>
+        <div class="h-eyebrow">${
+          isPeriod
+            ? `RIXc · período ${escapeHtml(fmtWeek(dp.period_from))} → ${escapeHtml(fmtWeek(dp.period_to))} · ${dp.weeks_count} semanas · media del período`
+            : `RIXc · semana ${escapeHtml(fmtWeek(dp.latest_week))}`
+        }</div>
         <div>
           <span class="h-val">${fmtNum(snapshot.rixc, 1)}</span>
           <span class="h-delta ${deltaClass(delta)}">${fmtDelta(delta)}</span>
