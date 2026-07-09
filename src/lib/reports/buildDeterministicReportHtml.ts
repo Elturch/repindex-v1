@@ -1190,6 +1190,9 @@ export function buildDeterministicReportHtml(
     const dp = datapack as ProfileDatapack;
     title = dp.entity.name;
     latestWeek = dp.latest_week;
+    if (dp.mode === "period") {
+      periodMetaLabel = `Período: ${dp.period_from} → ${dp.period_to} · ${dp.weeks_count} semanas · media del período`;
+    }
     bodyHtml = buildProfileBody(dp, analysisMarkdown, analysisJson, consensus);
   } else if (kind === "comparison") {
     const dp = datapack as ComparisonDatapack;
