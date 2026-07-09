@@ -155,7 +155,7 @@ export async function downloadDeterministicReportPdf(
     if (cleanTickers.length === 0) throw new Error("No tickers provided");
     const { data, error } = await (supabase.rpc as any)(
       "rix_profile_datapack",
-      { p_ticker: cleanTickers[0] },
+      { p_ticker: cleanTickers[0], p_from: input.from ?? null, p_to: input.to ?? null },
     );
     if (error) throw error;
     datapack = data as ProfileDatapack;

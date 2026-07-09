@@ -39,6 +39,8 @@ import { METRIC_GLOSSARY } from "@/lib/reports/metricGlossary";
 
 interface Props {
   ticker: string;
+  from?: string | null;
+  to?: string | null;
 }
 
 const MODEL_LABEL: Record<string, string> = {
@@ -109,8 +111,8 @@ function fmtWeek(w: string): string {
   }
 }
 
-export function ProfileReport({ ticker }: Props) {
-  const { data, isLoading, isError, error } = useProfileDatapack(ticker);
+export function ProfileReport({ ticker, from, to }: Props) {
+  const { data, isLoading, isError, error } = useProfileDatapack(ticker, from ?? null, to ?? null);
 
   if (isLoading) {
     return (
@@ -142,7 +144,11 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
   const citations = data.citations ?? { total_sources: 0, items: [] };
   const recommendations = useMemo(() => buildProfileRecommendations(data), [data]);
 
-  const delta = snapshot.rixc - (snapshot.rixc_prev ?? snapshot.rixc);
+  const isPeriod = data.mode === "period";
+  const delta =
+    isPeriod && snapshot.rixc_last != null && snapshot.rixc_first != null
+      ? snapshot.rixc_last - snapshot.rixc_first
+      : snapshot.rixc - (snapshot.rixc_prev ?? snapshot.rixc);
   const isUp = delta > 0.05;
   const isDown = delta < -0.05;
 
@@ -176,7 +182,15 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
                 <p className="text-sm text-muted-foreground mt-1">{sectorContext}</p>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                Semana de referencia: <strong>{fmtWeek(latest_week)}</strong> · 6 modelos de IA
+                {isPeriod ? (
+                  <>
+                    Período: <strong>{fmtWeek(data.period_from)} → {fmtWeek(data.period_to)}</strong> · {data.weeks_count} semanas · media del período · 6 modelos de IA
+                  </>
+                ) : (
+                  <>
+                    Semana de referencia: <strong>{fmtWeek(latest_week)}</strong> · 6 modelos de IA
+                  </>
+                )}
               </p>
             </div>
             <Badge
@@ -202,7 +216,9 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
           <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] items-center">
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground">
-                RIXc {fmtWeek(latest_week)}
+                {isPeriod
+                  ? `RIXc ${fmtWeek(data.period_from)} → ${fmtWeek(data.period_to)}`
+                  : `RIXc ${fmtWeek(latest_week)}`}
               </div>
               <div className="flex items-baseline gap-3 mt-1">
                 <div className="text-5xl font-bold tabular-nums">{fmtNum(snapshot.rixc)}</div>
@@ -218,6 +234,9 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
                   {fmtDelta(delta)}
                 </div>
               </div>
+              {isPeriod && (
+                <div className="mt-1 text-[11px] text-muted-foreground">media del período</div>
+              )}
               <div className="mt-2 text-xs text-muted-foreground">
                 Rango entre modelos: <span className="font-mono">{fmtNum(snapshot.rix_min)}–{fmtNum(snapshot.rix_max)}</span>
               </div>
@@ -324,7 +343,9 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Evolución del RIXc</CardTitle>
-          <p className="text-xs text-muted-foreground">Serie semanal.</p>
+          <p className="text-xs text-muted-foreground">
+            {isPeriod ? `Serie del período (${data.weeks_count} semanas).` : "Serie semanal."}
+          </p>
         </CardHeader>
         <CardContent className="pt-0 h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
