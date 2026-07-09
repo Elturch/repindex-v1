@@ -97,6 +97,8 @@ export interface DownloadDeterministicInput {
   tickers?: string[];
   rankingParams?: RankingDatapackParams | null;
   question?: string | null;
+  from?: string | null;
+  to?: string | null;
 }
 
 function analysisCacheKey(
@@ -163,7 +165,7 @@ export async function downloadDeterministicReportPdf(
     const sorted = [...cleanTickers].sort();
     const { data, error } = await (supabase.rpc as any)(
       "rix_comparison_datapack",
-      { p_tickers: sorted },
+      { p_tickers: sorted, p_from: input.from ?? null, p_to: input.to ?? null },
     );
     if (error) throw error;
     datapack = data as ComparisonDatapack;
