@@ -1176,6 +1176,7 @@ export function buildDeterministicReportHtml(
   let subtitle = "Informe de Reputación Algorítmica";
   let bodyHtml: string;
   let latestWeek: string;
+  let periodMetaLabel: string | null = null;
 
   if (kind === "profile") {
     const dp = datapack as ProfileDatapack;
@@ -1186,6 +1187,9 @@ export function buildDeterministicReportHtml(
     const dp = datapack as ComparisonDatapack;
     title = `Comparativa: ${dp.entities.map((e) => e.name).join(" · ")}`;
     latestWeek = dp.latest_week;
+    if (dp.mode === "period") {
+      periodMetaLabel = `Período: ${dp.period_from} → ${dp.period_to} · ${dp.weeks_count} semanas · media del período`;
+    }
     bodyHtml = buildComparisonBody(dp, analysisMarkdown, analysisJson, consensus);
   } else {
     const dp = datapack as RankingDatapack;
@@ -1201,7 +1205,7 @@ export function buildDeterministicReportHtml(
   }
 
   const metaItems: BrandedReportMetaItem[] = [
-    { iconHtml: IC_CAL, label: `Semana: ${latestWeek}` },
+    { iconHtml: IC_CAL, label: periodMetaLabel ?? `Semana: ${latestWeek}` },
     { iconHtml: IC_BOT, label: "6 modelos de IA" },
     { iconHtml: IC_CHECK, label: "Datos deterministas · sin IA generativa" },
   ];
