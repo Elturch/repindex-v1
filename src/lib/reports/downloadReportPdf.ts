@@ -105,9 +105,11 @@ function analysisCacheKey(
   kind: "profile" | "comparison" | "ranking",
   tickers: string[],
   week: string,
+  from?: string | null,
+  to?: string | null,
 ): string {
   const sorted = [...tickers].sort().join("-");
-  return `repindex.analysis.${kind}.${sorted}.${week}.v2`;
+  return `repindex.analysis.${kind}.${sorted}.${week}.${from ?? "_"}.${to ?? "_"}.v2`;
 }
 
 function sanitizeSegment(s: string): string {
@@ -217,8 +219,19 @@ export async function downloadDeterministicReportPdf(
     analysisKey = `repindex.analysis.ranking.${JSON.stringify(expertScope)}.${week}.v2`;
     analysisBody = { type: "ranking", scope: expertScope };
   } else {
-    analysisKey = analysisCacheKey(kind, cleanTickers, week);
-    analysisBody = { type: kind, tickers: cleanTickers };
+    analysisKey = analysisCacheKey(
+      kind,
+      cleanTickers,
+      week,
+      input.from ?? null,
+      input.to ?? null,
+    );
+    analysisBody = {
+      type: kind,
+      tickers: cleanTickers,
+      from: input.from ?? null,
+      to: input.to ?? null,
+    };
   }
 
   try { if (analysisKey) readCache(analysisKey); } catch { /* ignore */ }
