@@ -12,6 +12,8 @@ export interface ProfileEntity {
 export interface ProfileSnapshot {
   rixc: number;
   rixc_prev: number | null;
+  rixc_first: number | null;
+  rixc_last: number | null;
   rix_min: number;
   rix_max: number;
   num_citas: number | null;
@@ -65,6 +67,10 @@ export interface ProfileCitations {
 export interface ProfileDatapack {
   latest_week: string;
   prev_week: string;
+  mode: "snapshot" | "period";
+  period_from: string;
+  period_to: string;
+  weeks_count: number;
   entity: ProfileEntity;
   snapshot: ProfileSnapshot;
   sector: ProfileSector;
@@ -73,15 +79,19 @@ export interface ProfileDatapack {
   citations: ProfileCitations;
 }
 
-export function useProfileDatapack(ticker: string) {
+export function useProfileDatapack(ticker: string, from?: string | null, to?: string | null) {
   const t = (ticker ?? "").trim();
+  const fromKey = from ?? null;
+  const toKey = to ?? null;
   return useQuery<ProfileDatapack>({
-    queryKey: ["rix_profile_datapack", t],
+    queryKey: ["rix_profile_datapack", t, fromKey, toKey],
     enabled: t.length > 0,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await (supabase.rpc as any)("rix_profile_datapack", {
         p_ticker: t,
+        p_from: fromKey,
+        p_to: toKey,
       });
       if (error) throw error;
       return data as ProfileDatapack;
