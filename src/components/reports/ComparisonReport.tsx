@@ -667,9 +667,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
               <p className="text-sm leading-relaxed">
                 Ocupa la posición <strong>#{idx + 1}</strong> de {ranked.length} en la cesta.{" "}
                 {trend === "sube"
-                  ? `Sube ${fmtDelta(delta)} respecto a la semana anterior.`
+                  ? `Sube ${fmtDelta(delta)} ${isPeriod ? "en el período" : "respecto a la semana anterior"}.`
                   : trend === "baja"
-                    ? `Cae ${fmtDelta(delta)} respecto a la semana anterior.`
+                    ? `Cae ${fmtDelta(delta)} ${isPeriod ? "en el período" : "respecto a la semana anterior"}.`
                     : `Se mantiene estable (${fmtDelta(delta)}).`}{" "}
                 Divergencia entre modelos de <span className="font-mono">{fmtNum(row.rix_max - row.rix_min)}</span> puntos.
                 {best && (
