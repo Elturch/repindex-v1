@@ -329,7 +329,15 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                 {entities.map((e) => e.name).join(" · ")}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Semana de referencia: <strong>{fmtWeek(latest_week)}</strong> · 6 modelos de IA
+                {isPeriod ? (
+                  <>
+                    Período: <strong>{fmtWeek(period_from)} → {fmtWeek(period_to)}</strong> · {weeks_count} semanas · media del período · 6 modelos de IA
+                  </>
+                ) : (
+                  <>
+                    Semana de referencia: <strong>{fmtWeek(latest_week)}</strong> · 6 modelos de IA
+                  </>
+                )}
               </p>
             </div>
             <Badge
@@ -364,7 +372,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
       {/* Scoreboard */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {ranked.map((r, idx) => {
-          const delta = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+          const delta = periodDeltaOf(r);
           const isUp = delta > 0.05;
           const isDown = delta < -0.05;
           const color = colorByTk.get(r.tk) ?? "hsl(var(--primary))";
@@ -382,6 +390,11 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                   </div>
                   <div className="text-right">
                     <div className="text-3xl font-bold tabular-nums">{fmtNum(r.rixc)}</div>
+                    {isPeriod && (
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">
+                        media del período
+                      </div>
+                    )}
                     <div
                       className={cn(
                         "text-xs font-medium flex items-center gap-1 justify-end mt-1",
@@ -409,7 +422,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Ranking y movimiento</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Comparación con {fmtWeek(prev_week)}.
+            {isPeriod
+              ? "Cambio del período (inicio → fin)."
+              : `Comparación con ${fmtWeek(prev_week)}.`}
           </p>
         </CardHeader>
         <CardContent className="pt-0">
@@ -419,19 +434,20 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                 <TableHead>Posición</TableHead>
                 <TableHead>Empresa</TableHead>
                 <TableHead className="text-right">RIXc</TableHead>
-                <TableHead className="text-right">Semana anterior</TableHead>
+                <TableHead className="text-right">{isPeriod ? "Inicio período" : "Semana anterior"}</TableHead>
                 <TableHead className="text-right">Δ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {ranked.map((r, idx) => {
-                const delta = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+                const delta = periodDeltaOf(r);
+                const prevVal = isPeriod ? r.rixc_first : r.rixc_prev;
                 return (
                   <TableRow key={r.tk}>
                     <TableCell className="font-medium">#{idx + 1} {medal(idx)}</TableCell>
                     <TableCell>{r.name}</TableCell>
                     <TableCell className="text-right font-mono">{fmtNum(r.rixc)}</TableCell>
-                    <TableCell className="text-right font-mono text-muted-foreground">{fmtNum(r.rixc_prev)}</TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">{fmtNum(prevVal)}</TableCell>
                     <TableCell
                       className={cn(
                         "text-right font-mono font-semibold",
@@ -454,7 +470,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Evolución del RIXc</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Serie semanal (≈13 semanas) por empresa.
+            {isPeriod
+              ? `Serie semanal del período (${weeks_count} semanas).`
+              : "Serie semanal (≈13 semanas) por empresa."}
           </p>
         </CardHeader>
         <CardContent className="pt-0 h-[360px]">
@@ -471,7 +489,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                   } catch { return v; }
                 }}
               />
-              <YAxis domain={[45, 75]} tick={{ fontSize: 11 }} />
+              <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11 }} />
               <Tooltip
                 contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", fontSize: 12 }}
                 labelFormatter={(v) => fmtWeek(String(v))}
