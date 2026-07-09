@@ -34,6 +34,8 @@ import { METRIC_GLOSSARY } from "@/lib/reports/metricGlossary";
 
 interface Props {
   tickers: string[];
+  from?: string | null;
+  to?: string | null;
 }
 
 // Deterministic palette (aligned with the app's semantic tokens for lines).
@@ -117,8 +119,8 @@ function medal(pos: number): string {
   return pos === 0 ? "🥇" : pos === 1 ? "🥈" : pos === 2 ? "🥉" : "";
 }
 
-export function ComparisonReport({ tickers }: Props) {
-  const { data, isLoading, isError, error } = useComparisonDatapack(tickers);
+export function ComparisonReport({ tickers, from, to }: Props) {
+  const { data, isLoading, isError, error } = useComparisonDatapack(tickers, from, to);
 
   if (isLoading) {
     return (
@@ -147,6 +149,11 @@ export function ComparisonReport({ tickers }: Props) {
 
 function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   const { latest_week, prev_week, entities, snapshot, permodel, evolution } = data;
+  const mode = data.mode ?? "snapshot";
+  const period_from = data.period_from ?? latest_week;
+  const period_to = data.period_to ?? latest_week;
+  const weeks_count = data.weeks_count ?? 1;
+  const isPeriod = mode === "period";
   const citations = data.citations ?? [];
   const recommendations = useMemo(() => buildRecommendations(data), [data]);
 
@@ -155,6 +162,16 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
     () => [...snapshot].sort((a, b) => (b.rixc ?? 0) - (a.rixc ?? 0)),
     [snapshot],
   );
+  // Unified delta: in period mode compare first↔last of the range;
+  // in snapshot mode fall back to week-over-week (rixc_prev).
+  const periodDeltaOf = (r: ComparisonSnapshotRow): number => {
+    if (isPeriod) {
+      const last = r.rixc_last ?? r.rixc ?? 0;
+      const first = r.rixc_first ?? r.rixc ?? 0;
+      return last - first;
+    }
+    return (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+  };
   const colorByTk = useMemo(() => {
     const map = new Map<string, string>();
     entities.forEach((e, i) => map.set(e.ticker, LINE_COLORS[i % LINE_COLORS.length]));
@@ -167,27 +184,28 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
     return map;
   }, [entities, snapshot]);
 
-  // Verdict (deterministic).
   const verdict = useMemo(() => {
     if (ranked.length === 0) return "";
     const leader = ranked[0];
     const deltas = ranked
-      .map((r) => ({ tk: r.tk, name: r.name, delta: (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0) }))
+      .map((r) => ({ tk: r.tk, name: r.name, delta: periodDeltaOf(r) }))
       .filter((d) => Number.isFinite(d.delta));
     const up = [...deltas].sort((a, b) => b.delta - a.delta)[0];
     const down = [...deltas].sort((a, b) => a.delta - b.delta)[0];
     const parts: string[] = [];
     parts.push(`${leader.name} lidera la cesta con un RIXc de ${fmtNum(leader.rixc)}.`);
+    const scopeUp = isPeriod ? "en el período" : "en la semana";
+    const scopeDown = isPeriod ? "en el período" : "";
     if (up && up.delta > 0.05 && up.tk !== leader.tk) {
-      parts.push(`${up.name} es quien más sube en la semana (${fmtDelta(up.delta)}).`);
+      parts.push(`${up.name} es quien más sube ${scopeUp} (${fmtDelta(up.delta)}).`);
     } else if (up && up.delta > 0.05) {
-      parts.push(`Además, marca la mayor subida semanal (${fmtDelta(up.delta)}).`);
+      parts.push(`Además, marca la mayor subida ${scopeUp} (${fmtDelta(up.delta)}).`);
     }
     if (down && down.delta < -0.05) {
-      parts.push(`${down.name} registra el mayor retroceso (${fmtDelta(down.delta)}).`);
+      parts.push(`${down.name} registra el mayor retroceso${scopeDown ? " " + scopeDown : ""} (${fmtDelta(down.delta)}).`);
     }
     return parts.join(" ");
-  }, [ranked]);
+  }, [ranked, isPeriod]);
 
   // Evolution chart data — pivot to {week, [tk]: rixc}.
   const evoChartData = useMemo(() => {
@@ -268,7 +286,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   // Per-company reading (deterministic template).
   const readings = useMemo(() => {
     return ranked.map((r, idx) => {
-      const delta = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+      const delta = periodDeltaOf(r);
       const trend =
         delta > 0.5 ? "sube" : delta < -0.5 ? "baja" : "se mantiene estable";
       // Relative bests/worsts across the basket (excluding DRM).
@@ -295,7 +313,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
       }
       return { row: r, idx, delta, trend, best, worst };
     });
-  }, [ranked, snapshot]);
+  }, [ranked, snapshot, isPeriod]);
 
   return (
     <div className="space-y-6">
