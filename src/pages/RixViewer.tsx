@@ -801,6 +801,16 @@ export default function RixViewer() {
                     kind={isProfileActive ? "profile" : "comparison"}
                     tickers={activeReport?.filters?.tickers?.value ?? []}
                     question={activeReport?.question ?? null}
+                    from={
+                      !isProfileActive && activeReport?.filters?.window?.origin === "user-set"
+                        ? activeReport.filters.window.value.from
+                        : null
+                    }
+                    to={
+                      !isProfileActive && activeReport?.filters?.window?.origin === "user-set"
+                        ? activeReport.filters.window.value.to
+                        : null
+                    }
                   />
                 )
               ) : (
