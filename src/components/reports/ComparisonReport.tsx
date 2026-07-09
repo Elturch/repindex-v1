@@ -144,10 +144,18 @@ export function ComparisonReport({ tickers, from, to }: Props) {
     );
   }
 
-  return <ComparisonReportBody data={data} />;
+  return <ComparisonReportBody data={data} from={from ?? null} to={to ?? null} />;
 }
 
-function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
+function ComparisonReportBody({
+  data,
+  from,
+  to,
+}: {
+  data: ComparisonDatapack;
+  from?: string | null;
+  to?: string | null;
+}) {
   const { latest_week, prev_week, entities, snapshot, permodel, evolution } = data;
   const mode = data.mode ?? "snapshot";
   const period_from = data.period_from ?? latest_week;
@@ -355,6 +363,8 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         type="comparison"
         tickers={entities.map((e) => e.ticker)}
         week={latest_week}
+        from={from ?? null}
+        to={to ?? null}
       />
 
       {/* Verdict */}

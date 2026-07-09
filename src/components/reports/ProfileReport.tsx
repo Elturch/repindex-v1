@@ -136,10 +136,18 @@ export function ProfileReport({ ticker, from, to }: Props) {
     );
   }
 
-  return <ProfileReportBody data={data} />;
+  return <ProfileReportBody data={data} from={from ?? null} to={to ?? null} />;
 }
 
-function ProfileReportBody({ data }: { data: ProfileDatapack }) {
+function ProfileReportBody({
+  data,
+  from,
+  to,
+}: {
+  data: ProfileDatapack;
+  from?: string | null;
+  to?: string | null;
+}) {
   const { latest_week, entity, snapshot, sector, permodel, evolution } = data;
   const citations = data.citations ?? { total_sources: 0, items: [] };
   const recommendations = useMemo(() => buildProfileRecommendations(data), [data]);
@@ -208,6 +216,8 @@ function ProfileReportBody({ data }: { data: ProfileDatapack }) {
         type="profile"
         tickers={[entity.ticker]}
         week={latest_week}
+        from={from ?? null}
+        to={to ?? null}
       />
 
       {/* Headline card */}

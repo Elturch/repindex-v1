@@ -4,15 +4,23 @@ import type { AnalysisJson } from "@/components/reports/ExpertAnalysisView";
 
 type AnalysisType = "profile" | "comparison";
 
-function cacheKey(type: AnalysisType, tickers: string[], week: string) {
+function cacheKey(
+  type: AnalysisType,
+  tickers: string[],
+  week: string,
+  from?: string | null,
+  to?: string | null,
+) {
   const sorted = [...tickers].sort().join("-");
-  return `repindex.analysis.${type}.${sorted}.${week}.v2`;
+  return `repindex.analysis.${type}.${sorted}.${week}.${from ?? "_"}.${to ?? "_"}.v2`;
 }
 
 export function useReportAnalysis(
   type: AnalysisType,
   tickers: string[],
   week: string,
+  from?: string | null,
+  to?: string | null,
 ) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analysisJson, setAnalysisJson] = useState<AnalysisJson | null>(null);
@@ -20,7 +28,8 @@ export function useReportAnalysis(
   const [isError, setIsError] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
-  const key = week && tickers.length > 0 ? cacheKey(type, tickers, week) : null;
+  const key =
+    week && tickers.length > 0 ? cacheKey(type, tickers, week, from, to) : null;
 
   useEffect(() => {
     if (!key) return;
@@ -59,7 +68,7 @@ export function useReportAnalysis(
       try {
         const { data, error } = await supabase.functions.invoke(
           "report-analysis",
-          { body: { type, tickers } },
+          { body: { type, tickers, from: from ?? null, to: to ?? null } },
         );
         if (cancelled) return;
         if (error) throw error;
