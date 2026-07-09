@@ -11,6 +11,8 @@ export interface ComparisonSnapshotRow {
   name: string;
   rixc: number;
   rixc_prev: number | null;
+  rixc_first: number | null;
+  rixc_last: number | null;
   rix_min: number;
   rix_max: number;
   nvm: number | null;
@@ -52,6 +54,10 @@ export interface ComparisonCitations {
 export interface ComparisonDatapack {
   latest_week: string;
   prev_week: string;
+  mode: "snapshot" | "period";
+  period_from: string;
+  period_to: string;
+  weeks_count: number;
   entities: ComparisonEntity[];
   snapshot: ComparisonSnapshotRow[];
   permodel: ComparisonPerModelRow[];
@@ -59,15 +65,23 @@ export interface ComparisonDatapack {
   citations: ComparisonCitations[];
 }
 
-export function useComparisonDatapack(tickers: string[]) {
+export function useComparisonDatapack(
+  tickers: string[],
+  from?: string | null,
+  to?: string | null,
+) {
   const normalized = [...(tickers ?? [])].filter(Boolean).map((t) => t.trim()).sort();
+  const fromKey = from ?? null;
+  const toKey = to ?? null;
   return useQuery<ComparisonDatapack>({
-    queryKey: ["rix_comparison_datapack", normalized],
+    queryKey: ["rix_comparison_datapack", normalized, fromKey, toKey],
     enabled: normalized.length >= 2,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await (supabase.rpc as any)("rix_comparison_datapack", {
         p_tickers: normalized,
+        p_from: fromKey,
+        p_to: toKey,
       });
       if (error) throw error;
       return data as ComparisonDatapack;

@@ -883,6 +883,8 @@ export default function RixViewer() {
                     <ReportQuestionBlock question={activeReport.question} />
                     <ComparisonReport
                       tickers={activeReport.filters.tickers.value}
+                      from={activeReport.filters.window.value.from}
+                      to={activeReport.filters.window.value.to}
                     />
                   </div>
                 ) : isProfileActive && activeReport ? (

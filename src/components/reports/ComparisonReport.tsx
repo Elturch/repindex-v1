@@ -34,6 +34,8 @@ import { METRIC_GLOSSARY } from "@/lib/reports/metricGlossary";
 
 interface Props {
   tickers: string[];
+  from?: string | null;
+  to?: string | null;
 }
 
 // Deterministic palette (aligned with the app's semantic tokens for lines).
@@ -117,8 +119,8 @@ function medal(pos: number): string {
   return pos === 0 ? "🥇" : pos === 1 ? "🥈" : pos === 2 ? "🥉" : "";
 }
 
-export function ComparisonReport({ tickers }: Props) {
-  const { data, isLoading, isError, error } = useComparisonDatapack(tickers);
+export function ComparisonReport({ tickers, from, to }: Props) {
+  const { data, isLoading, isError, error } = useComparisonDatapack(tickers, from, to);
 
   if (isLoading) {
     return (
@@ -147,6 +149,11 @@ export function ComparisonReport({ tickers }: Props) {
 
 function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   const { latest_week, prev_week, entities, snapshot, permodel, evolution } = data;
+  const mode = data.mode ?? "snapshot";
+  const period_from = data.period_from ?? latest_week;
+  const period_to = data.period_to ?? latest_week;
+  const weeks_count = data.weeks_count ?? 1;
+  const isPeriod = mode === "period";
   const citations = data.citations ?? [];
   const recommendations = useMemo(() => buildRecommendations(data), [data]);
 
@@ -155,6 +162,16 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
     () => [...snapshot].sort((a, b) => (b.rixc ?? 0) - (a.rixc ?? 0)),
     [snapshot],
   );
+  // Unified delta: in period mode compare first↔last of the range;
+  // in snapshot mode fall back to week-over-week (rixc_prev).
+  const periodDeltaOf = (r: ComparisonSnapshotRow): number => {
+    if (isPeriod) {
+      const last = r.rixc_last ?? r.rixc ?? 0;
+      const first = r.rixc_first ?? r.rixc ?? 0;
+      return last - first;
+    }
+    return (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+  };
   const colorByTk = useMemo(() => {
     const map = new Map<string, string>();
     entities.forEach((e, i) => map.set(e.ticker, LINE_COLORS[i % LINE_COLORS.length]));
@@ -167,27 +184,28 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
     return map;
   }, [entities, snapshot]);
 
-  // Verdict (deterministic).
   const verdict = useMemo(() => {
     if (ranked.length === 0) return "";
     const leader = ranked[0];
     const deltas = ranked
-      .map((r) => ({ tk: r.tk, name: r.name, delta: (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0) }))
+      .map((r) => ({ tk: r.tk, name: r.name, delta: periodDeltaOf(r) }))
       .filter((d) => Number.isFinite(d.delta));
     const up = [...deltas].sort((a, b) => b.delta - a.delta)[0];
     const down = [...deltas].sort((a, b) => a.delta - b.delta)[0];
     const parts: string[] = [];
     parts.push(`${leader.name} lidera la cesta con un RIXc de ${fmtNum(leader.rixc)}.`);
+    const scopeUp = isPeriod ? "en el período" : "en la semana";
+    const scopeDown = isPeriod ? "en el período" : "";
     if (up && up.delta > 0.05 && up.tk !== leader.tk) {
-      parts.push(`${up.name} es quien más sube en la semana (${fmtDelta(up.delta)}).`);
+      parts.push(`${up.name} es quien más sube ${scopeUp} (${fmtDelta(up.delta)}).`);
     } else if (up && up.delta > 0.05) {
-      parts.push(`Además, marca la mayor subida semanal (${fmtDelta(up.delta)}).`);
+      parts.push(`Además, marca la mayor subida ${scopeUp} (${fmtDelta(up.delta)}).`);
     }
     if (down && down.delta < -0.05) {
-      parts.push(`${down.name} registra el mayor retroceso (${fmtDelta(down.delta)}).`);
+      parts.push(`${down.name} registra el mayor retroceso${scopeDown ? " " + scopeDown : ""} (${fmtDelta(down.delta)}).`);
     }
     return parts.join(" ");
-  }, [ranked]);
+  }, [ranked, isPeriod]);
 
   // Evolution chart data — pivot to {week, [tk]: rixc}.
   const evoChartData = useMemo(() => {
@@ -268,7 +286,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
   // Per-company reading (deterministic template).
   const readings = useMemo(() => {
     return ranked.map((r, idx) => {
-      const delta = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+      const delta = periodDeltaOf(r);
       const trend =
         delta > 0.5 ? "sube" : delta < -0.5 ? "baja" : "se mantiene estable";
       // Relative bests/worsts across the basket (excluding DRM).
@@ -295,7 +313,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
       }
       return { row: r, idx, delta, trend, best, worst };
     });
-  }, [ranked, snapshot]);
+  }, [ranked, snapshot, isPeriod]);
 
   return (
     <div className="space-y-6">
@@ -311,7 +329,15 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                 {entities.map((e) => e.name).join(" · ")}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Semana de referencia: <strong>{fmtWeek(latest_week)}</strong> · 6 modelos de IA
+                {isPeriod ? (
+                  <>
+                    Período: <strong>{fmtWeek(period_from)} → {fmtWeek(period_to)}</strong> · {weeks_count} semanas · media del período · 6 modelos de IA
+                  </>
+                ) : (
+                  <>
+                    Semana de referencia: <strong>{fmtWeek(latest_week)}</strong> · 6 modelos de IA
+                  </>
+                )}
               </p>
             </div>
             <Badge
@@ -346,7 +372,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
       {/* Scoreboard */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {ranked.map((r, idx) => {
-          const delta = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+          const delta = periodDeltaOf(r);
           const isUp = delta > 0.05;
           const isDown = delta < -0.05;
           const color = colorByTk.get(r.tk) ?? "hsl(var(--primary))";
@@ -364,6 +390,11 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                   </div>
                   <div className="text-right">
                     <div className="text-3xl font-bold tabular-nums">{fmtNum(r.rixc)}</div>
+                    {isPeriod && (
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">
+                        media del período
+                      </div>
+                    )}
                     <div
                       className={cn(
                         "text-xs font-medium flex items-center gap-1 justify-end mt-1",
@@ -391,7 +422,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Ranking y movimiento</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Comparación con {fmtWeek(prev_week)}.
+            {isPeriod
+              ? "Cambio del período (inicio → fin)."
+              : `Comparación con ${fmtWeek(prev_week)}.`}
           </p>
         </CardHeader>
         <CardContent className="pt-0">
@@ -401,19 +434,20 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                 <TableHead>Posición</TableHead>
                 <TableHead>Empresa</TableHead>
                 <TableHead className="text-right">RIXc</TableHead>
-                <TableHead className="text-right">Semana anterior</TableHead>
+                <TableHead className="text-right">{isPeriod ? "Inicio período" : "Semana anterior"}</TableHead>
                 <TableHead className="text-right">Δ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {ranked.map((r, idx) => {
-                const delta = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+                const delta = periodDeltaOf(r);
+                const prevVal = isPeriod ? r.rixc_first : r.rixc_prev;
                 return (
                   <TableRow key={r.tk}>
                     <TableCell className="font-medium">#{idx + 1} {medal(idx)}</TableCell>
                     <TableCell>{r.name}</TableCell>
                     <TableCell className="text-right font-mono">{fmtNum(r.rixc)}</TableCell>
-                    <TableCell className="text-right font-mono text-muted-foreground">{fmtNum(r.rixc_prev)}</TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">{fmtNum(prevVal)}</TableCell>
                     <TableCell
                       className={cn(
                         "text-right font-mono font-semibold",
@@ -436,7 +470,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Evolución del RIXc</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Serie semanal (≈13 semanas) por empresa.
+            {isPeriod
+              ? `Serie semanal del período (${weeks_count} semanas).`
+              : "Serie semanal (≈13 semanas) por empresa."}
           </p>
         </CardHeader>
         <CardContent className="pt-0 h-[360px]">
@@ -453,7 +489,7 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
                   } catch { return v; }
                 }}
               />
-              <YAxis domain={[45, 75]} tick={{ fontSize: 11 }} />
+              <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11 }} />
               <Tooltip
                 contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", fontSize: 12 }}
                 labelFormatter={(v) => fmtWeek(String(v))}
@@ -631,9 +667,9 @@ function ComparisonReportBody({ data }: { data: ComparisonDatapack }) {
               <p className="text-sm leading-relaxed">
                 Ocupa la posición <strong>#{idx + 1}</strong> de {ranked.length} en la cesta.{" "}
                 {trend === "sube"
-                  ? `Sube ${fmtDelta(delta)} respecto a la semana anterior.`
+                  ? `Sube ${fmtDelta(delta)} ${isPeriod ? "en el período" : "respecto a la semana anterior"}.`
                   : trend === "baja"
-                    ? `Cae ${fmtDelta(delta)} respecto a la semana anterior.`
+                    ? `Cae ${fmtDelta(delta)} ${isPeriod ? "en el período" : "respecto a la semana anterior"}.`
                     : `Se mantiene estable (${fmtDelta(delta)}).`}{" "}
                 Divergencia entre modelos de <span className="font-mono">{fmtNum(row.rix_max - row.rix_min)}</span> puntos.
                 {best && (
