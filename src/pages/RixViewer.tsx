@@ -902,6 +902,8 @@ export default function RixViewer() {
                     <ReportQuestionBlock question={activeReport.question} />
                     <ProfileReport
                       ticker={activeReport.filters.tickers.value[0]}
+                      from={activeReport.filters.window.origin === "user-set" ? activeReport.filters.window.value.from : null}
+                      to={activeReport.filters.window.origin === "user-set" ? activeReport.filters.window.value.to : null}
                     />
                   </div>
                 ) : isRankingActive && activeReport && rankingParams ? (
