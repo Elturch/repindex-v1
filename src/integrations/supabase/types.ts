@@ -4675,7 +4675,10 @@ export type Database = {
         Returns: Json
       }
       rix_consensus_series: { Args: { p_ticker: string }; Returns: Json }
-      rix_profile_datapack: { Args: { p_ticker: string }; Returns: Json }
+      rix_profile_datapack: {
+        Args: { p_from?: string; p_ticker: string; p_to?: string }
+        Returns: Json
+      }
       rix_qualitative_signals: { Args: { p_tickers: string[] }; Returns: Json }
       rix_ranking_datapack: {
         Args: {
