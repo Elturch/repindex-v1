@@ -749,10 +749,22 @@ function buildComparisonBody(
 
   const analysisSection = buildExpertSection(analysisJson, analysisMarkdown);
 
+  const isPeriod = dp.mode === "period";
+  const deltaOf = (r: (typeof ranked)[number]): number => {
+    if (isPeriod && r.rixc_last != null && r.rixc_first != null) {
+      return r.rixc_last - r.rixc_first;
+    }
+    return (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+  };
+  const deltaLabel = isPeriod ? "Δ período" : "Δ semana";
+  const rankingHeading = isPeriod
+    ? `Marcador del período · media ${escapeHtml(dp.period_from)} → ${escapeHtml(dp.period_to)} (${dp.weeks_count} semanas)`
+    : "Marcador semanal";
+
   // Ranking table
   const rankingRows = ranked
     .map((r, i) => {
-      const d = (r.rixc ?? 0) - (r.rixc_prev ?? r.rixc ?? 0);
+      const d = deltaOf(r);
       return `<tr>
         <td style="text-align:center;font-weight:700;color:#1a73e8;">#${i + 1}</td>
         <td><strong>${escapeHtml(r.name)}</strong> <span style="color:#8899a6;">${escapeHtml(r.tk)}</span></td>
@@ -765,14 +777,14 @@ function buildComparisonBody(
     .join("");
   const rankingTable = `
     <section class="report-section">
-      <h2>Marcador semanal</h2>
+      <h2>${rankingHeading}</h2>
       <table>
         <thead>
           <tr>
             <th style="text-align:center;">Posición</th>
             <th>Empresa</th>
             <th style="text-align:right;">RIXc</th>
-            <th style="text-align:right;">Δ semana</th>
+            <th style="text-align:right;">${deltaLabel}</th>
           </tr>
         </thead>
         <tbody>${rankingRows}</tbody>
