@@ -8,13 +8,17 @@ interface ExpertAnalysisProps {
   type: "profile" | "comparison";
   tickers: string[];
   week: string;
+  from?: string | null;
+  to?: string | null;
 }
 
-export function ExpertAnalysis({ type, tickers, week }: ExpertAnalysisProps) {
+export function ExpertAnalysis({ type, tickers, week, from, to }: ExpertAnalysisProps) {
   const { analysis, analysisJson, isLoading, isError, retry } = useReportAnalysis(
     type,
     tickers,
     week,
+    from ?? null,
+    to ?? null,
   );
 
   return (
