@@ -413,7 +413,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 3. DeepSeek - ✅ Ahora con RAG via Tavily Search API
   // DeepSeek + Tavily = Búsqueda web real + análisis profundo
   {
-    name: 'deepseek-chat',
+    name: 'deepseek-v4-flash',
     displayName: 'Deepseek',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     endpoint: 'https://api.deepseek.com/chat/completions',
@@ -427,7 +427,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         'Content-Type': 'application/json',
       },
       body: {
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [
           { role: 'system', content: `Eres analista de reputación corporativa con ACCESO A BÚSQUEDA WEB REAL.
 TIENES ACCESO A FUENTES WEB REALES proporcionadas por Tavily Search API.
@@ -586,7 +586,7 @@ Markdown. Español España.` },
 const MODEL_COST_MAP: Record<string, { provider: string; model: string }> = {
   'perplexity-sonar-pro': { provider: 'perplexity', model: 'sonar-pro' },
   'grok-3': { provider: 'xai', model: 'grok-3' },
-  'deepseek-chat': { provider: 'deepseek', model: 'deepseek-chat' },
+  'deepseek-v4-flash': { provider: 'deepseek', model: 'deepseek-v4-flash' },
   'gemini-2.5-pro': { provider: 'gemini', model: 'gemini-2.5-pro-preview-05-06' },
   'gpt-4.1-mini': { provider: 'openai', model: 'gpt-4.1-mini' },
   'qwen-max': { provider: 'alibaba', model: 'qwen-max' },
