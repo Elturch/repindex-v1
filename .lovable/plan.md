@@ -1,33 +1,31 @@
-# Diagnóstico: ¿está vivo `chat-intelligence-v2` en el front?
+# Auditoría de conexión con las 6 IAs (antes del barrido)
 
-Sin cambios de código. Solo grep + rutas.
+## Qué ya está verificado (solo lectura, sin tocar nada)
 
-## 1. Invocaciones desde `src/`
-- `src/contexts/ChatContext.tsx:981` — resuelve el nombre con `getEdgeFunctionName(effectiveAgentVersion)` y hace el streaming al edge (`chat-intelligence` o `chat-intelligence-v2` según toggle).
-- `src/contexts/ChatContext.tsx:1607` — `invokeWithTimeout('chat-intelligence', { action: 'enrich', ... })` para el enriquecimiento por rol.
-- `src/lib/agentVersion.ts:171-173` — mapea `v2` → `'chat-intelligence-v2'`, resto → `'chat-intelligence'`.
-- `src/components/chat/AgentVersionToggle.tsx` — switch preview-only v1/v2.
+**Las 6 claves API están presentes** en los secretos del proyecto.
 
-## 2. Montaje en la app
-- `src/App.tsx:11-12` y `:104` — `FloatingChat` está **comentado** ("oculto por solicitud del usuario"). El widget flotante NO se renderiza.
-- `src/App.tsx:9,56,105` — `<ChatProvider>` sigue envolviendo toda la app.
-- `src/App.tsx:18,77` — la ruta **`/chat`** sigue montada: `<Route path="/chat" element={<ChatIntelligence />} />`.
-- `src/pages/ChatIntelligence.tsx:14,38` — usa `useChatContext()` → dispara el flujo v1/v2.
+| IA | Modelo configurado | Variable de clave | Clave |
+|---|---|---|---|
+| ChatGPT | `gpt-4.1-mini` (endpoint `/v1/responses`) | `OPENAI_API_KEY` | presente |
+| Perplexity | `perplexity-sonar-pro` | `PERPLEXITY_API_KEY` | presente (gestionada por conector) |
+| Gemini | `gemini-2.5-pro` | `GOOGLE_GEMINI_API_KEY` | presente |
+| Grok | `grok-4-1-fast` (endpoint `/v1/responses`) | `XAI_API_KEY` | presente |
+| DeepSeek | `deepseek-v4-flash` (cambiado hoy) | `DEEPSEEK_API_KEY` | presente |
+| Qwen | `qwen-max` (DashScope intl) | `DASHSCOPE_API_KEY` | presente |
 
-## 3. Informes que ve el usuario hoy
-Van por hooks + renderers, sin pasar por el chat:
-- Hooks: `src/hooks/useComparisonDatapack.ts`, `useProfileDatapack.ts`, `useRankingDatapack.ts` → RPC `rix_*_datapack`.
-- Renderers: `src/components/reports/ComparisonReport.tsx`, `ProfileReport.tsx`, `RankingReport.tsx`.
-- PDF: `src/lib/reports/downloadReportPdf.ts` + `buildDeterministicReportHtml.ts`.
-- Ninguno invoca `chat-intelligence*`.
+**Últimos 3 barridos (12, 19 y 26 de julio):** 185 registros por modelo y semana, ninguna respuesta vacía, un único error puntual en Qwen el 12-jul. Tiempos medios: ChatGPT ~13s, Grok ~35s, Gemini ~54s, Perplexity ~65s, DeepSeek ~73s, Qwen ~85-114s. Qwen es el más lento y el que corre más riesgo de timeout.
 
-## Veredicto
-`chat-intelligence-v2` **NO es código muerto**. Está vivo y accesible en la ruta pública `/chat` (página `ChatIntelligence` + `ChatProvider`). Lo único desactivado es el `FloatingChat` flotante. Los informes (perfil/comparativa/ranking) están totalmente desacoplados del chat.
+**Riesgo principal:** el cambio de `deepseek-chat` → `deepseek-v4-flash` se aplicó hoy en el código y **nunca se ha ejecutado contra la API real**. Si el identificador no fuese exacto, DeepSeek devolvería error en las 185 empresas del barrido de mañana. Es el único cambio del pipeline sin probar.
 
-## Qué haría falta si MAT quiere "matar" el chat de verdad
-1. Quitar `<Route path="/chat" ...>` y el import de `ChatIntelligence` en `src/App.tsx`.
-2. (Opcional) retirar `<ChatProvider>` y el import.
-3. (Opcional) borrar `src/pages/ChatIntelligence.tsx`, `src/contexts/ChatContext.tsx`, `src/components/chat/*`, `src/lib/agentVersion.ts` y hooks asociados si no los usa nadie más.
-4. (Opcional server) desplegar `chat-intelligence` / `chat-intelligence-v2` con guard o eliminarlas.
+## Lo que propongo hacer (todo lectura, sin escribir en base de datos)
 
-No he tocado nada. Espero indicación.
+1. **Ping real a los 6 proveedores** desde el sandbox: una petición mínima por API (prompt de una palabra, respuesta muy corta) con el mismo endpoint, cabeceras y formato de cuerpo que construye `rix-search-v2`. Confirma de golpe clave válida, identificador de modelo aceptado, endpoint vivo y ausencia de límite de cuota. Coste despreciable.
+2. **Confirmar que la versión desplegada de `rix-search-v2` ya lleva `deepseek-v4-flash`**, y no solo el repositorio.
+3. **Revisar cola y CRON del barrido** (`seed-sweep-queue`, `rix-batch-orchestrator`, watchdog) para verificar que la ejecución de mañana está programada y que no quedan triggers atascados de la semana pasada.
+4. **Informe final** con semáforo por IA (verde / aviso / rojo), el error literal si alguna falla y la acción concreta recomendada antes del barrido.
+
+## Detalle técnico
+
+- Los pings se lanzan con `curl` leyendo variables de entorno; no se imprime ningún valor de clave.
+- Cuerpos replicados de `buildRequest` en `supabase/functions/rix-search-v2/index.ts`: OpenAI y xAI con Responses API, Gemini con `generateContent`, DeepSeek y Perplexity con chat/completions, Qwen con formato DashScope.
+- No se ejecuta ningún barrido, no se inserta nada en `rix_runs_v2` y no se tocan prompts ni pesos (metodología v1 congelada).
