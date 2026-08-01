@@ -1578,6 +1578,48 @@ export type Database = {
           },
         ]
       }
+      model_health_checks: {
+        Row: {
+          checked_at: string
+          created_at: string
+          display_name: string | null
+          endpoint: string | null
+          error_excerpt: string | null
+          http_status: number | null
+          id: number
+          latency_ms: number | null
+          model_string: string | null
+          provider: string | null
+          status: string | null
+        }
+        Insert: {
+          checked_at?: string
+          created_at?: string
+          display_name?: string | null
+          endpoint?: string | null
+          error_excerpt?: string | null
+          http_status?: number | null
+          id?: never
+          latency_ms?: number | null
+          model_string?: string | null
+          provider?: string | null
+          status?: string | null
+        }
+        Update: {
+          checked_at?: string
+          created_at?: string
+          display_name?: string | null
+          endpoint?: string | null
+          error_excerpt?: string | null
+          http_status?: number | null
+          id?: never
+          latency_ms?: number | null
+          model_string?: string | null
+          provider?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
       monitor_reputacional_events: {
         Row: {
           categoria_tema: string
@@ -4596,6 +4638,7 @@ export type Database = {
         Args: { p_ttl_seconds?: number }
         Returns: number
       }
+      enforce_sweep_completeness: { Args: { p_week?: string }; Returns: Json }
       execute_sql: { Args: { sql_query: string }; Returns: Json }
       expand_entity_graph: {
         Args: { p_depth?: number; p_ticker: string }
@@ -4675,6 +4718,23 @@ export type Database = {
         Returns: Json
       }
       rix_consensus_series: { Args: { p_ticker: string }; Returns: Json }
+      rix_incomplete_cells: {
+        Args: { p_week: string }
+        Returns: {
+          has_bruto: boolean
+          id: string
+          model_name: string
+          ticker: string
+        }[]
+      }
+      rix_model_completeness: {
+        Args: { p_week: string }
+        Returns: {
+          model_name: string
+          scored: number
+          total: number
+        }[]
+      }
       rix_profile_datapack: {
         Args: { p_from?: string; p_ticker: string; p_to?: string }
         Returns: Json
