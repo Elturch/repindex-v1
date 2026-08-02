@@ -33,7 +33,7 @@ FORMATO DE SALIDA: Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin markdown,
   "titular": "2-3 frases contundentes con el veredicto, la cifra clave incluida",
   "esencial": [ {"etiqueta":"3-5 palabras","texto":"1 frase con su cifra","tono":"verde|ambar|rojo|azul"} ],  // 3-5 items (posición, tendencia, mayor fortaleza, mayor riesgo)
   "que_pasa": [ "párrafo corto 1", "párrafo corto 2" ],  // 2-4 párrafos que conectan RIXc/posición/tendencia con los hechos concretos de key_points
-  "metricas": [ {"code":"NVM","valor":<número EXACTO del datapack o null>,"contexto":"opcional p.ej. vs media","texto":"en 1 frase qué mide y qué implica para el negocio"} ],  // por cada métrica relevante esta semana; usa SOLO los códigos NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM; valores EXACTOS del datapack; CXM valor null si N/A
+  "metricas": [ {"code":"NVM","valor":<número EXACTO del datapack o null>,"contexto":"opcional p.ej. vs media","texto":"en 1 frase qué mide y qué implica para el negocio"} ],  // por cada métrica relevante esta semana; usa SOLO los códigos NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM; valores EXACTOS del datapack; CXM valor null si N/A. 'metricas' contiene EXCLUSIVAMENTE las 8 métricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM). NUNCA incluyas RIXc como ítem de 'metricas': RIXc es el índice compuesto, no una métrica — cítalo en el titular y en 'esencial', pero JAMÁS dentro del array 'metricas'.
   "riesgos": [ "1 frase cada uno, de flags/eventos negativos" ],
   "oportunidades": [ "1 frase cada una, palancas concretas" ],
   "recomendaciones": [ {"accion":"imperativo, 1 línea","porque":"la cifra o hecho que la justifica"} ]  // 3-5, priorizadas
@@ -238,6 +238,15 @@ serve(async (req) => {
     } catch (parseErr) {
       console.error("[report-analysis] JSON parse failed, returning raw text fallback:", parseErr instanceof Error ? parseErr.message : String(parseErr));
       analysisJson = null;
+    }
+
+    // Salvaguarda anti-RIXc: RIXc es el indice compuesto, nunca una de las 8 metricas.
+    // Filtra del array metricas cualquier item cuyo code sea RIX/RIXC antes de devolver { analysis_json }.
+    if (analysisJson && Array.isArray(analysisJson.metricas)) {
+      analysisJson.metricas = analysisJson.metricas.filter((m: any) => {
+        const c = String(m?.code ?? "").toUpperCase().replace(/\s+/g, "");
+        return c !== "RIX" && c !== "RIXC";
+      });
     }
 
     if (analysisJson && typeof analysisJson === "object") {
