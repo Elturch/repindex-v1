@@ -489,21 +489,15 @@ export default function RixViewer() {
 
   const handleRegenerateDeterministic = useCallback(async () => {
     if (!activeReport || !isDeterministicActive) return;
-    const tickers = activeReport.filters?.tickers?.value ?? [];
     const kind: "profile" | "comparison" | "ranking" = isProfileActive
       ? "profile"
       : isComparativeActive
         ? "comparison"
         : "ranking";
-    const sorted =
-      tickers.length > 0
-        ? [...tickers].sort().join("-")
-        : JSON.stringify({
-            s: activeReport.filters.sector.value,
-            ss: activeReport.filters.subsector.value,
-            u: activeReport.filters.universe.value,
-          });
-    const prefix = `repindex.analysis.${kind}.${sorted}.`;
+    // El "scope" que forma parte de la clave difiere entre informes (ranking usa
+    // un objeto de 8 campos). Limpiamos por tipo de informe, sin intentar
+    // reconstruir el scope exacto: así nunca falla el borrado de caché.
+    const prefix = `repindex.analysis.${kind}.`;
 
     setIsRefreshingDet(true);
     try {
@@ -522,6 +516,9 @@ export default function RixViewer() {
         queryClient.invalidateQueries({ queryKey: ["rix_profile_datapack"] }),
         queryClient.invalidateQueries({ queryKey: ["rix_comparison_datapack"] }),
         queryClient.invalidateQueries({ queryKey: ["rix_ranking_datapack"] }),
+        queryClient.invalidateQueries({ queryKey: ["rix-consensus"] }),
+        queryClient.invalidateQueries({ queryKey: ["rix-consensus-series"] }),
+        queryClient.invalidateQueries({ queryKey: ["rix-consensus-batch"] }),
       ]);
 
       setRefreshNonce((n) => n + 1);
