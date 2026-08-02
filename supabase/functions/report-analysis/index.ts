@@ -27,21 +27,18 @@ Reglas innegociables (anti-invención):
 - Ninguna recomendación genérica: cada una debe nacer de un dato concreto del informe.
 - Si es una COMPARATIVA, analiza también las diferencias entre entidades: quién gana/pierde en qué y por qué.
 - IDENTIDAD DE MÉTRICAS: las 8 métricas y sus significados canónicos (definidos arriba) son la identidad de RepIndex. Úsalos SIEMPRE con exactitud y NUNCA inventes una métrica, su nombre, su significado, su peso ni un valor. Un solo error en una métrica hace flaquear toda la herramienta: ante la duda, cíñete literalmente a la definición canónica dada.
-- FORMATO DE SALIDA: Eres un documento, NO un asistente. PROHIBIDO cualquier preámbulo, saludo, presentación o frase de cortesía: nada de 'Claro, aquí tienes…', 'A continuación…', 'Aquí está el análisis…', 'Basado en los datos proporcionados…', ni referencias a 'el CEO' o al lector. La respuesta debe EMPEZAR DIRECTAMENTE con la línea '## Titular ejecutivo' y contener ÚNICAMENTE el documento con sus epígrafes. No te dirijas al lector ni hables de ti mismo en ningún momento.
 
-Estructura (Markdown, con estos epígrafes EXACTOS). Debe leerse rápido y entenderse a la primera: frases CORTAS, viñetas y cifras clave en **negrita**. Prohibidos los párrafos largos y densos.
-## Titular ejecutivo
-2–3 frases contundentes con el veredicto que se recuerda; la cifra clave en negrita.
-## Lo esencial en 20 segundos
-3–5 viñetas con lo más importante (posición, tendencia, mayor fortaleza, mayor riesgo), 1 frase cada una con su cifra en **negrita**.
-## Qué está pasando y por qué
-Frases cortas. Conecta RIXc, posición y tendencia con los hechos concretos de key_points. Explica cada dato en lenguaje simple.
-## Lectura por métrica (didáctica)
-Viñetas: por cada métrica relevante esta semana → **CÓDIGO (nombre canónico): valor** — y en UNA frase qué significa y qué implica para el negocio (didáctico, para quien no es experto).
-## Riesgos y oportunidades
-Dos bloques de viñetas: **Riesgos** (de los flags y eventos negativos) y **Oportunidades** (palancas). 1 frase cada una.
-## Recomendaciones priorizadas
-Lista numerada de 3–5. Cada una: **Acción** en imperativo (1 línea) + el porqué (la cifra o el hecho que la justifica).
+FORMATO DE SALIDA: Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin markdown, sin \`\`\`). Nada de preámbulos. El objeto DEBE tener EXACTAMENTE esta forma:
+{
+  "titular": "2-3 frases contundentes con el veredicto, la cifra clave incluida",
+  "esencial": [ {"etiqueta":"3-5 palabras","texto":"1 frase con su cifra","tono":"verde|ambar|rojo|azul"} ],  // 3-5 items (posición, tendencia, mayor fortaleza, mayor riesgo)
+  "que_pasa": [ "párrafo corto 1", "párrafo corto 2" ],  // 2-4 párrafos que conectan RIXc/posición/tendencia con los hechos concretos de key_points
+  "metricas": [ {"code":"NVM","valor":<número EXACTO del datapack o null>,"contexto":"opcional p.ej. vs media","texto":"en 1 frase qué mide y qué implica para el negocio"} ],  // por cada métrica relevante esta semana; usa SOLO los códigos NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM; valores EXACTOS del datapack; CXM valor null si N/A
+  "riesgos": [ "1 frase cada uno, de flags/eventos negativos" ],
+  "oportunidades": [ "1 frase cada una, palancas concretas" ],
+  "recomendaciones": [ {"accion":"imperativo, 1 línea","porque":"la cifra o hecho que la justifica"} ]  // 3-5, priorizadas
+}
+Cada campo con el mismo rigor y profundidad de las reglas anteriores. PROHIBIDO inventar cifras/empresas/eventos que no estén en los datos. Si es comparativa, en "que_pasa" analiza quién gana/pierde en qué y por qué.
 
 Tono: experto, claro, directo y DIDÁCTICO — como un consultor de primer nivel explicándoselo a un CEO sin tiempo. Cero relleno, cero jerga innecesaria. Pirámide invertida: lo más importante, primero.`;
 
@@ -57,46 +54,118 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } },
-    );
+    const token = authHeader.replace("Bearer ", "");
+    const isServiceRole = token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const isAnonKey = token === Deno.env.get("SUPABASE_ANON_KEY");
+    const isInternalKey = isServiceRole || isAnonKey;
 
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!isInternalKey) {
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
-    const body = await req.json().catch(() => ({}));
-    const type = body?.type as "profile" | "comparison" | undefined;
-    const tickers = Array.isArray(body?.tickers) ? (body.tickers as string[]) : [];
+    const db = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
 
-    if (!type || (type !== "profile" && type !== "comparison") || tickers.length === 0) {
+    const body = await req.json().catch(() => ({}));
+    const type = body?.type as "profile" | "comparison" | "ranking" | undefined;
+    const tickers = Array.isArray(body?.tickers) ? (body.tickers as string[]) : [];
+    const from = body?.from ?? null;
+    const to = body?.to ?? null;
+    const scope = body?.scope ?? null;
+
+    if (type !== "profile" && type !== "comparison" && type !== "ranking") {
       return new Response(
-        JSON.stringify({ error: "Invalid body: expected { type: 'profile'|'comparison', tickers: string[] }" }),
+        JSON.stringify({ error: "Invalid body: expected type profile|comparison|ranking" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    let datapack: unknown = null;
+    let datapack: any = null;
+    let modelDatapack: any = null;
     if (type === "profile") {
-      const { data, error } = await supabase.rpc("rix_profile_datapack", { p_ticker: tickers[0] });
+      if (tickers.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "Invalid body: profile requires { tickers: string[] }" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const { data, error } = await db.rpc("rix_profile_datapack", { p_ticker: tickers[0], p_from: from, p_to: to });
       if (error) throw new Error(`rix_profile_datapack: ${error.message}`);
       datapack = data;
-    } else {
-      const { data, error } = await supabase.rpc("rix_comparison_datapack", { p_tickers: tickers });
+    } else if (type === "comparison") {
+      if (tickers.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "Invalid body: comparison requires { tickers: string[] }" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const { data, error } = await db.rpc("rix_comparison_datapack", { p_tickers: tickers, p_from: from, p_to: to });
       if (error) throw new Error(`rix_comparison_datapack: ${error.message}`);
       datapack = data;
+    } else {
+      const { data, error } = await db.rpc("rix_ranking_datapack", {
+        p_sector: scope?.sector ?? null,
+        p_subsector: scope?.subsector ?? null,
+        p_universe: (Array.isArray(scope?.universe) && scope.universe.filter(Boolean).length ? scope.universe.filter(Boolean) : null),
+        p_tickers: (Array.isArray(scope?.tickers) && scope.tickers.filter(Boolean).length ? scope.tickers.filter(Boolean) : null),
+        p_from: scope?.from ?? null,
+        p_to: scope?.to ?? null,
+        p_models: (Array.isArray(scope?.models) && scope.models.filter(Boolean).length ? scope.models.filter(Boolean) : null),
+        p_order_by: scope?.orderBy ?? "rixc",
+        p_limit: scope?.limit ?? null,
+      });
+      if (error) throw new Error(`rix_ranking_datapack: ${error.message}`);
+      datapack = data;
+
+      const slim = {
+        scope: datapack?.scope ?? null,
+        window: datapack?.window ?? null,
+        latest_week: datapack?.latest_week ?? null,
+        prev_week: datapack?.prev_week ?? null,
+        order_by: datapack?.order_by ?? null,
+        ranking: Array.isArray(datapack?.ranking) ? datapack.ranking : [],
+        sector_avg: datapack?.sector_avg ?? null,
+        distribution: datapack?.distribution ?? null,
+      };
+      modelDatapack = slim;
     }
 
-    const { data: signals, error: sigErr } = await supabase.rpc("rix_qualitative_signals", { p_tickers: tickers });
-    if (sigErr) throw new Error(`rix_qualitative_signals: ${sigErr.message}`);
+    const tickersForSignals: string[] = type === "ranking"
+      ? (Array.isArray(datapack?.ranking) ? datapack.ranking.slice(0, 10).map((r: any) => r.tk) : [])
+      : tickers;
 
-    const userMessage = `Tipo de informe: ${type}.\n\nDATOS DETERMINISTAS (datapack):\n${JSON.stringify(datapack)}\n\nSEÑALES CUALITATIVAS (lo que dijo cada uno de los 6 modelos):\n${JSON.stringify(signals)}\n\nRedacta el análisis siguiendo tus reglas y epígrafes.`;
+    let signals: any = null;
+    if (tickersForSignals.length > 0) {
+      const { data: sigData, error: sigErr } = await db.rpc("rix_qualitative_signals", { p_tickers: tickersForSignals });
+      if (!sigErr) {
+        signals = sigData;
+      } else {
+        console.error(`[report-analysis] rix_qualitative_signals (best-effort): ${sigErr.message}`);
+      }
+    }
+
+    const effFrom = type === "ranking" ? (scope?.from ?? null) : from;
+    const effTo = type === "ranking" ? (scope?.to ?? null) : to;
+    const windowLine = (effFrom && effTo)
+      ? `\n\nVENTANA TEMPORAL: período ${effFrom} → ${effTo}. Las cifras del datapack son MEDIA DEL PERÍODO. NO hables de 'esta semana'.`
+      : "";
+
+    const payloadForModel = type === "ranking" ? modelDatapack : datapack;
+    const userMessage = `Tipo de informe: ${type}.${windowLine}\n\nDATOS DETERMINISTAS (datapack):\n${JSON.stringify(payloadForModel)}\n\nSEÑALES CUALITATIVAS (lo que dijo cada uno de los 6 modelos):\n${JSON.stringify(signals)}\n\nDevuelve el análisis como un ÚNICO objeto JSON estructurado, siguiendo EXACTAMENTE tus reglas de FORMATO DE SALIDA.`;
 
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
     if (!lovableKey) {
@@ -115,7 +184,8 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model,
-          temperature: 0.3,
+          temperature: 0.2,
+          response_format: { type: "json_object" },
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: userMessage },
@@ -124,12 +194,14 @@ serve(async (req) => {
       });
     };
 
-    let aiResp = await callModel("google/gemini-2.5-pro");
+    const primaryModel = "google/gemini-2.5-pro";
+    const fallbackModel = "google/gemini-2.5-flash";
+    let aiResp = await callModel(primaryModel);
     if (!aiResp.ok) {
       const errText = await aiResp.text();
-      console.error(`[report-analysis] gemini-2.5-pro failed: ${aiResp.status} ${errText}`);
+      console.error(`[report-analysis] ${primaryModel} failed: ${aiResp.status} ${errText}`);
       if (aiResp.status === 429 || aiResp.status === 402 || aiResp.status >= 500) {
-        aiResp = await callModel("google/gemini-2.5-flash");
+        aiResp = await callModel(fallbackModel);
       }
     }
 
@@ -142,16 +214,40 @@ serve(async (req) => {
     }
 
     const aiJson = await aiResp.json();
-    const analysis: string = aiJson?.choices?.[0]?.message?.content ?? "";
+    const raw: string = aiJson?.choices?.[0]?.message?.content ?? "";
 
-    if (!analysis) {
+    if (!raw) {
       return new Response(JSON.stringify({ error: "Empty analysis from model" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify({ analysis }), {
+    // Parse the model output as a structured JSON object.
+    // Strip ``` fences if present, then extract from the first { to the last }.
+    let analysisJson: any = null;
+    try {
+      let cleaned = raw.trim();
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```[a-zA-Z]*\s*/, "").replace(/\s*```$/, "").trim();
+      }
+      const first = cleaned.indexOf("{");
+      const last = cleaned.lastIndexOf("}");
+      const jsonStr = (first !== -1 && last !== -1 && last > first) ? cleaned.slice(first, last + 1) : cleaned;
+      analysisJson = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      console.error("[report-analysis] JSON parse failed, returning raw text fallback:", parseErr instanceof Error ? parseErr.message : String(parseErr));
+      analysisJson = null;
+    }
+
+    if (analysisJson && typeof analysisJson === "object") {
+      return new Response(JSON.stringify({ analysis_json: analysisJson }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Fallback: return the raw text so the front can still render markdown and never break.
+    return new Response(JSON.stringify({ analysis: raw }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
