@@ -8,81 +8,58 @@ import type { ConsensusData, ConsensusSeriesPoint } from "@/hooks/useConsensus";
 import type { ConsensusForPdf } from "./buildDeterministicReportHtml";
 
 /**
- * Render the branded HTML with the browser's native print engine (real layout
- * engine → perfect CSS, selectable text, tiny file). We mount an off-screen
- * iframe, write the standalone branded HTML, wait for web fonts, then open the
- * print dialog. The user chooses "Guardar como PDF".
+ * Render the branded HTML off-screen in the MAIN document (html2pdf clones the
+ * node into the main document, so iframe styles would be lost) and export it
+ * directly as a PDF download — no print dialog.
  */
 export async function downloadReportPdf(
   html: string,
   filename: string,
 ): Promise<void> {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.position = "fixed";
-  iframe.style.left = "-99999px";
-  iframe.style.top = "0";
-  iframe.style.width = "900px";
-  iframe.style.height = "1200px";
-  iframe.style.border = "0";
-  document.body.appendChild(iframe);
+  const styles = Array.from(html.matchAll(/<style[\s\S]*?<\/style>/gi)).map((m) => m[0]);
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyHtml = bodyMatch ? bodyMatch[1] : html;
 
-  const doc = iframe.contentDocument;
-  if (!doc) {
-    iframe.remove();
-    throw new Error("iframe document unavailable");
-  }
-  doc.open();
-  doc.write(html);
-  doc.close();
-
-  // Wait for load + web fonts (they affect layout/measurement).
-  await waitForFramePaint(iframe);
-
-  const win = iframe.contentWindow;
-  if (!win) {
-    iframe.remove();
-    throw new Error("iframe window unavailable");
+  const fontLinks: HTMLLinkElement[] = [];
+  for (const m of html.matchAll(/<link[^>]+href="([^"]*fonts\.googleapis\.com[^"]*)"[^>]*>/gi)) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = m[1];
+    document.head.appendChild(link);
+    fontLinks.push(link);
   }
 
-  // Default filename for "Save as PDF" = document title.
+  const container = document.createElement("div");
+  container.setAttribute("aria-hidden", "true");
+  container.style.cssText =
+    "position:fixed; left:-99999px; top:0; width:800px; background:#ffffff;";
+  container.innerHTML = styles.join("") + bodyHtml;
+  document.body.appendChild(container);
+
   try {
-    doc.title = filename.replace(/\.pdf$/i, "");
-  } catch {
-    /* ignore */
-  }
-
-  let done = false;
-  const cleanup = () => {
-    if (done) return;
-    done = true;
-    setTimeout(() => iframe.remove(), 500);
-  };
-  win.addEventListener("afterprint", cleanup, { once: true });
-  setTimeout(cleanup, 120000); // fallback
-
-  win.focus();
-  win.print();
-}
-
-async function waitForFramePaint(iframe: HTMLIFrameElement): Promise<void> {
-  // Wait for load + fonts + one animation frame so layout is stable.
-  await new Promise<void>((resolve) => {
-    if (iframe.contentDocument?.readyState === "complete") {
-      resolve();
-      return;
+    try {
+      if ((document as any).fonts?.ready) await (document as any).fonts.ready;
+    } catch {
+      /* ignore */
     }
-    iframe.addEventListener("load", () => resolve(), { once: true });
-    // Fallback: don't hang forever.
-    setTimeout(() => resolve(), 1500);
-  });
-  try {
-    const fonts = (iframe.contentDocument as any)?.fonts;
-    if (fonts?.ready) await fonts.ready;
-  } catch {
-    /* ignore */
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+
+    const html2pdf = (await import("html2pdf.js")).default as any;
+    await html2pdf()
+      .set({
+        margin: [10, 10, 10, 10],
+        filename,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: 800 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
+      })
+      .from(container)
+      .save();
+  } finally {
+    container.remove();
+    fontLinks.forEach((l) => l.remove());
   }
-  await new Promise((r) => requestAnimationFrame(() => r(null)));
 }
 
 // ---------------------------------------------------------------------------
