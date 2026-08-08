@@ -4707,6 +4707,13 @@ export type Database = {
       }
       release_expired_sweep_locks: { Args: never; Returns: number }
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
+      rix_absent_issuers: {
+        Args: { p_week?: string }
+        Returns: {
+          issuer_name: string
+          ticker: string
+        }[]
+      }
       rix_citations_batch: { Args: { p_tickers: string[] }; Returns: Json }
       rix_comparison_datapack: {
         Args: { p_from?: string; p_tickers: string[]; p_to?: string }

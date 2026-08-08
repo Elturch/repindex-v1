@@ -29,6 +29,23 @@ Deno.serve(async (req) => {
     await supabase.from("model_health_checks").insert({ provider: "_sweep", display_name: "COMPLETENESS", model_string: String(week), status: remaining === 0 ? "complete" : "incomplete", http_status: remaining });
   } catch (e) { console.error("[report] insert", e); }
 
+  // BLINDAJE: n.o de emisores que estuvieron AUSENTES (0 filas) y fueron reparados esta
+  // semana por sweep-absent-repair. Lectura defensiva; si falla, NO rompe el email.
+  let absentLine = "";
+  try {
+    const { data: ar } = await supabase.from("model_health_checks")
+      .select("http_status,status,checked_at")
+      .eq("provider", "_sweep").eq("display_name", "ABSENT_REPAIR").eq("model_string", String(week))
+      .order("checked_at", { ascending: false }).limit(1);
+    const arRow = (ar ?? [])[0] as Record<string, unknown> | undefined;
+    if (arRow) {
+      const n = Number(arRow.http_status ?? 0);
+      absentLine = n > 0
+        ? `<p style="background:#fff8e6;border:1px solid #f0d69a;padding:8px;border-radius:6px">🛡️ Emisores <b>ausentes</b> detectados y reparados esta semana: <b>${n}</b> <span style="color:#666">(${esc(String(arRow.status ?? ""))})</span>.</p>`
+        : `<p style="font-size:13px;color:#666">🛡️ Blindaje de ausencias: 0 emisores ausentes esta semana.</p>`;
+    }
+  } catch (e) { console.error("[report] absent-repair line", e); }
+
   const rows = (sum ?? []).map((m: Record<string, unknown>) => {
     const gap = Number(m.total) - Number(m.scored);
     return `<tr><td>${gap === 0 ? "✅" : "⚠️"} ${esc(String(m.model_name))}</td><td>${m.scored}/${m.total}</td></tr>`;
@@ -42,7 +59,7 @@ Deno.serve(async (req) => {
     ? `✅ RepIndex — barrido ${week} COMPLETO (${scored}/${total})`
     : `⚠️ RepIndex — barrido ${week} INCOMPLETO: faltan ${remaining} (${scored}/${total})`;
   const html = `<div style="font-family:system-ui,Arial,sans-serif;color:#111"><h2>Completitud del barrido &middot; ${esc(String(week))}</h2>` +
-    `<p><b>${scored}/${total}</b> celdas puntuadas (6 modelos × empresas).</p>${stuck}` +
+    `<p><b>${scored}/${total}</b> celdas puntuadas (6 modelos × empresas).</p>${absentLine}${stuck}` +
     `<table cellpadding="6" border="1" style="border-collapse:collapse;font-size:14px"><tr><th>Modelo</th><th>Puntuadas</th></tr>${rows}</table></div>`;
 
   let emailed = false;
