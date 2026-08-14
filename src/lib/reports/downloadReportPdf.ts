@@ -8,57 +8,100 @@ import type { ConsensusData, ConsensusSeriesPoint } from "@/hooks/useConsensus";
 import type { ConsensusForPdf } from "./buildDeterministicReportHtml";
 
 /**
- * Render the branded HTML off-screen in the MAIN document (html2pdf clones the
- * node into the main document, so iframe styles would be lost) and export it
- * directly as a PDF download — no print dialog.
+ * Render the branded, self-contained report HTML inside an off-screen — but
+ * fully laid-out — <iframe>, rasterise it with html2canvas and paginate it
+ * into an A4 PDF with jsPDF. Downloads directly (no print dialog).
+ *
+ * Why an iframe (not a <div> + html2pdf.js): the report is a standalone
+ * document whose core layout lives in `body { … }` / `@page` rules. Writing the
+ * full HTML into an iframe document makes those rules apply exactly as authored.
+ * The previous implementation injected the body into a `position:fixed` <div>
+ * and handed it to html2pdf.js, which measures any out-of-flow element as
+ * height 0 → blank canvas → blank PDF.
  */
 export async function downloadReportPdf(
   html: string,
   filename: string,
 ): Promise<void> {
-  const styles = Array.from(html.matchAll(/<style[\s\S]*?<\/style>/gi)).map((m) => m[0]);
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  const bodyHtml = bodyMatch ? bodyMatch[1] : html;
-
-  const fontLinks: HTMLLinkElement[] = [];
-  for (const m of html.matchAll(/<link[^>]+href="([^"]*fonts\.googleapis\.com[^"]*)"[^>]*>/gi)) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = m[1];
-    document.head.appendChild(link);
-    fontLinks.push(link);
-  }
-
-  const container = document.createElement("div");
-  container.setAttribute("aria-hidden", "true");
-  container.style.cssText =
-    "position:fixed; left:-99999px; top:0; width:800px; background:#ffffff;";
-  container.innerHTML = styles.join("") + bodyHtml;
-  document.body.appendChild(container);
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  // Off-screen but with REAL dimensions and renderable (never display:none or
+  // left:-99999px, which break rasterisation).
+  iframe.style.cssText =
+    "position:fixed; left:0; top:0; width:820px; height:1160px; opacity:0; pointer-events:none; z-index:-9999; border:0; background:#ffffff;";
+  document.body.appendChild(iframe);
 
   try {
+    const doc = iframe.contentDocument;
+    if (!doc) throw new Error("No se pudo acceder al documento del iframe.");
+
+    // Write the full standalone document so <head><style> (incl. body{} and
+    // @page rules) apply exactly as authored.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      iframe.onload = done;
+      doc.open();
+      doc.write(html);
+      doc.close();
+      // document.write iframes don't always fire `load`; guard with a timeout.
+      setTimeout(done, 1500);
+    });
+
+    // Wait for web fonts + one paint frame so layout & glyphs are settled.
     try {
-      if ((document as any).fonts?.ready) await (document as any).fonts.ready;
+      const fonts = (doc as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
+      if (fonts?.ready) await fonts.ready;
     } catch {
       /* ignore */
     }
     await new Promise((r) => requestAnimationFrame(() => r(null)));
 
-    const html2pdf = (await import("html2pdf.js")).default as any;
-    await html2pdf()
-      .set({
-        margin: [10, 10, 10, 10],
-        filename,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: 800 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-      })
-      .from(container)
-      .save();
+    const target = (doc.body as HTMLElement) ?? doc.documentElement;
+    // Pin the print width so layout is deterministic regardless of the iframe.
+    target.style.width = "800px";
+
+    const [{ default: html2canvas }, jspdf] = await Promise.all([
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
+    const JsPDF = (jspdf as unknown as { jsPDF?: typeof import("jspdf").jsPDF; default?: typeof import("jspdf").jsPDF }).jsPDF
+      ?? (jspdf as unknown as { default: typeof import("jspdf").jsPDF }).default;
+
+    const canvas = await html2canvas(target, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      windowWidth: target.scrollWidth || 800,
+      windowHeight: target.scrollHeight,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const pdf = new JsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW;
+    const imgH = (canvas.height * pageW) / canvas.width;
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+
+    let position = 0;
+    pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
+    let remaining = imgH - pageH;
+    while (remaining > 0) {
+      position -= pageH;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
+      remaining -= pageH;
+    }
+
+    pdf.save(filename);
   } finally {
-    container.remove();
-    fontLinks.forEach((l) => l.remove());
+    iframe.remove();
   }
 }
 
