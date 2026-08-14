@@ -26,9 +26,11 @@ export async function downloadReportPdf(
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   // Off-screen but with REAL dimensions and renderable (never display:none or
-  // left:-99999px, which break rasterisation).
+  // left:-99999px, which break rasterisation). Width must be >= the report's
+  // design width (body { max-width: 900px }) so the branded layout is captured
+  // exactly as authored — NOT squeezed into a narrower box.
   iframe.style.cssText =
-    "position:fixed; left:0; top:0; width:820px; height:1160px; opacity:0; pointer-events:none; z-index:-9999; border:0; background:#ffffff;";
+    "position:fixed; left:0; top:0; width:960px; height:1200px; opacity:0; pointer-events:none; z-index:-9999; border:0; background:#ffffff;";
   document.body.appendChild(iframe);
 
   try {
@@ -62,8 +64,38 @@ export async function downloadReportPdf(
     await new Promise((r) => requestAnimationFrame(() => r(null)));
 
     const target = (doc.body as HTMLElement) ?? doc.documentElement;
-    // Pin the print width so layout is deterministic regardless of the iframe.
-    target.style.width = "800px";
+    // Capture at the report's DESIGN width. The branded shell lays the body out
+    // at `max-width: 900px`; capturing at any other width descuadra la maqueta
+    // (cabecera, tarjetas de color, columnas y espaciados). Pin it so layout is
+    // deterministic and identical to the on-screen design.
+    const DESIGN_WIDTH = 900;
+    target.style.width = `${DESIGN_WIDTH}px`;
+    target.style.margin = "0";
+
+    // Collect block boundaries (relative to the body top) so pagination never
+    // slices a card, header, table row or panel in half.
+    const bodyTop = target.getBoundingClientRect().top;
+    const breakSelector = [
+      "header.report-header",
+      ".report-section > h2",
+      ".report-section > h3",
+      ".report-section > p",
+      ".det-headline",
+      ".det-metric",
+      ".det-div",
+      ".det-evo",
+      ".det-cite",
+      ".expert-panel",
+      ".consensus-panel",
+      ".co-card",
+      "table tr",
+      "footer.report-footer",
+    ].join(",");
+    const breakOffsets = new Set<number>([0]);
+    doc.querySelectorAll(breakSelector).forEach((el) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      breakOffsets.add(Math.round(r.bottom - bodyTop));
+    });
 
     const [{ default: html2canvas }, jspdf] = await Promise.all([
       import("html2canvas"),
@@ -72,11 +104,12 @@ export async function downloadReportPdf(
     const JsPDF = (jspdf as unknown as { jsPDF?: typeof import("jspdf").jsPDF; default?: typeof import("jspdf").jsPDF }).jsPDF
       ?? (jspdf as unknown as { default: typeof import("jspdf").jsPDF }).default;
 
+    const SCALE = 2;
     const canvas = await html2canvas(target, {
-      scale: 2,
+      scale: SCALE,
       useCORS: true,
       backgroundColor: "#ffffff",
-      windowWidth: target.scrollWidth || 800,
+      windowWidth: DESIGN_WIDTH,
       windowHeight: target.scrollHeight,
       scrollX: 0,
       scrollY: 0,
@@ -85,18 +118,62 @@ export async function downloadReportPdf(
     const pdf = new JsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const imgW = pageW;
-    const imgH = (canvas.height * pageW) / canvas.width;
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
 
-    let position = 0;
-    pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
-    let remaining = imgH - pageH;
-    while (remaining > 0) {
-      position -= pageH;
-      pdf.addPage();
-      pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
-      remaining -= pageH;
+    // A4 margins (~12mm sides/top, ~14mm bottom) mirroring the report's @page
+    // rule so the content never bleeds to the paper edge.
+    const marginX = 34;
+    const marginTop = 34;
+    const marginBottom = 40;
+    const contentW = pageW - marginX * 2;
+
+    const bodyPx = canvas.width / SCALE; // == DESIGN_WIDTH
+    const pxToPt = contentW / bodyPx; // scale factor css px -> PDF pt
+    const availPx = (pageH - marginTop - marginBottom) / pxToPt; // css px per page
+    const totalPx = canvas.height / SCALE;
+
+    const sortedBreaks = Array.from(breakOffsets)
+      .filter((v) => v > 0 && v <= totalPx)
+      .sort((a, b) => a - b);
+
+    let start = 0;
+    let firstPage = true;
+    let guard = 0;
+    while (start < totalPx - 1 && guard++ < 1000) {
+      const naiveEnd = start + availPx;
+      let cut: number;
+      if (naiveEnd >= totalPx) {
+        cut = totalPx;
+      } else {
+        const fitting = sortedBreaks.filter((v) => v > start + 8 && v <= naiveEnd);
+        // Snap to the last block boundary that fits on the page; fall back to a
+        // hard cut only if a single block is taller than one page.
+        cut = fitting.length ? fitting[fitting.length - 1] : naiveEnd;
+      }
+      const sliceH = Math.max(1, Math.round((cut - start) * SCALE));
+      const slice = document.createElement("canvas");
+      slice.width = canvas.width;
+      slice.height = sliceH;
+      const ctx = slice.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, slice.width, slice.height);
+        ctx.drawImage(
+          canvas,
+          0,
+          Math.round(start * SCALE),
+          canvas.width,
+          sliceH,
+          0,
+          0,
+          canvas.width,
+          sliceH,
+        );
+      }
+      const imgData = slice.toDataURL("image/jpeg", 0.95);
+      if (!firstPage) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", marginX, marginTop, contentW, (cut - start) * pxToPt);
+      firstPage = false;
+      start = cut;
     }
 
     pdf.save(filename);
