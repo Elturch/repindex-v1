@@ -35,7 +35,7 @@ import { RegenerateDialog } from "@/components/reports/RegenerateDialog";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { ProfileReport } from "@/components/reports/ProfileReport";
 import { RankingReport } from "@/components/reports/RankingReport";
-import { toDbModelNames } from "@/lib/reports/filterState";
+import { toDbModelNames, reanchorWindow } from "@/lib/reports/filterState";
 import { DeterministicPdfButton } from "@/components/reports/DeterministicPdfButton";
 import {
   listReports,
@@ -334,13 +334,19 @@ export default function RixViewer() {
     const universe = f.universe.value.length > 0
       ? [...f.universe.value]
       : (hasScope ? null : [...DEFAULT_LISTED_UNIVERSE]);
+    // Re-anclar la ventana al último barrido disponible para presets no-custom.
+    // Sin esto, el `to` queda congelado en la fecha de creación del informe y el
+    // RPC recorta `latest_week` a una semana vieja (regresión de datos).
+    const w = f.window.value;
+    const win =
+      lastBatchDate && w.preset !== "custom" ? reanchorWindow(w, lastBatchDate) : w;
     return {
       sector: f.sector.value[0] ?? null,
       subsector: f.subsector.value[0] ?? null,
       universe,
       tickers: null,
-      from: f.window.value.from,
-      to: f.window.value.to,
+      from: win.from,
+      to: win.to,
       models: f.models.value.length > 0 && f.models.value.length < 6
         ? toDbModelNames(f.models.value)
         : null,
@@ -349,7 +355,7 @@ export default function RixViewer() {
         : "rixc"),
       limit: userTopN,
     };
-  }, [activeReport, isRankingActive]);
+  }, [activeReport, isRankingActive, lastBatchDate]);
 
   const rankingScopeLabel = useMemo(() => {
     if (!activeReport) return undefined;
@@ -359,6 +365,21 @@ export default function RixViewer() {
     if (f.universe.value.length > 0) return f.universe.value.join(" · ");
     return "Todas las cotizadas";
   }, [activeReport]);
+
+  // Ventana efectiva para perfil/comparativa. Solo se pasa `from`/`to` cuando el
+  // usuario fijó una ventana explícita (origin "user-set"); en ese caso, si el
+  // preset no es "custom", se re-ancla al último barrido para que el informe
+  // refleje la última semana y no una ventana congelada al crearlo. Para los
+  // informes por defecto se sigue pasando null (el RPC usa la última semana).
+  const detWindow = useMemo<{ from: string | null; to: string | null }>(() => {
+    const wf = activeReport?.filters.window;
+    if (!wf || wf.origin !== "user-set") return { from: null, to: null };
+    const w =
+      lastBatchDate && wf.value.preset !== "custom"
+        ? reanchorWindow(wf.value, lastBatchDate)
+        : wf.value;
+    return { from: w.from, to: w.to };
+  }, [activeReport, lastBatchDate]);
 
   // If a pending auto-send belongs to a deterministic report (perfil o
   // comparativa), drop it silently — nunca llamamos al LLM en esos casos.
@@ -798,16 +819,8 @@ export default function RixViewer() {
                     kind={isProfileActive ? "profile" : "comparison"}
                     tickers={activeReport?.filters?.tickers?.value ?? []}
                     question={activeReport?.question ?? null}
-                    from={
-                      activeReport?.filters?.window?.origin === "user-set"
-                        ? activeReport.filters.window.value.from
-                        : null
-                    }
-                    to={
-                      activeReport?.filters?.window?.origin === "user-set"
-                        ? activeReport.filters.window.value.to
-                        : null
-                    }
+                    from={detWindow.from}
+                    to={detWindow.to}
                   />
                 )
               ) : (
@@ -890,8 +903,8 @@ export default function RixViewer() {
                     <ReportQuestionBlock question={activeReport.question} />
                     <ComparisonReport
                       tickers={activeReport.filters.tickers.value}
-                      from={activeReport.filters.window.origin === "user-set" ? activeReport.filters.window.value.from : null}
-                      to={activeReport.filters.window.origin === "user-set" ? activeReport.filters.window.value.to : null}
+                      from={detWindow.from}
+                      to={detWindow.to}
                     />
                   </div>
                 ) : isProfileActive && activeReport ? (
@@ -899,8 +912,8 @@ export default function RixViewer() {
                     <ReportQuestionBlock question={activeReport.question} />
                     <ProfileReport
                       ticker={activeReport.filters.tickers.value[0]}
-                      from={activeReport.filters.window.origin === "user-set" ? activeReport.filters.window.value.from : null}
-                      to={activeReport.filters.window.origin === "user-set" ? activeReport.filters.window.value.to : null}
+                      from={detWindow.from}
+                      to={detWindow.to}
                     />
                   </div>
                 ) : isRankingActive && activeReport && rankingParams ? (
