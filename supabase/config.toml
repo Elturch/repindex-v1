@@ -137,3 +137,6 @@ verify_jwt = false
 
 [functions.rix-sweep-watchdog]
 verify_jwt = false
+
+[functions.sweep-completeness-gate]
+verify_jwt = false
