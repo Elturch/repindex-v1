@@ -81,7 +81,7 @@ const aiModels = [
 ];
 
 export default function Methodology() {
-  const { data: issuerCount = 160 } = useIssuerCount();
+  const { data: issuerCount = 185 } = useIssuerCount();
   const issuerCountFormatted = formatIssuerCount(issuerCount);
   
   const methodologySchema = {
@@ -531,7 +531,7 @@ export default function Methodology() {
                     <li>Principales empresas <strong>no cotizadas</strong> de España</li>
                   </ul>
                   <p className="text-sm text-muted-foreground">
-                    Actualmente analizamos <strong>más de {issuerCountFormatted} empresas</strong>. 
+                    Actualmente analizamos <strong>{issuerCountFormatted} empresas</strong>. 
                     Continuamente ampliamos la cobertura según la demanda del mercado.
                   </p>
                 </div>

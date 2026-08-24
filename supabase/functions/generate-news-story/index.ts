@@ -162,7 +162,7 @@ Keywords objetivo a distribuir:
   "dataQualityReport": {
     "headline": "Radiografía de Datos: El Estado del Ecosistema IA",
     "summary": "Análisis ejecutivo de cobertura y calidad (2-3 frases elegantes)",
-    "totalCompanies": 160,
+    "totalCompanies": 185,
     "modelCoverage": [
       {"model": "ChatGPT", "companies": 160, "status": "ok|warning|error", "note": ""},
       {"model": "Perplexity", "companies": 155, "status": "ok", "note": ""},

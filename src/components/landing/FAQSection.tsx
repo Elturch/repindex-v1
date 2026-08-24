@@ -22,7 +22,7 @@ const getfaqs = (issuerCount: string) => [
   },
   {
     question: "¿Qué empresas cubre RepIndex?",
-    answer: `Actualmente analizamos más de ${issuerCount} empresas españolas, incluyendo todas las del IBEX-35, IBEX Medium Cap, IBEX Small Cap, y las principales empresas no cotizadas de España. Continuamente ampliamos la cobertura según la demanda.`
+    answer: `Actualmente analizamos ${issuerCount} empresas españolas, incluyendo todas las del IBEX-35, IBEX Medium Cap, IBEX Small Cap, y las principales empresas no cotizadas de España. Continuamente ampliamos la cobertura según la demanda.`
   },
   {
     question: "¿Cuáles son las 8 métricas del RIX?",
@@ -35,7 +35,7 @@ const getfaqs = (issuerCount: string) => [
 ];
 
 // Generate FAQ Schema JSON-LD
-export function getFAQSchema(issuerCount: string = "160") {
+export function getFAQSchema(issuerCount: string = "185") {
   const faqs = getfaqs(issuerCount);
   return {
     "@context": "https://schema.org",
@@ -52,7 +52,7 @@ export function getFAQSchema(issuerCount: string = "160") {
 }
 
 export function FAQSection() {
-  const { data: issuerCount = 160 } = useIssuerCount();
+  const { data: issuerCount = 185 } = useIssuerCount();
   const faqs = getfaqs(formatIssuerCount(issuerCount));
   
   return (

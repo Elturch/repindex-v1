@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-const DEFAULT_COUNT = 160; // Conservative fallback for static/SEO content
+const DEFAULT_COUNT = 185; // Conservative fallback for static/SEO content
 
 export function useIssuerCount() {
   return useQuery({
@@ -9,7 +9,8 @@ export function useIssuerCount() {
     queryFn: async () => {
       const { count, error } = await supabase
         .from('repindex_root_issuers')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active');
       
       if (error) throw error;
       return count || DEFAULT_COUNT;
@@ -19,9 +20,9 @@ export function useIssuerCount() {
 }
 
 // For static content, use a rounded number that won't need frequent updates
-export const ISSUER_COUNT_STATIC = "160+";
+export const ISSUER_COUNT_STATIC = "185";
 
-// Helper to format count for display
+// Helper to format count for display (exact active-issuer figure, no "+" suffix)
 export function formatIssuerCount(count: number): string {
-  return `${count}+`;
+  return `${count}`;
 }

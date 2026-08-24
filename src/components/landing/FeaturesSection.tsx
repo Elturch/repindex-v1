@@ -19,7 +19,7 @@ const features = [
   {
     icon: FaSync,
     title: "Datos Actualizados",
-    description: "Análisis semanal automático de más de 153 empresas del mercado español",
+    description: "Análisis semanal automático de 185 empresas del mercado español",
     color: "text-gemini"
   },
   {
