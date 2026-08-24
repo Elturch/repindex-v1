@@ -3,7 +3,7 @@ import { getFAQSchema } from "./FAQSection";
 import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 
 export function SEOHead() {
-  const { data: issuerCount = 160 } = useIssuerCount();
+  const { data: issuerCount = 185 } = useIssuerCount();
   const issuerCountFormatted = formatIssuerCount(issuerCount);
   
   const organizationSchema = {
@@ -52,7 +52,7 @@ export function SEOHead() {
     "@id": "https://repindex.ai/#dataset",
     "name": "RepIndex Corporate Reputation Index",
     "alternateName": "RIX Score Dataset",
-    "description": `Índice semanal de reputación corporativa basado en análisis de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) sobre más de ${issuerCountFormatted} empresas españolas, incluyendo IBEX-35, IBEX Medium Cap e IBEX Small Cap.`,
+    "description": `Índice semanal de reputación corporativa basado en análisis de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) sobre ${issuerCountFormatted} empresas españolas, incluyendo IBEX-35, IBEX Medium Cap e IBEX Small Cap.`,
     "url": "https://repindex.ai",
     "keywords": [
       "reputación corporativa",

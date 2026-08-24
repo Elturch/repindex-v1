@@ -11,7 +11,7 @@ interface Stat {
 
 function getStats(companyCount: number): Stat[] {
   return [
-    { value: String(companyCount), label: "Empresas Analizadas", suffix: "+" },
+    { value: String(companyCount), label: "Empresas Analizadas" },
     { value: "6", label: "Modelos de IA" },
     { value: "8", label: "Métricas de Reputación" },
     { value: "1", label: "Actualización Semanal" }
@@ -52,7 +52,7 @@ function AnimatedCounter({ value, suffix = "" }: { value: string; suffix?: strin
 }
 
 export function StatsSection() {
-  const { data: companyCount = 160 } = useIssuerCount();
+  const { data: companyCount = 185 } = useIssuerCount();
   const stats = getStats(companyCount);
 
   return (

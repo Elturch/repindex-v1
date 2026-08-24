@@ -21,7 +21,7 @@ const AI_MODELS = [
 
 export function HeroSection() {
   const navigate = useNavigate();
-  const { data: issuerCount = 160 } = useIssuerCount();
+  const { data: issuerCount = 185 } = useIssuerCount();
   
   return (
     <section className="relative py-12 px-4 overflow-hidden bg-gradient-to-b from-background to-accent/5" aria-label="Hero principal">
@@ -90,7 +90,7 @@ export function HeroSection() {
           >
             <strong>RepIndex</strong> mide la <strong>percepción algorítmica</strong>: la probabilidad de que una narrativa corporativa 
             gane tracción en el ecosistema de IA. Cada semana, <strong>6 modelos con búsqueda web real</strong> evalúan 
-            a más de <strong>{formatIssuerCount(issuerCount)} empresas españolas</strong> usando 8 métricas, 
+            a <strong>{formatIssuerCount(issuerCount)} empresas españolas</strong> usando 8 métricas, 
             generando el <strong>RIX Score (0-100)</strong>.
           </motion.p>
 
