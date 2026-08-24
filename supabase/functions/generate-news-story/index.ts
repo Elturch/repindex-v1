@@ -768,7 +768,7 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
 function buildQuantitativeContext(weekData: any) {
   return `
 ## DATOS CUANTITATIVOS REPINDEX - ${weekData.weekLabel}
-Total empresas analizadas: ${weekData.totalCompanies || '~160'}
+Total empresas analizadas: ${weekData.totalCompanies || '~185'}
 
 ### TOP 15 SUBIDAS SEMANALES (mayor incremento RIX):
 ${weekData.topRisers?.map((r: any, i: number) => 
@@ -818,7 +818,7 @@ ${weekData.ibexBottom?.map((c: any, i: number) =>
 ).join('\n') || 'Sin datos'}
 
 ### CONTEXTO REPINDEX:
-- RepIndex analiza semanalmente la reputación de más de 160 empresas españolas
+- RepIndex analiza semanalmente la reputación de 185 empresas españolas
 - 6 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen
 - Escala RIX: 0-100 puntos (mayor = mejor reputación percibida por las IAs)
 - Panel incluye IBEX-35, cotizadas menores y grandes empresas privadas
