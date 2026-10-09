@@ -77,6 +77,7 @@ import { ApiHealthDashboard } from '@/components/admin/ApiHealthDashboard';
 import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, HeartPulse } from 'lucide-react';
 import { ConsensusHealthPanel } from '@/components/admin/ConsensusHealthPanel';
 import { StressTestsPanel } from '@/components/admin/StressTestsPanel';
+import { PremiumReportsPanel } from '@/components/admin/PremiumReportsPanel';
 import { Microscope } from 'lucide-react';
 
 interface Company {
@@ -1180,6 +1181,9 @@ const Admin: React.FC = () => {
             <TabsTrigger value="ai-models" className="flex items-center gap-1.5 px-3 text-xs">
               <Sparkles className="h-3.5 w-3.5" />
               Modelos IA
+            </TabsTrigger>
+            <TabsTrigger value="premium-reports" className="flex items-center gap-1.5 px-3 text-xs">
+              Informes premium
             </TabsTrigger>
             <TabsTrigger value="pipeline-alerts" className="flex items-center gap-1.5 px-3 text-xs">
               <AlertTriangleIcon className="h-3.5 w-3.5" />
@@ -3244,6 +3248,10 @@ const Admin: React.FC = () => {
           </TabsContent>
 
           {/* ==================== PIPELINE ALERTS ==================== */}
+          <TabsContent value="premium-reports">
+            <PremiumReportsPanel />
+          </TabsContent>
+
           <TabsContent value="pipeline-alerts">
             <PipelineAlertsPanel />
           </TabsContent>
