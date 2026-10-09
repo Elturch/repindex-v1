@@ -752,7 +752,82 @@ Deno.serve(async (req) => {
       )
     }
 
-    return new Response(
+      // ---- Premium reports (governance; never hard-delete) ----
+      const okJson = (payload: unknown, status = 200) => new Response(
+        JSON.stringify(payload),
+        { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+
+      if (action === 'premium_overview') {
+        const [clientsR, recR, sendsR] = await Promise.all([
+          supabaseAdmin.from('premium_report_clients')
+            .select('id, ticker, client_name, contact_name, is_active, notes, created_at')
+            .order('client_name'),
+          supabaseAdmin.from('premium_report_recipients')
+            .select('id, client_id, user_id, is_active, created_at'),
+          supabaseAdmin.from('premium_report_sends')
+            .select('id, client_id, ticker, week_start, status, emails_sent, pdf_signed_url, test_mode, error_message, created_at')
+            .order('created_at', { ascending: false })
+            .limit(300),
+        ])
+        if (clientsR.error) throw clientsR.error
+        if (recR.error) throw recR.error
+        if (sendsR.error) throw sendsR.error
+        return okJson({ clients: clientsR.data || [], recipients: recR.data || [], sends: sendsR.data || [] })
+      }
+
+      if (action === 'premium_list_users') {
+        const { data: users, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, email, full_name, is_active')
+          .eq('is_active', true)
+          .not('email', 'is', null)
+          .order('email')
+          .limit(5000)
+        if (error) throw error
+        return okJson({ users: users || [] })
+      }
+
+      if (action === 'premium_create_client') {
+        const ticker = typeof data?.ticker === 'string' ? data.ticker.trim() : ''
+        const client_name = typeof data?.client_name === 'string' ? data.client_name.trim() : ''
+        const notes = typeof data?.notes === 'string' ? data.notes.trim().slice(0, 2000) : null
+        if (!ticker || !client_name || client_name.length > 200) return okJson({ error: 'Ticker y nombre obligatorios' }, 400)
+        const { data: issuer } = await supabaseAdmin.from('repindex_root_issuers')
+          .select('ticker').eq('ticker', ticker).eq('status', 'active').maybeSingle()
+        if (!issuer) return okJson({ error: 'Ticker no válido o inactivo' }, 400)
+        const { data: client, error } = await supabaseAdmin.from('premium_report_clients')
+          .insert({ ticker, client_name, notes: notes || null, is_active: true })
+          .select('*').single()
+        if (error) throw error
+        return okJson({ client })
+      }
+
+      if (action === 'premium_set_client_active') {
+        if (typeof data?.id !== 'string' || typeof data?.is_active !== 'boolean') return okJson({ error: 'Parámetros inválidos' }, 400)
+        const { error } = await supabaseAdmin.from('premium_report_clients')
+          .update({ is_active: data.is_active }).eq('id', data.id)
+        if (error) throw error
+        return okJson({ success: true })
+      }
+
+      if (action === 'premium_set_recipient') {
+        const { client_id, user_id, is_active } = data || {}
+        if (typeof client_id !== 'string' || typeof user_id !== 'string' || typeof is_active !== 'boolean') {
+          return okJson({ error: 'Parámetros inválidos' }, 400)
+        }
+        if (is_active) {
+          const { data: u } = await supabaseAdmin.from('user_profiles')
+            .select('id, email, is_active').eq('id', user_id).maybeSingle()
+          if (!u || !u.is_active || !u.email) return okJson({ error: 'El usuario debe estar activo y tener email' }, 400)
+        }
+        const { error } = await supabaseAdmin.from('premium_report_recipients')
+          .upsert({ client_id, user_id, is_active }, { onConflict: 'client_id,user_id' })
+        if (error) throw error
+        return okJson({ success: true })
+      }
+
+      return new Response(
       JSON.stringify({ error: 'Not found' }),
       { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
