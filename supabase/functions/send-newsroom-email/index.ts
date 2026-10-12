@@ -2,6 +2,13 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "npm:resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
+// v320 · 2026-10-12 · REINSTAURA el candado doble de v317 que el redeploy masivo
+// de Lovable del 09-10 eliminó (causa original: incidente de emails duplicados).
+// Regla: UN email de Newsroom por semana. Se bloquea si ya hubo envío con este
+// week_id O cualquier envío newsroom_weekly en los últimos 5 días. FAIL-CLOSED:
+// si el guard no puede comprobarse, NO se envía. Solo force:true manual lo salta.
+// IMPORTANTE: sincronizar este fix al repo de Lovable o el próximo publish lo pisa.
+
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const corsHeaders = {
@@ -18,6 +25,7 @@ interface NewsroomEmailRequest {
     headline: string;
     lead: string;
   }>;
+  force?: boolean;
 }
 
 interface EligibleUser {
@@ -187,6 +195,49 @@ const handler = async (req: Request): Promise<Response> => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // =========================================================================
+    // CANDADO DOBLE (v317, reinstaurado v320): UN email semanal, nunca más.
+    // Bloquea si: (a) ya hubo envío registrado con este week_id, o
+    //             (b) hubo CUALQUIER envío newsroom_weekly en los últimos 5 días.
+    // FAIL-CLOSED: si el guard no puede comprobarse, NO se envía.
+    // Solo un force:true explícito y manual salta el candado.
+    // =========================================================================
+    if (data.force !== true) {
+      let sameWeek = 0;
+      let recent = 0;
+      try {
+        const { count: c1, error: g1 } = await supabase
+          .from("user_notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("notification_type", "newsroom_weekly")
+          .contains("metadata", { week_id: data.weeklyNewsId });
+        if (g1) throw g1;
+        sameWeek = c1 ?? 0;
+
+        const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString();
+        const { count: c2, error: g2 } = await supabase
+          .from("user_notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("notification_type", "newsroom_weekly")
+          .gte("created_at", fiveDaysAgo);
+        if (g2) throw g2;
+        recent = c2 ?? 0;
+      } catch (guardErr: any) {
+        console.error("Idempotency guard failed — FAIL-CLOSED, no emails sent:", guardErr?.message ?? guardErr);
+        return new Response(
+          JSON.stringify({ success: false, blocked: "guard_check_failed", detail: String(guardErr?.message ?? guardErr) }),
+          { status: 409, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      if (sameWeek > 0 || recent > 0) {
+        console.log(`Skip: newsroom email already sent (same week_id: ${sameWeek}, last 5 days: ${recent})`);
+        return new Response(
+          JSON.stringify({ success: true, skipped: "already_sent", same_week: sameWeek, recent_5d: recent, sent: 0 }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
     // Fetch eligible users
     const { data: users, error: usersError } = await supabase
       .from("user_profiles")
@@ -272,7 +323,7 @@ const handler = async (req: Request): Promise<Response> => {
             console.log(`✅ Email sent to ${user.email}`);
             successCount++;
 
-            // Register in user_notifications for tracking
+            // Register in user_notifications for tracking (es también el registro del candado)
             await supabase.from("user_notifications").insert({
               user_id: user.id,
               notification_type: "newsroom_weekly",
