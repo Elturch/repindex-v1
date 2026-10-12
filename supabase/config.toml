@@ -105,6 +105,9 @@ verify_jwt = false
 [functions.send-user-magic-link]
 verify_jwt = false
 
+[functions.report-analysis]
+verify_jwt = false
+
 [functions.validate-qualification-token]
 verify_jwt = false
 
