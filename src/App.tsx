@@ -45,7 +45,40 @@ import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
 
-const App = () => (
+// SSO handoff desde el hub "Pasaporte": si la URL trae ?pt=<token>,
+// lo canjeamos por una sesión vía la edge function pasaporte-sso.
+// Aditivo y silencioso: cualquier fallo deja la app tal cual.
+const usePasaporteHandoff = () => {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pt = params.get('pt');
+    if (!pt) return;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('pasaporte-sso', {
+          body: { token: pt },
+        });
+        if (!error && data?.ok && data?.token_hash) {
+          await supabase.auth.verifyOtp({ type: 'magiclink', token_hash: data.token_hash });
+        }
+      } catch {
+        // Handoff fallido: no romper la carga de la app
+      } finally {
+        // Limpiar ?pt de la URL conservando ruta y resto de query
+        params.delete('pt');
+        const qs = params.toString();
+        const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+        window.history.replaceState(null, '', newUrl);
+      }
+    })();
+  }, []);
+};
+
+const App = () => {
+  usePasaporteHandoff();
+
+  return (
   <ErrorBoundary>
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
