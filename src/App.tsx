@@ -145,6 +145,7 @@ const App = () => {
     </QueryClientProvider>
   </HelmetProvider>
   </ErrorBoundary>
-);
+  );
+};
 
 export default App;
