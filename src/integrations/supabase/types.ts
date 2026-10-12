@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
@@ -1943,6 +1943,56 @@ export type Database = {
         }
         Relationships: []
       }
+      premium_report_actions: {
+        Row: {
+          accion: string
+          client_id: string
+          created_at: string
+          estado: string
+          id: string
+          idx: number
+          metrica: string | null
+          plazo: string | null
+          rol: string | null
+          valor_al_emitir: number | null
+          week_start: string
+        }
+        Insert: {
+          accion: string
+          client_id: string
+          created_at?: string
+          estado?: string
+          id?: string
+          idx: number
+          metrica?: string | null
+          plazo?: string | null
+          rol?: string | null
+          valor_al_emitir?: number | null
+          week_start: string
+        }
+        Update: {
+          accion?: string
+          client_id?: string
+          created_at?: string
+          estado?: string
+          id?: string
+          idx?: number
+          metrica?: string | null
+          plazo?: string | null
+          rol?: string | null
+          valor_al_emitir?: number | null
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "premium_report_actions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "premium_report_clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       premium_report_clients: {
         Row: {
           client_name: string
@@ -1953,6 +2003,7 @@ export type Database = {
           is_active: boolean
           language: string
           notes: string | null
+          report_scope: Json | null
           ticker: string
           updated_at: string
         }
@@ -1965,6 +2016,7 @@ export type Database = {
           is_active?: boolean
           language?: string
           notes?: string | null
+          report_scope?: Json | null
           ticker: string
           updated_at?: string
         }
@@ -1977,6 +2029,7 @@ export type Database = {
           is_active?: boolean
           language?: string
           notes?: string | null
+          report_scope?: Json | null
           ticker?: string
           updated_at?: string
         }
@@ -3527,6 +3580,101 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sector_taxonomy_proposals: {
+        Row: {
+          cambia: boolean | null
+          confidence: string | null
+          created_at: string
+          current_sector: string | null
+          current_subsector: string | null
+          id: string
+          issuer_name: string | null
+          proposed_sector: string | null
+          proposed_sector_code: string | null
+          proposed_subsector: string | null
+          rationale: string | null
+          run_id: string
+          status: string
+          ticker: string
+        }
+        Insert: {
+          cambia?: boolean | null
+          confidence?: string | null
+          created_at?: string
+          current_sector?: string | null
+          current_subsector?: string | null
+          id?: string
+          issuer_name?: string | null
+          proposed_sector?: string | null
+          proposed_sector_code?: string | null
+          proposed_subsector?: string | null
+          rationale?: string | null
+          run_id: string
+          status?: string
+          ticker: string
+        }
+        Update: {
+          cambia?: boolean | null
+          confidence?: string | null
+          created_at?: string
+          current_sector?: string | null
+          current_subsector?: string | null
+          id?: string
+          issuer_name?: string | null
+          proposed_sector?: string | null
+          proposed_sector_code?: string | null
+          proposed_subsector?: string | null
+          rationale?: string | null
+          run_id?: string
+          status?: string
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sector_taxonomy_proposals_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "sector_taxonomy_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sector_taxonomy_runs: {
+        Row: {
+          created_at: string
+          id: string
+          issuers_assigned: number
+          issuers_total: number | null
+          model: string | null
+          notes: string | null
+          status: string
+          taxonomy: Json | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          issuers_assigned?: number
+          issuers_total?: number | null
+          model?: string | null
+          notes?: string | null
+          status?: string
+          taxonomy?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          issuers_assigned?: number
+          issuers_total?: number | null
+          model?: string | null
+          notes?: string | null
+          status?: string
+          taxonomy?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       source_models: {
         Row: {
