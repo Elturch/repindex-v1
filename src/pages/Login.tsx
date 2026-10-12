@@ -339,6 +339,28 @@ const Login: React.FC = () => {
                     'Solicitar enlace de acceso'
                   )}
                 </Button>
+
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border/50" />
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-card px-2 text-muted-foreground">o</span>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    window.location.href =
+                      'https://pasaporte.hablamosde.com/?next=' +
+                      encodeURIComponent(window.location.href);
+                  }}
+                >
+                  Entrar con Pasaporte
+                </Button>
               </form>
             )}
           </CardContent>
