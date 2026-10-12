@@ -1,12 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-// v38 (2026-10-12, QA de MAT): weekly_brief ahora cita SOLO desde la respuesta
-// bruta de cada IA (respuesta_de_la_ia), titular/alerta/oportunidad sin siglas,
-// hechos con sentido (positivo/riesgo) y sin afirmaciones de cobertura, notas
-// para movimientos contraintuitivos de métricas, líneas de competidor = solo la
-// causa (el documento imprime el movimiento), acciones nunca sobre hechos sin
-// fuente, vigilar con contexto.
+// v39 (2026-10-12, QA de MAT sobre TEF y ANA): weekly_brief endurecido — la cita
+// de cada modelo debe ser coherente con su variación (nunca "estable" para la
+// mayor caída); hechos = EVENTOS corporativos (nunca valoraciones sobre fuentes
+// o la medición); un hecho de 1 sola IA sin fuente es "señal aislada" y no puede
+// ser el principal ni sostener alerta/acción; alerta/oportunidad con causa y
+// coherentes con los hechos y la divergencia; posible != cerrado; acciones con
+// mensaje y canal; plazo cerrado a 3 valores.
+// v38: citas SOLO de respuesta_de_la_ia, portada sin siglas, hechos con sentido,
+// notas_metricas, competidores = solo causa, acciones solo sobre verificado.
 // v37: type weekly_brief. v36: anti-aritmética, universo+N, umbrales canónicos.
 
 const corsHeaders = {
@@ -61,24 +64,29 @@ REGLAS ABSOLUTAS:
 - UNIVERSO CERRADO: solo existe lo que está en el payload. Nada de conocimiento externo sobre la empresa.
 - CERO ARITMÉTICA: cita las cifras tal cual vienen, con sus decimales.
 - UN SOLO GRUPO: el grupo del payload es el único universo de comparación. No menciones 'sector' ni ningún otro universo.
-- CITAS LITERALES Y DE LA VOZ CORRECTA: cada 'cita' debe ser un fragmento COPIADO CARÁCTER A CARÁCTER (15-220 caracteres) de 'respuesta_de_la_ia' del modelo correspondiente — NUNCA del 'resumen_del_evaluador', que no es lo que dijo la IA. Un software verificará cada cita por subcadena exacta y DESCARTARÁ las que no sean literales: no parafrasees, no corrijas tildes, no unas dos frases.
+- CITAS LITERALES Y DE LA VOZ CORRECTA: cada 'cita' debe ser un fragmento COPIADO CARÁCTER A CARÁCTER (15-220 caracteres) de 'respuesta_de_la_ia' del modelo correspondiente — NUNCA del 'resumen_del_evaluador', que no es lo que dijo la IA. Un software verificará cada cita por subcadena exacta y DESCARTARÁ las que no sean literales: no parafrasees, no corrijas tildes, no unas dos frases. Elige fragmentos que sean FRASES COMPLETAS O CASI COMPLETAS, nunca un sintagma cortado a mitad de idea.
+- CITA COHERENTE CON EL MOVIMIENTO: la cita de cada modelo debe explicar SU lectura y, sobre todo, SU variación. Para el modelo con mayor caída o mayor subida de la semana, elige el fragmento de su respuesta que mejor explique ese movimiento; PROHIBIDO ilustrar a un modelo que cae con una frase de estabilidad o elogio. Si la respuesta del modelo no justifica su movimiento, elige el fragmento más informativo y añade en 'vigilar' una línea del tipo 'X cae N puntos sin que su respuesta lo explique: vigilar la próxima medición'.
 - SIN SIGLAS EN LA PORTADA: 'titular', 'alerta' y 'oportunidad' van en lenguaje de negocio, sin siglas ni jerga: di 'la autoridad de las fuentes' y no 'SIM', 'el empuje mediático' y no 'RMM'. En el resto de campos puedes usar las siglas.
-- COHERENCIA DE ETIQUETAS: la significancia (significativo/ruido) y el nivel de divergencia vienen dados; úsalos tal cual, no los contradigas.
+- PORTADA CON CAUSA Y SIN CONTRADICCIONES: 'alerta' y 'oportunidad' deben nombrar la causa concreta (el hecho o la señal) además de la cifra cuando el material la dé (no 'la percepción de gobierno cae 5 puntos' a secas, sino 'cae 5 puntos, lastrada por X'). Deben ser coherentes con la sección de hechos: si el hecho que las sostiene no tiene fuente, preséntalas como 'señal a verificar', nunca como hecho consumado. No uses como oportunidad una subida de coherencia entre modelos si el nivel de divergencia dado es 'Narrativa frágil'; en general, prefiere hechos de negocio a métricas técnicas en portada.
+- COHERENCIA DE ETIQUETAS: la significancia (significativo/ruido) y el nivel de divergencia vienen dados; úsalos tal cual, no los contradigas. Si el puesto cambia en una semana 'sin cambio significativo', no presentes la variación de puntos como la noticia: la noticia es el puesto, y el documento ya explica que el umbral aplica a la nota.
+- HECHOS = EVENTOS: cada hecho es un EVENTO corporativo o de mercado sobre la empresa, presente en el material (una apertura, una operación, un caso judicial, un premio, un resultado). Una valoración sobre las fuentes, sobre la cobertura o sobre la propia medición ('débil presencia de fuentes Tier-1') NUNCA es un hecho: eso va, si acaso, en alerta o en vigilar.
 - HECHOS SIN HUMO: en el texto de un hecho NO afirmes cobertura mediática ('con eco en medios', 'amplia cobertura'): la fuente la determina y la imprime el sistema. 'fuente' solo puede ser un dominio de 'dominios_citados' del que proceda el hecho; si no te consta, null. 'fecha' solo si aparece TEXTUALMENTE en el material; si no, null.
+- SEÑAL AISLADA: un hecho que solo recoge 1 modelo y sin fuente es una 'señal aislada'. Puede aparecer entre los 3 hechos si realmente pesa, pero SIEMPRE redactado como 'detectado solo por X, pendiente de verificación', NUNCA como 'el principal vector de riesgo de la semana' ni como hecho consumado en titular o alerta, y NUNCA sosteniendo una acción distinta de verificarlo.
+- POSIBLE NO ES CERRADO: si el material presenta algo como posible, propuesto, en consulta o en debate, conserva ese matiz en hechos, acciones y vigilar ('el posible fin de X, en consulta hasta el día D'); nunca lo des por decidido.
 - ACCIONES SOLO SOBRE LO VERIFICADO: ninguna acción puede apoyarse en un hecho sin fuente. Si un hecho sin fuente merece reacción, la acción es VERIFICARLO (quién y cómo), no responder a él.
 - Si un dato falta, déjalo null; no lo inventes.
 
 FORMATO DE SALIDA: EXCLUSIVAMENTE un objeto JSON válido, sin markdown:
 {
   "titular": "UNA frase con el hecho más importante de la semana, con cifra y puesto, sin siglas. Ej.: 'Quirónsalud defiende la 3ª plaza del grupo hospitalario en una semana de narrativa frágil (RIXc 59,2, -1)'",
-  "alerta": "una línea, lenguaje de negocio sin siglas, con su cifra",
-  "oportunidad": "una línea, lenguaje de negocio sin siglas, con su cifra",
-  "afirmacion_por_modelo": [ {"model":"ChatGPT","cita":"fragmento literal de respuesta_de_la_ia de ESE modelo que explica su nota"} ],  // los 6 modelos
-  "hechos": [ {"hecho":"1 frase: el hecho y por qué pesa (sin afirmar cobertura mediática)","sentido":"positivo|riesgo","modelos":["ChatGPT","Grok"],"cita":"fragmento literal de una respuesta_de_la_ia","fuente":"dominio de dominios_citados o null","fecha":"fecha textual del material o null"} ],  // EXACTAMENTE los 3 que más pesan
-  "notas_metricas": [ {"code":"GAM","nota":"1-2 frases explicando un movimiento contraintuitivo de esa métrica según el material (ej.: por qué sube la percepción de gobierno la semana de una imputación)"} ],  // OBLIGATORIO si alguna métrica se mueve en contra del relato de la semana; si no, []
+  "alerta": "una línea, lenguaje de negocio sin siglas, con su cifra Y su causa",
+  "oportunidad": "una línea, lenguaje de negocio sin siglas, con su cifra Y su causa",
+  "afirmacion_por_modelo": [ {"model":"ChatGPT","cita":"fragmento literal de respuesta_de_la_ia de ESE modelo que explica su nota Y su variación"} ],  // los 6 modelos
+  "hechos": [ {"hecho":"1 frase: el EVENTO y por qué pesa (sin afirmar cobertura mediática; si es señal aislada, dilo)","sentido":"positivo|riesgo","modelos":["ChatGPT","Grok"],"cita":"fragmento literal de una respuesta_de_la_ia","fuente":"dominio de dominios_citados o null","fecha":"fecha textual del material o null"} ],  // EXACTAMENTE los 3 que más pesan
+  "notas_metricas": [ {"code":"GAM","nota":"1-2 frases explicando un movimiento contraintuitivo de esa métrica según el material"} ],  // OBLIGATORIO para CADA métrica que se mueva en contra del relato de la semana (p. ej. la gestión de controversias sube la semana de un caso judicial, la ejecución corporativa no se mueve la semana de una caída en bolsa, la coherencia sube con los modelos muy divergentes) y para las 2-3 mayores caídas si los hechos no las explican; si nada de esto ocurre, []
   "competidores": [ {"tk":"HMH","linea":"SOLO LA CAUSA de su movimiento esta semana, 1 frase, sacada de competidores_material de ESE competidor; sin repetir su puesto ni sus cifras (el documento ya imprime 'sube del #6 al #5'); si su material no da causa, null"} ],  // uno por competidor del grupo
-  "acciones": [ {"accion":"imperativo concreto, 1 línea","rol":"quién (Comunicación/IR/Digital/Dirección Médica...)","plazo":"esta semana | 2 semanas | mes","metrica":"RIXC o NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM"} ],  // MÁXIMO 3, priorizadas
-  "vigilar": [ "1-3 items; cada uno con contexto completo: qué es, de qué modelo o hecho sale, y por qué importa (1-2 frases, nunca un titular suelto)" ]
+  "acciones": [ {"accion":"imperativo concreto, 1 línea, con el mensaje y el canal cuando proceda (qué decir y dónde), nunca genérica","rol":"quién (Comunicación/IR/Digital/Dirección Médica...)","plazo":"EXACTAMENTE uno de: esta semana | 2 semanas | 1 mes","metrica":"RIXC o NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM"} ],  // MÁXIMO 3, priorizadas
+  "vigilar": [ "1-3 items; cada uno con contexto completo: qué es, de qué modelo o hecho sale, y por qué importa (1-2 frases, nunca un titular suelto); incluye aquí las menciones relevantes del raw que no entraron en los 3 hechos (p. ej. una especulación de consolidación, una mejora de recomendación)" ]
 }
 Tono: directo, de negocio, cero relleno.`;
 
