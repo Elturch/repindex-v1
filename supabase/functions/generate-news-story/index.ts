@@ -2,6 +2,16 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
+// v523 · 2026-10-12 · REINSTAURA los dos fixes de v520 que el redeploy de Lovable
+// del 09-10 pisó con el código viejo del repo:
+//  1) SIN thinkingConfig/thinkingLevel: gemini-2.5-pro lo rechaza con 400
+//     "Thinking level is not supported for this model" (causa del parón mayo-sept
+//     y del fallo del lunes 12-10 a las 06:00 UTC).
+//  2) CANDADO de idempotencia: si ya existe edición de la semana en weekly_news,
+//     skip (solo force:true manual lo salta) — evita regeneraciones y emails dobles.
+// IMPORTANTE: estos fixes deben sincronizarse al repo de Lovable o cada publish
+// del frontend volverá a pisarlos.
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -192,7 +202,7 @@ serve(async (req) => {
   }
 
   try {
-    const { weekData, saveToDb = false, trigger } = await req.json();
+    const { weekData, saveToDb = false, trigger, force = false } = await req.json();
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -207,6 +217,28 @@ serve(async (req) => {
 
     if (!dataToProcess) {
       throw new Error('No se pudieron obtener datos de la semana');
+    }
+
+    // =========================================================================
+    // CANDADO DE IDEMPOTENCIA (v520, reinstaurado en v523): si ya existe la
+    // edición de esta semana, NO se regenera ni se reenvía email. Solo un
+    // force:true manual lo salta.
+    // =========================================================================
+    if (!force && dataToProcess?.weekStart) {
+      const { data: existing } = await supabase
+        .from('weekly_news')
+        .select('id, week_label, published_at')
+        .eq('week_start', dataToProcess.weekStart)
+        .maybeSingle();
+      if (existing) {
+        console.log(`Skip: edition for ${dataToProcess.weekStart} already exists (${existing.week_label})`);
+        return new Response(JSON.stringify({
+          success: true,
+          skipped: 'edition_already_exists',
+          week_start: dataToProcess.weekStart,
+          week_label: existing.week_label,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // Get API keys
@@ -235,19 +267,13 @@ serve(async (req) => {
     // PASO 2: Construir contexto completo (cuantitativo + cualitativo)
     // =========================================================================
     const quantitativeContext = buildQuantitativeContext(dataToProcess);
-    const fullContext = `
-${quantitativeContext}
-
-## CONTEXTO CUALITATIVO DEL VECTOR STORE
-(Análisis, resúmenes y respuestas de las IAs sobre las empresas destacadas)
-
-${qualitativeContext}
-`;
+    const fullContext = `\n${quantitativeContext}\n\n## CONTEXTO CUALITATIVO DEL VECTOR STORE\n(Análisis, resúmenes y respuestas de las IAs sobre las empresas destacadas)\n\n${qualitativeContext}\n`;
 
     console.log(`Full context length: ${fullContext.length} characters`);
 
     // =========================================================================
-    // PASO 3: Generar noticias con Gemini 3 Pro via Google AI Studio
+    // PASO 3: Generar noticias con gemini-2.5-pro via Google AI Studio
+    // SIN thinkingConfig: gemini-2.5-pro lo rechaza con 400 (fix v520/v523).
     // =========================================================================
     console.log('Generating premium news with gemini-2.5-pro via Google AI Studio...');
     
@@ -270,10 +296,7 @@ ${qualitativeContext}
             topP: 0.95,
             topK: 40,
             maxOutputTokens: 32768,
-            responseMimeType: "application/json",
-            thinkingConfig: {
-              thinkingLevel: "low"
-            }
+            responseMimeType: "application/json"
           },
           safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -302,10 +325,8 @@ ${qualitativeContext}
     // Parse JSON from response
     let newsData;
     try {
-      // Try direct parse first (since we requested JSON mime type)
       newsData = JSON.parse(content);
     } catch {
-      // Fallback: extract JSON from markdown blocks
       try {
         const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || 
                          content.match(/```\s*([\s\S]*?)\s*```/) ||
@@ -322,8 +343,7 @@ ${qualitativeContext}
     // =========================================================================
     // PASO 4: Guardar en base de datos
     // =========================================================================
-    if (saveToDb || trigger === 'cron') {
-      // First save to weekly_news
+    if (saveToDb || trigger === 'cron' || force) {
       const { data: weeklyNewsRecord, error: insertError } = await supabase
         .from('weekly_news')
         .upsert({
@@ -350,12 +370,10 @@ ${qualitativeContext}
       } else {
         console.log('✅ Weekly news saved to database');
         
-        // Save individual articles to news_articles table
         const weekId = weeklyNewsRecord?.id;
         const publishedAt = new Date().toISOString();
         const weekSuffix = dataToProcess.weekStart;
         
-        // Save main story
         if (newsData.mainStory && weekId) {
           const mainSlug = `${newsData.mainStory.slug || 'destacado'}-${weekSuffix}`;
           await supabase.from('news_articles').upsert({
@@ -378,7 +396,6 @@ ${qualitativeContext}
           }, { onConflict: 'slug' });
         }
         
-        // Save each story
         for (const story of (newsData.stories || [])) {
           const storySlug = `${story.slug || story.category || 'noticia'}-${weekSuffix}`;
           await supabase.from('news_articles').upsert({
@@ -404,7 +421,8 @@ ${qualitativeContext}
         console.log(`✅ Saved ${(newsData.stories?.length || 0) + 1} individual articles`);
         
         // =====================================================================
-        // TRIGGER: Send Newsroom email to active users
+        // TRIGGER: Send Newsroom email to active users (candado doble en la
+        // propia send-newsroom-email v317: un envío por week_id / 5 días)
         // =====================================================================
         if (weekId) {
           console.log('Triggering Newsroom email distribution...');
@@ -420,7 +438,6 @@ ${qualitativeContext}
               }))
             };
             
-            // Fire and forget - don't block the main response
             fetch(`${supabaseUrl}/functions/v1/send-newsroom-email`, {
               method: 'POST',
               headers: {
@@ -435,7 +452,6 @@ ${qualitativeContext}
             });
           } catch (emailTriggerError: any) {
             console.error('Error triggering newsroom email:', emailTriggerError);
-            // Don't throw - email failure shouldn't break news generation
           }
         }
       }
@@ -473,30 +489,24 @@ async function fetchVectorStoreContext(
 ): Promise<string> {
   const contextParts: string[] = [];
   
-  // Get top companies to search for qualitative data (limited to 10 most relevant)
   const companiesToSearch = new Set<string>();
   
-  // Add companies from top risers (top 3)
   weekData.topRisers?.slice(0, 3).forEach((r: any) => {
     companiesToSearch.add(r.company_name);
   });
   
-  // Add companies from top fallers (top 3)
   weekData.topFallers?.slice(0, 3).forEach((r: any) => {
     companiesToSearch.add(r.company_name);
   });
   
-  // Add companies with high divergence (top 2)
   weekData.divergences?.slice(0, 2).forEach((d: any) => {
     companiesToSearch.add(d.company_name);
   });
   
-  // Add IBEX top companies (top 2)
   weekData.ibexTop?.slice(0, 2).forEach((c: any) => {
     companiesToSearch.add(c.company_name);
   });
 
-  // Parallelize embedding + vector search in batches of 5
   const companiesArray = Array.from(companiesToSearch).slice(0, 10);
   console.log(`[vector-context] Searching ${companiesArray.length} companies in parallel batches`);
   
@@ -541,16 +551,7 @@ async function fetchVectorStoreContext(
         if (relevantDocs.length > 0) {
           const doc = relevantDocs[0];
           const meta = doc.metadata || {};
-          return `
-### ${companyName} (${meta.ticker || 'N/A'})
-**Modelo IA**: ${meta.ai_model || 'N/A'}
-**RIX Score**: ${meta.rix_score || 'N/A'}
-**Sector**: ${meta.sector_category || 'N/A'}
-
-**Análisis Cualitativo**:
-${doc.content?.substring(0, 2000) || 'Sin contenido disponible'}
-
----`;
+          return `\n### ${companyName} (${meta.ticker || 'N/A'})\n**Modelo IA**: ${meta.ai_model || 'N/A'}\n**RIX Score**: ${meta.rix_score || 'N/A'}\n**Sector**: ${meta.sector_category || 'N/A'}\n\n**Análisis Cualitativo**:\n${doc.content?.substring(0, 2000) || 'Sin contenido disponible'}\n\n---`;
         }
         return null;
       })
@@ -565,7 +566,6 @@ ${doc.content?.substring(0, 2000) || 'Sin contenido disponible'}
     }
   }
 
-  // Add general market context via broader search
   try {
     const generalQuery = "tendencias reputación corporativa empresas españolas análisis semanal";
     
@@ -592,14 +592,10 @@ ${doc.content?.substring(0, 2000) || 'Sin contenido disponible'}
       });
 
       if (generalDocs?.length) {
-        contextParts.push(`
-### CONTEXTO GENERAL DEL MERCADO
-
-${generalDocs.slice(0, 5).map((d: any) => {
+        contextParts.push(`\n### CONTEXTO GENERAL DEL MERCADO\n\n${generalDocs.slice(0, 5).map((d: any) => {
   const meta = d.metadata || {};
   return `**${meta.company_name || 'Empresa'}** (${meta.ai_model || 'IA'}): ${d.content?.substring(0, 500) || ''}...`;
-}).join('\n\n')}
-`);
+}).join('\n\n')}\n`);
       }
     }
   } catch (err) {
@@ -618,7 +614,6 @@ async function fetchWeeklyData(supabase: any) {
   const weeks = await getAvailableWeeksV2(supabase);
   if (!weeks.length) return null;
   const currentWeek = weeks[0];
-  // Si V2 sólo tiene una semana, previousData = [] (estado vacío controlado).
   const previousWeek = weeks[1] ?? null;
   const currentData = await fetchTrendShimByWeek(supabase, currentWeek);
   const previousData = previousWeek ? await fetchTrendShimByWeek(supabase, previousWeek) : [];
@@ -635,7 +630,6 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
     previousLookup.set(`${row.ticker}_${row.model_name}`, row.rix_score);
   });
 
-  // Calculate changes
   const changes: any[] = [];
   currentData.forEach(row => {
     const prevScore = previousLookup.get(`${row.ticker}_${row.model_name}`);
@@ -653,7 +647,6 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
 
   const sortedChanges = [...changes].sort((a, b) => b.change - a.change);
   
-  // Company divergences
   const companyScores = new Map();
   currentData.forEach(row => {
     if (!companyScores.has(row.ticker)) {
@@ -680,7 +673,6 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
 
   const sortedDivergences = [...divergenceList].sort((a, b) => b.std_dev - a.std_dev);
 
-  // Model and sector stats
   const modelGroups = new Map();
   const sectorGroups = new Map();
   
@@ -713,7 +705,6 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
   });
   sectorStats.sort((a, b) => b.avg_score - a.avg_score);
 
-  // Private and IBEX companies
   const privateScores = new Map();
   const ibexScores = new Map();
   
@@ -766,62 +757,23 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
 // BUILD QUANTITATIVE CONTEXT
 // ============================================================================
 function buildQuantitativeContext(weekData: any) {
-  return `
-## DATOS CUANTITATIVOS REPINDEX - ${weekData.weekLabel}
-Total empresas analizadas: ${weekData.totalCompanies || '~185'}
-
-### TOP 15 SUBIDAS SEMANALES (mayor incremento RIX):
-${weekData.topRisers?.map((r: any, i: number) => 
+  return `\n## DATOS CUANTITATIVOS REPINDEX - ${weekData.weekLabel}\nTotal empresas analizadas: ${weekData.totalCompanies || '~187'}\n\n### TOP 15 SUBIDAS SEMANALES (mayor incremento RIX):\n${weekData.topRisers?.map((r: any, i: number) => 
   `${i+1}. **${r.company_name}** (${r.ticker}) vía ${r.model_name}: **+${r.change.toFixed(1)}** puntos (${r.previous_score} → ${r.current_score})`
-).join('\n') || 'Sin datos'}
-
-### TOP 15 CAÍDAS SEMANALES (mayor descenso RIX):
-${weekData.topFallers?.map((r: any, i: number) => 
+).join('\n') || 'Sin datos'}\n\n### TOP 15 CAÍDAS SEMANALES (mayor descenso RIX):\n${weekData.topFallers?.map((r: any, i: number) => 
   `${i+1}. **${r.company_name}** (${r.ticker}) vía ${r.model_name}: **${r.change.toFixed(1)}** puntos (${r.previous_score} → ${r.current_score})`
-).join('\n') || 'Sin datos'}
-
-### TOP 15 DIVERGENCIAS ENTRE IAs (empresas con mayor desacuerdo):
-${weekData.divergences?.map((d: any, i: number) => 
-  `${i+1}. **${d.company_name}** (${d.ticker}): Desviación **${d.std_dev.toFixed(1)}** puntos, media ${d.avg_score.toFixed(0)}
-   Scores por modelo: ${d.models.map((m: any) => `${m.model}: ${m.score}`).join(' | ')}`
-).join('\n') || 'Sin datos'}
-
-### TOP 15 CONSENSOS (empresas con mayor acuerdo entre IAs):
-${weekData.consensuses?.map((c: any, i: number) => 
+).join('\n') || 'Sin datos'}\n\n### TOP 15 DIVERGENCIAS ENTRE IAs (empresas con mayor desacuerdo):\n${weekData.divergences?.map((d: any, i: number) => 
+  `${i+1}. **${d.company_name}** (${d.ticker}): Desviación **${d.std_dev.toFixed(1)}** puntos, media ${d.avg_score.toFixed(0)}\n   Scores por modelo: ${d.models.map((m: any) => `${m.model}: ${m.score}`).join(' | ')}`
+).join('\n') || 'Sin datos'}\n\n### TOP 15 CONSENSOS (empresas con mayor acuerdo entre IAs):\n${weekData.consensuses?.map((c: any, i: number) => 
   `${i+1}. **${c.company_name}** (${c.ticker}): Desviación solo **${c.std_dev.toFixed(1)}** puntos, media ${c.avg_score.toFixed(0)}`
-).join('\n') || 'Sin datos'}
-
-### COMPORTAMIENTO POR MODELO DE IA:
-${weekData.modelStats?.map((m: any) => 
+).join('\n') || 'Sin datos'}\n\n### COMPORTAMIENTO POR MODELO DE IA:\n${weekData.modelStats?.map((m: any) => 
   `- **${m.model_name}**: Promedio ${m.avg_score.toFixed(1)} puntos (${m.company_count} empresas analizadas)`
-).join('\n') || 'Sin datos'}
-
-### ANÁLISIS POR SECTOR:
-${weekData.sectorStats?.map((s: any) => 
+).join('\n') || 'Sin datos'}\n\n### ANÁLISIS POR SECTOR:\n${weekData.sectorStats?.map((s: any) => 
   `- **${s.sector}**: Promedio ${s.avg_score.toFixed(1)} puntos (${s.company_count} empresas)`
-).join('\n') || 'Sin datos'}
-
-### TOP 15 EMPRESAS PRIVADAS (no cotizadas):
-${weekData.privateCompanies?.map((p: any, i: number) => 
+).join('\n') || 'Sin datos'}\n\n### TOP 15 EMPRESAS PRIVADAS (no cotizadas):\n${weekData.privateCompanies?.map((p: any, i: number) => 
   `${i+1}. **${p.company_name}** (${p.ticker}): ${p.avg_score.toFixed(0)} puntos`
-).join('\n') || 'Sin datos'}
-
-### RANKING IBEX-35:
-**Top 15:**
-${weekData.ibexTop?.map((c: any, i: number) => 
+).join('\n') || 'Sin datos'}\n\n### RANKING IBEX-35:\n**Top 15:**\n${weekData.ibexTop?.map((c: any, i: number) => 
   `${i+1}. **${c.company_name}** (${c.ticker}): ${c.avg_score.toFixed(0)} puntos`
-).join('\n') || 'Sin datos'}
-
-**Bottom 10:**
-${weekData.ibexBottom?.map((c: any, i: number) => 
+).join('\n') || 'Sin datos'}\n\n**Bottom 10:**\n${weekData.ibexBottom?.map((c: any, i: number) => 
   `${i+1}. **${c.company_name}** (${c.ticker}): ${c.avg_score.toFixed(0)} puntos`
-).join('\n') || 'Sin datos'}
-
-### CONTEXTO REPINDEX:
-- RepIndex analiza semanalmente la reputación de 185 empresas españolas
-- 6 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen
-- Escala RIX: 0-100 puntos (mayor = mejor reputación percibida por las IAs)
-- Panel incluye IBEX-35, cotizadas menores y grandes empresas privadas
-- 8 métricas: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM
-`;
+).join('\n') || 'Sin datos'}\n\n### CONTEXTO REPINDEX:\n- RepIndex analiza semanalmente la reputación de 187 empresas españolas\n- 6 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen\n- Escala RIX: 0-100 puntos (mayor = mejor reputación percibida por las IAs)\n- Panel incluye IBEX-35, cotizadas menores y grandes empresas privadas\n- 8 métricas: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM\n`;
 }
