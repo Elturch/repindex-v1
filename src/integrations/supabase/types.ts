@@ -1408,6 +1408,48 @@ export type Database = {
           },
         ]
       }
+      issuer_factsheet: {
+        Row: {
+          accionista_ref: string | null
+          ceo: string | null
+          fuentes: Json | null
+          ingresos_ult_ejercicio: string | null
+          notas: string | null
+          presidente: string | null
+          sede: string | null
+          ticker: string
+          ult_resultado_publicado: string | null
+          updated_at: string
+          whitelist: Json | null
+        }
+        Insert: {
+          accionista_ref?: string | null
+          ceo?: string | null
+          fuentes?: Json | null
+          ingresos_ult_ejercicio?: string | null
+          notas?: string | null
+          presidente?: string | null
+          sede?: string | null
+          ticker: string
+          ult_resultado_publicado?: string | null
+          updated_at?: string
+          whitelist?: Json | null
+        }
+        Update: {
+          accionista_ref?: string | null
+          ceo?: string | null
+          fuentes?: Json | null
+          ingresos_ult_ejercicio?: string | null
+          notas?: string | null
+          presidente?: string | null
+          sede?: string | null
+          ticker?: string
+          ult_resultado_publicado?: string | null
+          updated_at?: string
+          whitelist?: Json | null
+        }
+        Relationships: []
+      }
       lead_qualification_responses: {
         Row: {
           additional_notes: string | null
@@ -2493,6 +2535,60 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_claim_checks: {
+        Row: {
+          accion: string | null
+          cita: string | null
+          claim: string
+          claim_type: string | null
+          created_at: string
+          evidencia_extracto: string | null
+          evidencia_url: string | null
+          gravedad: string | null
+          id: string
+          model: string
+          ticker: string
+          url_citada: string | null
+          url_estado: string | null
+          verdict: string
+          week_start: string
+        }
+        Insert: {
+          accion?: string | null
+          cita?: string | null
+          claim: string
+          claim_type?: string | null
+          created_at?: string
+          evidencia_extracto?: string | null
+          evidencia_url?: string | null
+          gravedad?: string | null
+          id?: string
+          model: string
+          ticker: string
+          url_citada?: string | null
+          url_estado?: string | null
+          verdict: string
+          week_start: string
+        }
+        Update: {
+          accion?: string | null
+          cita?: string | null
+          claim?: string
+          claim_type?: string | null
+          created_at?: string
+          evidencia_extracto?: string | null
+          evidencia_url?: string | null
+          gravedad?: string | null
+          id?: string
+          model?: string
+          ticker?: string
+          url_citada?: string | null
+          url_estado?: string | null
+          verdict?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       rix_composite_scores: {
         Row: {
           company_name: string
@@ -3441,6 +3537,36 @@ export type Database = {
           sector_category?: string | null
           stock_price?: number | null
           ticker?: string
+        }
+        Relationships: []
+      }
+      rix_url_checks: {
+        Row: {
+          checked_at: string
+          estado: string
+          id: string
+          models: string[] | null
+          ticker: string
+          url: string
+          week_start: string
+        }
+        Insert: {
+          checked_at?: string
+          estado: string
+          id?: string
+          models?: string[] | null
+          ticker: string
+          url: string
+          week_start: string
+        }
+        Update: {
+          checked_at?: string
+          estado?: string
+          id?: string
+          models?: string[] | null
+          ticker?: string
+          url?: string
+          week_start?: string
         }
         Relationships: []
       }
