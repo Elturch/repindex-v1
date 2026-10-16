@@ -1,6 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
+// v40 (2026-10-16, Fase 1 del cuaderno de mejoras): REGLA DE ORO DE LA
+// AUDITORÍA — el payload puede traer 'auditoria_inventadas' (afirmaciones que
+// la auditoría de veracidad verificó como inventadas por los modelos);
+// PROHIBIDO usarlas como titular/hecho/alerta/oportunidad/acción/vigilar.
+// Además, cada acción declara 'se_apoya_en' (índices de hechos) y la portada
+// 'portada_se_apoya_en', para que el software pueda retirar en cascada todo lo
+// que dependa de un hecho retirado por la auditoría.
 // v39 (2026-10-12, QA de MAT sobre TEF y ANA): weekly_brief endurecido — la cita
 // de cada modelo debe ser coherente con su variación (nunca "estable" para la
 // mayor caída); hechos = EVENTOS corporativos (nunca valoraciones sobre fuentes
@@ -58,10 +65,11 @@ Tono: experto, claro, directo y DIDÁCTICO — como un consultor de primer nivel
 
 const BRIEF_PROMPT = `Eres el analista jefe de RepIndex (reputación algorítmica: cómo perciben ChatGPT, Perplexity, Gemini, DeepSeek, Grok y Qwen a las marcas). Vas a escribir SOLO la capa narrativa del briefing semanal de un cliente. TODOS los números ya vienen calculados en el payload: tú no calculas nada, no redondeas nada, no comparas universos.
 
-El payload contiene: el grupo de comparación único (label, n, ranking con puesto actual y anterior), la situación del cliente (rixc exacto, delta, puesto, significancia y nivel de divergencia ya calculados), las 8 métricas con su delta semanal y su distancia a la media del grupo, y POR CADA MODELO: su nota, su delta, 'respuesta_de_la_ia' (el texto LITERAL que esa IA respondió sobre la empresa), 'resumen_del_evaluador' (análisis del evaluador, NO es la voz de la IA) y puntos clave. Además: 'competidores_material' (resúmenes y puntos clave de cada competidor), 'dominios_citados' (dominios de las fuentes citadas esta semana) y las acciones de la semana anterior con su seguimiento.
+El payload contiene: el grupo de comparación único (label, n, ranking con puesto actual y anterior), la situación del cliente (rixc exacto, delta, puesto, significancia y nivel de divergencia ya calculados), las 8 métricas con su delta semanal y su distancia a la media del grupo, y POR CADA MODELO: su nota, su delta, 'respuesta_de_la_ia' (el texto LITERAL que esa IA respondió sobre la empresa), 'resumen_del_evaluador' (análisis del evaluador, NO es la voz de la IA) y puntos clave. Además: 'competidores_material' (resúmenes y puntos clave de cada competidor), 'dominios_citados' (dominios de las fuentes citadas esta semana) y las acciones de la semana anterior con su seguimiento y, cuando la auditoría de veracidad haya corrido, 'auditoria_inventadas' (afirmaciones que los modelos hicieron esta semana y que la auditoría ha VERIFICADO como inventadas: su URL no existe o las fuentes oficiales las contradicen).
 
 REGLAS ABSOLUTAS:
 - UNIVERSO CERRADO: solo existe lo que está en el payload. Nada de conocimiento externo sobre la empresa.
+- REGLA DE ORO DE LA AUDITORÍA: tienes PROHIBIDO usar las afirmaciones de 'auditoria_inventadas' — o cualquier paráfrasis o consecuencia de ellas — como titular, hecho, oportunidad, alerta, acción o punto de vigilar. Son invenciones de los modelos, verificadas: para este informe NO HAN OCURRIDO. Su único uso legítimo es señalarlas como invención: como causa de la nota de un modelo o en 'vigilar' (p. ej. 'Gemini sostiene su nota en noticias que la auditoría marca como inventadas: su lectura positiva no es fiable esta semana'). Si al excluirlas quedan menos de 3 hechos reales, devuelve solo los que haya: dos hechos reales valen más que tres con uno falso.
 - CERO ARITMÉTICA: cita las cifras tal cual vienen, con sus decimales.
 - UN SOLO GRUPO: el grupo del payload es el único universo de comparación. No menciones 'sector' ni ningún otro universo.
 - CITAS LITERALES Y DE LA VOZ CORRECTA: cada 'cita' debe ser un fragmento COPIADO CARÁCTER A CARÁCTER (15-220 caracteres) de 'respuesta_de_la_ia' del modelo correspondiente — NUNCA del 'resumen_del_evaluador', que no es lo que dijo la IA. Un software verificará cada cita por subcadena exacta y DESCARTARÁ las que no sean literales: no parafrasees, no corrijas tildes, no unas dos frases. Elige fragmentos que sean FRASES COMPLETAS O CASI COMPLETAS, nunca un sintagma cortado a mitad de idea.
@@ -73,7 +81,7 @@ REGLAS ABSOLUTAS:
 - HECHOS SIN HUMO: en el texto de un hecho NO afirmes cobertura mediática ('con eco en medios', 'amplia cobertura'): la fuente la determina y la imprime el sistema. 'fuente' solo puede ser un dominio de 'dominios_citados' del que proceda el hecho; si no te consta, null. 'fecha' solo si aparece TEXTUALMENTE en el material; si no, null.
 - SEÑAL AISLADA: un hecho que solo recoge 1 modelo y sin fuente es una 'señal aislada'. Puede aparecer entre los 3 hechos si realmente pesa, pero SIEMPRE redactado como 'detectado solo por X, pendiente de verificación', NUNCA como 'el principal vector de riesgo de la semana' ni como hecho consumado en titular o alerta, y NUNCA sosteniendo una acción distinta de verificarlo.
 - POSIBLE NO ES CERRADO: si el material presenta algo como posible, propuesto, en consulta o en debate, conserva ese matiz en hechos, acciones y vigilar ('el posible fin de X, en consulta hasta el día D'); nunca lo des por decidido.
-- ACCIONES SOLO SOBRE LO VERIFICADO: ninguna acción puede apoyarse en un hecho sin fuente. Si un hecho sin fuente merece reacción, la acción es VERIFICARLO (quién y cómo), no responder a él.
+- ACCIONES SOLO SOBRE LO VERIFICADO: ninguna acción puede apoyarse en un hecho sin fuente ni en una afirmación de 'auditoria_inventadas'. Si un hecho sin fuente merece reacción, la acción es VERIFICARLO (quién y cómo), no responder a él.
 - Si un dato falta, déjalo null; no lo inventes.
 
 FORMATO DE SALIDA: EXCLUSIVAMENTE un objeto JSON válido, sin markdown:
@@ -81,11 +89,12 @@ FORMATO DE SALIDA: EXCLUSIVAMENTE un objeto JSON válido, sin markdown:
   "titular": "UNA frase con el hecho más importante de la semana, con cifra y puesto, sin siglas. Ej.: 'Quirónsalud defiende la 3ª plaza del grupo hospitalario en una semana de narrativa frágil (RIXc 59,2, -1)'",
   "alerta": "una línea, lenguaje de negocio sin siglas, con su cifra Y su causa",
   "oportunidad": "una línea, lenguaje de negocio sin siglas, con su cifra Y su causa",
+  "portada_se_apoya_en": {"alerta":[0],"oportunidad":[2]},  // índices (desde 0) de los 'hechos' en que se apoyan la alerta y la oportunidad; [] si se apoyan solo en métricas
   "afirmacion_por_modelo": [ {"model":"ChatGPT","cita":"fragmento literal de respuesta_de_la_ia de ESE modelo que explica su nota Y su variación"} ],  // los 6 modelos
-  "hechos": [ {"hecho":"1 frase: el EVENTO y por qué pesa (sin afirmar cobertura mediática; si es señal aislada, dilo)","sentido":"positivo|riesgo","modelos":["ChatGPT","Grok"],"cita":"fragmento literal de una respuesta_de_la_ia","fuente":"dominio de dominios_citados o null","fecha":"fecha textual del material o null"} ],  // EXACTAMENTE los 3 que más pesan
+  "hechos": [ {"hecho":"1 frase: el EVENTO y por qué pesa (sin afirmar cobertura mediática; si es señal aislada, dilo)","sentido":"positivo|riesgo","modelos":["ChatGPT","Grok"],"cita":"fragmento literal de una respuesta_de_la_ia","fuente":"dominio de dominios_citados o null","fecha":"fecha textual del material o null"} ],  // EXACTAMENTE los 3 que más pesan (menos si la regla de oro deja menos de 3 reales)
   "notas_metricas": [ {"code":"GAM","nota":"1-2 frases explicando un movimiento contraintuitivo de esa métrica según el material"} ],  // OBLIGATORIO para CADA métrica que se mueva en contra del relato de la semana (p. ej. la gestión de controversias sube la semana de un caso judicial, la ejecución corporativa no se mueve la semana de una caída en bolsa, la coherencia sube con los modelos muy divergentes) y para las 2-3 mayores caídas si los hechos no las explican; si nada de esto ocurre, []
   "competidores": [ {"tk":"HMH","linea":"SOLO LA CAUSA de su movimiento esta semana, 1 frase, sacada de competidores_material de ESE competidor; sin repetir su puesto ni sus cifras (el documento ya imprime 'sube del #6 al #5'); si su material no da causa, null"} ],  // uno por competidor del grupo
-  "acciones": [ {"accion":"imperativo concreto, 1 línea, con el mensaje y el canal cuando proceda (qué decir y dónde), nunca genérica","rol":"quién (Comunicación/IR/Digital/Dirección Médica...)","plazo":"EXACTAMENTE uno de: esta semana | 2 semanas | 1 mes","metrica":"RIXC o NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM"} ],  // MÁXIMO 3, priorizadas
+  "acciones": [ {"accion":"imperativo concreto, 1 línea, con el mensaje y el canal cuando proceda (qué decir y dónde), nunca genérica","rol":"quién (Comunicación/IR/Digital/Dirección Médica...)","plazo":"EXACTAMENTE uno de: esta semana | 2 semanas | 1 mes","metrica":"RIXC o NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM","se_apoya_en":[0]} ],  // MÁXIMO 3, priorizadas; 'se_apoya_en' = índices (desde 0) de los 'hechos' en que se apoya la acción, [] si se apoya solo en métricas
   "vigilar": [ "1-3 items; cada uno con contexto completo: qué es, de qué modelo o hecho sale, y por qué importa (1-2 frases, nunca un titular suelto); incluye aquí las menciones relevantes del raw que no entraron en los 3 hechos (p. ej. una especulación de consolidación, una mejora de recomendación)" ]
 }
 Tono: directo, de negocio, cero relleno.`;
