@@ -6,6 +6,21 @@ import { applyPlugin } from "npm:jspdf-autotable@3.8.2";
 applyPlugin(jsPDF);
 const autoTable = (d: any, opts: any) => (d as any).autoTable(opts);
 
+// client-weekly-report · v22.2 · 2026-10-20 · QA v3 del colaborador (TEF, noche)
+//  v22.2: (1) Rescate de fuente para hechos "pendientes de verificación": si la
+//  cita de un modelo lleva al lado un enlace o un marcador [n] cuya URL está en
+//  el anexo con estado ABRE (y no es sección), esa URL es la fuente del hecho
+//  (caso revistacloud-canalizaciones; antes, Expansión 12/10). Solo URLs que
+//  abren y cuyo slug comparte términos con el hecho. (2) Si la portada (titular,
+//  alerta u oportunidad) cita una métrica por su nombre o sigla, esa métrica
+//  entra en la tabla "las que explican la semana" aunque no esté entre las 4 de
+//  mayor movimiento. (3) "caída de -6" -> "caída de 6" (el signo no se duplica
+//  tras palabras de descenso). (4) Las acciones anteriores retiradas se imprimen
+//  al final de la tabla, nunca como primera fila. (5) La distancia a la media
+//  con "-" se explica al pie: solo X de N empresas del grupo tienen esa métrica
+//  (CXM solo aplica a cotizadas). NOTA verificada en BD: el doble "#1 (empate)"
+//  de TEF es CORRECTO — MASORANGE y Vodafone empataron exactamente a 64,33 el
+//  11-oct (la media exacta, no redondeos).
 // client-weekly-report · v22.1 · 2026-10-20 · tres remates tras la revisión visual
 //  v22.1: (1) "vigilar" se aplana a frases cuando el agente devuelve objetos
 //  (ANA imprimía "[object Object]"). (2) Radar del emisor sin falsos positivos:
@@ -587,11 +602,22 @@ function buildBriefPdf(ctx: any): Uint8Array {
   }
 
   // Métricas que explican la semana (top 4) + notas de movimientos contraintuitivos
-  const topMoves = [...(metricRows ?? [])]
+  // v22.2: si la portada (titular, alerta u oportunidad) cita una métrica por su
+  // nombre canónico o su sigla, esa métrica entra en la tabla aunque no esté
+  // entre las 4 de mayor movimiento — el lector debe poder encontrarla aquí.
+  const portadaTxt = normTxt(`${brief?.titular ?? ""} ${brief?.alerta ?? ""} ${brief?.oportunidad ?? ""}`);
+  const citadasEnPortada = new Set(
+    METRICS.filter((m) => portadaTxt.includes(normTxt(m.name)) || new RegExp(`\\b${m.code.toLowerCase()}\\b`).test(portadaTxt)).map((m) => m.code),
+  );
+  const ordenadas = [...(metricRows ?? [])]
     .map((r: any) => ({ ...r, mag: Math.max(Math.abs(r.delta_sem ?? 0), Math.abs(r.dist_media ?? 0)) }))
-    .sort((a: any, b: any) => b.mag - a.mag)
-    .slice(0, 4);
-  sectionTitle("Las métricas que explican la semana", `Las ${topMoves.length} con mayor movimiento (variación semanal o distancia a la media de ${clean(grupo.label)}). La tabla completa de las 8 métricas está en el anexo.`);
+    .sort((a: any, b: any) => b.mag - a.mag);
+  const topMoves = ordenadas.slice(0, 4);
+  let forzadas = 0;
+  for (const r of ordenadas.slice(4)) {
+    if (citadasEnPortada.has(r.code) && r.valor != null) { topMoves.push(r); forzadas++; }
+  }
+  sectionTitle("Las métricas que explican la semana", `Las ${topMoves.length - forzadas} con mayor movimiento (variación semanal o distancia a la media de ${clean(grupo.label)})${forzadas ? ` más ${forzadas === 1 ? "la métrica citada" : "las métricas citadas"} en la portada` : ""}. La tabla completa de las 8 métricas está en el anexo.`);
   autoTable(doc, {
     startY: y, margin: { left: M, right: M },
     head: [["Métrica", "Valor", "Variación vs semana anterior", "Distancia a media del grupo"]],
@@ -607,6 +633,16 @@ function buildBriefPdf(ctx: any): Uint8Array {
     },
   });
   y = (doc as any).lastAutoTable.finalY + 6;
+  // v22.2: el "-" en distancia a la media se explica, no se deja mudo
+  for (const r of topMoves.filter((x: any) => x.valor != null && x.dist_media == null && Number(x.n_con_dato ?? 2) < 2)) {
+    sans(); doc.setFontSize(7.6);
+    const lines = doc.splitTextToSize(clean(`${r.code}: sin distancia a la media del grupo — solo ${r.n_con_dato ?? 1} de ${grupo.n} empresas tiene esta métrica${r.code === "CXM" ? " (la ejecución corporativa solo aplica a cotizadas)" : ""}.`), CW - 16);
+    ensure(lines.length * 9.8 + 6);
+    doc.setFillColor(...C.mut2); doc.circle(M + 4, y + 3.2, 1.6, "F");
+    doc.setTextColor(...C.mut);
+    doc.text(lines, M + 12, y + 6, { lineHeightFactor: 1.24 });
+    y += lines.length * 9.8 + 4;
+  }
   for (const nm of (brief?.notas_metricas ?? []).slice(0, 3)) {
     sans(); doc.setFontSize(7.6);
     const lines = doc.splitTextToSize(clean(`${nm.code}: ${nm.nota}`), CW - 16);
@@ -888,7 +924,17 @@ function buildBriefPdf(ctx: any): Uint8Array {
       if (d.column.index === 4) { d.cell.styles.textColor = deltaColor(r?.dist_media) as unknown as number[]; d.cell.styles.fontStyle = "bold"; }
     },
   });
-  y = (doc as any).lastAutoTable.finalY + 10;
+  y = (doc as any).lastAutoTable.finalY + 6;
+  // v22.2: el "-" en distancia a la media se explica también en el anexo
+  for (const r of (metricRows ?? []).filter((x: any) => x.valor != null && x.dist_media == null && Number(x.n_con_dato ?? 2) < 2)) {
+    sans(); doc.setFontSize(7);
+    const lines = doc.splitTextToSize(clean(`${r.code}: sin distancia a la media del grupo — solo ${r.n_con_dato ?? 1} de ${grupo.n} empresas tiene esta métrica${r.code === "CXM" ? " (la ejecución corporativa solo aplica a cotizadas)" : ""}.`), CW);
+    ensure(lines.length * 9 + 4);
+    doc.setTextColor(...C.mut2);
+    doc.text(lines, M, y + 4, { lineHeightFactor: 1.22 });
+    y += lines.length * 9 + 4;
+  }
+  y += 4;
 
   sectionTitle("Anexo · Fuentes citadas", `${citations.totalCitas} citas a ${citations.totalFuentes} noticias concretas, en ${citations.rows.length} dominios (subdominios agrupados: fotos.europapress.es cuenta como europapress.es; se respetan cabeceras propias como cincodias.elpais.com).${(citations.nSecciones ?? 0) > 0 ? ` Además hay ${citations.nSecciones} enlaces a portadas o secciones de medios, que NO cuentan como fuentes ni en esta tabla: se listan al final del anexo de URLs con la etiqueta SECCIÓN.` : ""} Nota sobre SIM: la métrica de autoridad de fuentes NO se calcula desde esta tabla — es la media de cómo puntúa cada uno de los 6 modelos las fuentes de SU propia respuesta, y un modelo sin fuentes puntúa muy bajo y arrastra la media aunque otros citen T1/T2.`);
   autoTable(doc, {
@@ -1241,6 +1287,7 @@ Deno.serve(async (req) => {
             code: m.code, name: m.name, peso: m.peso, valor: now,
             delta_sem: now != null && prev != null ? now - prev : null,
             dist_media: now != null && avg != null && nWith >= 2 ? Math.round((now - Number(avg)) * 10) / 10 : null,
+            n_con_dato: nWith,
           };
         });
 
@@ -1342,7 +1389,9 @@ Deno.serve(async (req) => {
         const prevActions = (pa ?? []).map((a: any) => {
           const cur = metricNow(a.metrica);
           return { ...a, valor_actual: cur, delta: cur != null && a.valor_al_emitir != null ? Math.round((Number(cur) - Number(a.valor_al_emitir)) * 10) / 10 : null };
-        });
+        })
+          // v22.2: lo retirado por la auditoría nunca encabeza la tabla
+          .sort((a: any, b: any) => (a.estado === "retirada" ? 1 : 0) - (b.estado === "retirada" ? 1 : 0));
 
         // ---- v20: auditoría de veracidad ANTES del agente (rix-verify corre a las 04:30) ----
         // El agente la recibe para no construir nada sobre invenciones; el PDF la LEE
@@ -1391,6 +1440,7 @@ Deno.serve(async (req) => {
             .replace(/(\d),(\d{3})(?!\d)/g, "$1.$2")        // millar inglés -> punto español
             .replace(/(\d)\.(\d{1,2})(?!\d)/g, "$1,$2")     // decimal -> coma (3+ dígitos tras el punto = millar, se respeta)
             .replace(/RIXc (\d{1,3})(?!\d|[.,]\d)/g, "RIXc $1,0") // la nota siempre con una décima, como en portada (v22.1: sin comerse un dígito cuando ya viene "55,8")
+            .replace(/\b(ca[ií]das?|cae|bajan?|baja|desciende|retroceden?|pierden?|descensos?|retrocesos?)([^.;:]{0,40}?\bde\s+)[-−](\d+(?:,\d+)?)(?!\s*a[\s-])/gi, "$1$2$3") // v22.2: "caída de -6" -> "caída de 6" (sin tocar rangos "de -3 a -1")
           : s);
         brief.titular = comaNarr(brief.titular);
         brief.alerta = comaNarr(brief.alerta);
@@ -1411,6 +1461,46 @@ Deno.serve(async (req) => {
         // Se verifica primero para que un hecho VERIFICADO con fuente real sea
         // inmune al matching por parecido de la regla de oro (fix Australia-ANA).
         const domBase = (d: string) => stripAcc(d.split(".").slice(0, -1).join(".")).replace(/[^a-z0-9]/g, "");
+        // v22.2: rescate de fuente — si la cita de un modelo lleva al lado un
+        // enlace (markdown) o un marcador [n] cuya URL figura en el anexo con
+        // estado ABRE (y no es sección), esa URL documenta el hecho. La URL debe
+        // compartir términos con el hecho (su slug habla de lo mismo).
+        const modelRawFull = new Map<string, string>(modelRows.map((r: any) => [r.model, String(r.respuesta_full ?? "")]));
+        const urlsDeModelo = new Map<string, string[]>();
+        for (const [m0, raw0] of modelRawFull) {
+          const vistos = new Set<string>(); const lista: string[] = [];
+          for (const u0 of (raw0.match(/https?:\/\/[^\s)\]"'<>]+/g) ?? [])) { const u1 = u0.replace(/[.,;:]+$/, ""); if (!vistos.has(u1)) { vistos.add(u1); lista.push(u1); } }
+          urlsDeModelo.set(m0, lista);
+        }
+        const itemByUrl = new Map<string, any>(citations.items.map((it: any) => [it.url, it]));
+        const rescateFuente = (hechoTxt: unknown, citaTxt: unknown, hModels: string[]): string | null => {
+          const citaRaw = String(citaTxt ?? "");
+          if (citaRaw.length < 25) return null;
+          const hToks = new Set(normTxt(`${hechoTxt} ${citaRaw}`).split(/[^a-z0-9]+/).filter((t) => t.length >= 5));
+          const valida = (u0: string): string | null => {
+            const u1 = u0.replace(/[.,;:]+$/, "").slice(0, 300);
+            const it = itemByUrl.get(u1);
+            if (!it || it.seccion || it.estado !== "ok") return null;
+            let comunes = 0;
+            for (const t of stripAcc(u1.toLowerCase()).split(/[^a-z0-9]+/)) { if (t.length >= 5 && hToks.has(t)) comunes++; }
+            if (comunes < 2) return null;
+            try { return groupDomain(new URL(u1).hostname, corpDomains); } catch (_e) { return null; }
+          };
+          for (const m0 of hModels) {
+            const raw0 = modelRawFull.get(m0) ?? "";
+            let idx = raw0.indexOf(citaRaw);
+            if (idx < 0) idx = raw0.indexOf(citaRaw.slice(0, 60));
+            if (idx < 0) continue;
+            const win = raw0.slice(idx, idx + citaRaw.length + 260);
+            for (const mm of win.matchAll(/\((https?:\/\/[^)\s]+)\)/g)) { const f = valida(mm[1]); if (f) return f; }
+            const urls = urlsDeModelo.get(m0) ?? [];
+            for (const mk of win.matchAll(/\[(\d{1,2})\]/g)) {
+              const n0 = Number(mk[1]);
+              if (n0 >= 1 && n0 <= urls.length) { const f = valida(urls[n0 - 1]); if (f) return f; }
+            }
+          }
+          return null;
+        };
         const rawHechos: any[] = Array.isArray(brief.hechos) ? brief.hechos : [];
         const hechosAll = rawHechos.map((h: any, _oi: number) => {
           const citaOK = isLiteral(h.cita, allMaterial);
@@ -1431,6 +1521,8 @@ Deno.serve(async (req) => {
               if (base.length >= 5 && texto.includes(base)) { fuente = row.dom; break; }
             }
           }
+          // v22.2: rescate por el enlace o marcador [n] pegado a la cita en el raw
+          if (!fuente && citaOK) fuente = rescateFuente(h.hecho, h.cita, hModels);
           // v20: una fuente cuyo único respaldo esa semana son URLs ROTA no verifica nada
           // (v22: las portadas/secciones tampoco cuentan como respaldo)
           if (fuente) {
