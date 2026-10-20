@@ -1390,7 +1390,7 @@ Deno.serve(async (req) => {
           ? s
             .replace(/(\d),(\d{3})(?!\d)/g, "$1.$2")        // millar inglés -> punto español
             .replace(/(\d)\.(\d{1,2})(?!\d)/g, "$1,$2")     // decimal -> coma (3+ dígitos tras el punto = millar, se respeta)
-            .replace(/RIXc (\d{1,3})(?![\d,.]\d)/g, "RIXc $1,0") // la nota siempre con una décima, como en portada
+            .replace(/RIXc (\d{1,3})(?!\d|[.,]\d)/g, "RIXc $1,0") // la nota siempre con una décima, como en portada (v22.1: sin comerse un dígito cuando ya viene "55,8")
           : s);
         brief.titular = comaNarr(brief.titular);
         brief.alerta = comaNarr(brief.alerta);
