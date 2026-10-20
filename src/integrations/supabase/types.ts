@@ -1412,11 +1412,13 @@ export type Database = {
         Row: {
           accionista_ref: string | null
           ceo: string | null
+          corp_domains: string[] | null
           fuentes: Json | null
           ingresos_ult_ejercicio: string | null
           notas: string | null
           presidente: string | null
           sede: string | null
+          temas_activos: string[] | null
           ticker: string
           ult_resultado_publicado: string | null
           updated_at: string
@@ -1425,11 +1427,13 @@ export type Database = {
         Insert: {
           accionista_ref?: string | null
           ceo?: string | null
+          corp_domains?: string[] | null
           fuentes?: Json | null
           ingresos_ult_ejercicio?: string | null
           notas?: string | null
           presidente?: string | null
           sede?: string | null
+          temas_activos?: string[] | null
           ticker: string
           ult_resultado_publicado?: string | null
           updated_at?: string
@@ -1438,11 +1442,13 @@ export type Database = {
         Update: {
           accionista_ref?: string | null
           ceo?: string | null
+          corp_domains?: string[] | null
           fuentes?: Json | null
           ingresos_ult_ejercicio?: string | null
           notas?: string | null
           presidente?: string | null
           sede?: string | null
+          temas_activos?: string[] | null
           ticker?: string
           ult_resultado_publicado?: string | null
           updated_at?: string
@@ -2547,6 +2553,7 @@ export type Database = {
           gravedad: string | null
           id: string
           model: string
+          sujeto: string | null
           ticker: string
           url_citada: string | null
           url_estado: string | null
@@ -2564,6 +2571,7 @@ export type Database = {
           gravedad?: string | null
           id?: string
           model: string
+          sujeto?: string | null
           ticker: string
           url_citada?: string | null
           url_estado?: string | null
@@ -2581,6 +2589,7 @@ export type Database = {
           gravedad?: string | null
           id?: string
           model?: string
+          sujeto?: string | null
           ticker?: string
           url_citada?: string | null
           url_estado?: string | null
