@@ -3579,6 +3579,30 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_verify_errors: {
+        Row: {
+          created_at: string | null
+          error: string | null
+          id: number
+          ticker: string | null
+          week_start: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error?: string | null
+          id?: never
+          ticker?: string | null
+          week_start?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error?: string | null
+          id?: never
+          ticker?: string | null
+          week_start?: string | null
+        }
+        Relationships: []
+      }
       role_enrichment_analytics: {
         Row: {
           created_at: string
