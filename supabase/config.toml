@@ -143,3 +143,6 @@ verify_jwt = false
 
 [functions.sweep-completeness-gate]
 verify_jwt = false
+
+[functions.client-weekly-report]
+verify_jwt = false
