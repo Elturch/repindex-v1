@@ -6,6 +6,14 @@ import { applyPlugin } from "npm:jspdf-autotable@3.8.2";
 applyPlugin(jsPDF);
 const autoTable = (d: any, opts: any) => (d as any).autoTable(opts);
 
+// client-weekly-report · v22.1 · 2026-10-20 · tres remates tras la revisión visual
+//  v22.1: (1) "vigilar" se aplana a frases cuando el agente devuelve objetos
+//  (ANA imprimía "[object Object]"). (2) Radar del emisor sin falsos positivos:
+//  el tema solo cuenta como detectado si TODAS sus palabras distintivas (8+
+//  letras) están en el material — "presidente" o "quirón" sueltos ya no bastan.
+//  (3) Un hecho cuyo único respaldo es una fuente de opinión/agregador (T5) y
+//  un solo modelo no entra en los 3 hechos: baja a vigilancia con su matiz y
+//  lo que se apoyara en él se trata como pendiente (caso Mollinedo/ad-hoc-news).
 // client-weekly-report · v22 · 2026-10-20 · QA v2 del colaborador (misma tarde)
 //  v22: (1) FIX del falso positivo de la regla de oro (ANA 18/10: el contrato
 //  real de Australia cayó por compartir "contrato/proyecto/ganado" con una
@@ -1390,6 +1398,10 @@ Deno.serve(async (req) => {
         if (Array.isArray(brief.hechos)) for (const h0 of brief.hechos) h0.hecho = comaNarr(h0.hecho);
         if (Array.isArray(brief.notas_metricas)) for (const nm0 of brief.notas_metricas) nm0.nota = comaNarr(nm0.nota);
         if (Array.isArray(brief.competidores)) for (const c0 of brief.competidores) c0.linea = comaNarr(c0.linea);
+        // v22.1: el agente a veces devuelve 'vigilar' como objetos; se aplana a frases
+        if (Array.isArray(brief.vigilar)) brief.vigilar = brief.vigilar
+          .map((v0: any) => typeof v0 === "string" ? v0 : Object.values(v0 ?? {}).filter((x: any) => typeof x === "string" && x.trim()).join(" — "))
+          .filter((v0: any) => typeof v0 === "string" && v0.trim());
         if (Array.isArray(brief.vigilar)) brief.vigilar = brief.vigilar.map((v0: any) => comaNarr(v0));
         if (Array.isArray(brief.acciones)) for (const a0 of brief.acciones) a0.accion = comaNarr(a0.accion);
 
@@ -1433,6 +1445,27 @@ Deno.serve(async (req) => {
           return { ...h, _oi, sentido, citaOriginal: h.cita, cita: citaOK ? cutWord(h.cita, 260) : null, fuente, fecha, estado };
         });
 
+        // ---- v22.1 (QA v2-ANA): fuente débil no sostiene un hecho ----
+        // Un hecho cuyo único respaldo es UNA fuente de opinión/agregador (tier 5)
+        // y UN solo modelo baja a vigilancia con su matiz; su estado pasa a
+        // "sin_verificar", de modo que las acciones o la portada que se apoyaran
+        // en él se convierten en verificación / señal pendiente (bloque v21).
+        const demotedIdx = new Set<number>();
+        for (const h of hechosAll) {
+          const tier5 = h.fuente ? tierOf(String(h.fuente), corpDomains) === 5 : false;
+          const unModelo = (Array.isArray(h.modelos) ? h.modelos.length : 0) <= 1;
+          if (tier5 && unModelo && h.estado === "verificado") {
+            demotedIdx.add(Number(h._oi));
+            h.estado = "sin_verificar"; h.fuente = null;
+          }
+        }
+        if (demotedIdx.size) {
+          const lineas = hechosAll.filter((h: any) => demotedIdx.has(Number(h._oi)))
+            .map((h: any) => `Señal con fuente débil (un solo modelo y un dominio de opinión o agregador): ${cutWord(String(h.hecho ?? ""), 180)} Se vigila, no se afirma.`);
+          brief.vigilar = [...(Array.isArray(brief.vigilar) ? brief.vigilar : []), ...lineas];
+          console.log(`[client-weekly-report] fuente débil: ${demotedIdx.size} hecho(s) degradados a vigilancia (${client.ticker})`);
+        }
+
         // ---- v20 · CANDADO DE LA REGLA DE ORO (v22: con inmunidad de hechos verificados) ----
         // Nada que la auditoría marque como inventado sale como titular, hecho,
         // oportunidad, alerta, acción ni vigilancia. Dos vías: matcher directo
@@ -1457,7 +1490,7 @@ Deno.serve(async (req) => {
           const psa = (brief as any).portada_se_apoya_en ?? {};
           if (brief.oportunidad && (matchInv(brief.oportunidad) || esSimulada(brief.oportunidad) || dependeDeRetirado(psa.oportunidad))) { brief.oportunidad = null; retiradosAud++; }
           if (brief.alerta && (matchInv(brief.alerta) || esSimulada(brief.alerta) || dependeDeRetirado(psa.alerta))) { brief.alerta = null; retiradosAud++; }
-          brief.hechos = hechosAll.filter((h: any) => !retiradoIdx.has(Number(h._oi)));
+          brief.hechos = hechosAll.filter((h: any) => !retiradoIdx.has(Number(h._oi)) && !demotedIdx.has(Number(h._oi)));
           if (Array.isArray(brief.acciones)) brief.acciones = brief.acciones.filter((a: any) => {
             const fuera = matchInv(String(a?.accion ?? "")) || esSimulada(String(a?.accion ?? "")) || dependeDeRetirado(a?.se_apoya_en);
             if (fuera) retiradosAud++;
@@ -1582,10 +1615,14 @@ Deno.serve(async (req) => {
         }
 
         // v22: radar del emisor — ¿recogen ya las IAs los temas activos de la ficha?
+        // v22.1: sin falsos positivos — el tema solo está "detectado" si TODAS
+        // sus palabras distintivas (8+ letras) aparecen en el material; palabras
+        // genéricas sueltas ("presidente", "quirón") ya no bastan.
         const temasRadar = temasActivos.slice(0, 3).map((tema: string) => {
           const toks = [...goldTokens(tema, new Set<string>())].filter((t) => !/^\d+$/.test(t));
-          const hits = toks.filter((t) => allMaterial.includes(t)).length;
-          return { tema, detectado: toks.length > 0 && hits >= Math.max(2, Math.ceil(toks.length / 2)) };
+          const fuertes = toks.filter((t) => t.length >= 8);
+          const base = fuertes.length ? fuertes : toks;
+          return { tema, detectado: base.length > 0 && base.every((t) => allMaterial.includes(t)) };
         });
 
         const ctx = {
