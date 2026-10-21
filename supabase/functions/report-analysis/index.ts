@@ -1,6 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
+// v47 (2026-10-21, uniformidad dashboard ↔ briefing, orden de MAT "adelante
+// con todo"): (1) las reglas finas de los QA entran también en el prompt de
+// los informes del dashboard (profile/comparison/ranking): nombres canónicos
+// sin alias, explicación según la definición, riesgo presente no se omite,
+// referencias concretas, señal aislada, y la REGLA DE ORO de la auditoría;
+// (2) candado por software también aquí: las afirmaciones verificadas como
+// inventadas (rix_claim_checks, última semana) se cargan, van al prompt con
+// prohibición explícita y, a la salida, todo elemento del informe que case
+// con una de ellas se retira (mismo matcher calibrado del briefing); el campo
+// adicional _auditoria informa al frontend sin romper el contrato existente;
+// (3) auditoría bajo demanda: si la empresa consultada (profile/comparison)
+// no tiene auditoría esta semana, se dispara rix-verify en segundo plano y
+// queda disponible para la siguiente generación. weekly_brief NO cambia.
 // v41 (2026-10-20, QA v2 del colaborador): nombres canónicos de métricas en
 // portada (nada de alias como 'empuje mediático'); la causa de una métrica debe
 // corresponder a su definición (la actualidad no se explica con argumentos de
@@ -32,6 +45,49 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// ---- v47 · Matcher de la regla de oro (idéntico al calibrado del briefing:
+// QS 11-oct + ANA 18-oct, 7/7 invenciones fuera y 0 falsos positivos) ----
+const stripAcc = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+const normTxt = (s: unknown) => stripAcc(String(s ?? "").toLowerCase()).replace(/[\s ]+/g, " ").replace(/[*_“”«»'‘’"]/g, "").trim();
+const GOLD_STOP = new Set(["sobre","entre","desde","hasta","esta","este","estos","estas","unos","unas","donde","cuando","segun","aunque","tambien","durante","contra","hacia","noticia","noticias","semana","semanal","empresa","compania","grupo","millones","euros","nuevo","nueva","nuevos","nuevas","octubre","enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","noviembre","diciembre","modelo","modelos","espana","madrid","barcelona",
+  "contrato","contratos","proyecto","proyectos","construccion","ganado","ganada","adjudicacion","adjudicado","adjudicada","adjudicataria","adjudicatarias","inversion","inversiones","inversione","acuerdo","acuerdos","operacion","operaciones","operacione","anuncio","anunciado","anunciada","anuncia","lanzamiento","presentado","presentada","presenta","presento","mencionado","mencionada","menciona","mencionadas","importante","importantes","estrategico","estrategica","internacional","internacionales","internacionale","resultado","resultados","crecimiento","aumento","incremento","valorado","valorada","espanola","espanol","region","negocio","negocios","sector","sectores","mercado","mercados","servicio","servicios","empresas","mantenimiento","incluye","total","asciende","respecto","periodo","anterior","mayor","mayores"]);
+const GOLD_NUM_STOP = new Set(["00", "000", "100", "2023", "2024", "2025", "2026", "2027"]);
+const goldStem = (t: string) => t.replace(/s$/, "");
+const goldTokens = (s: unknown, extraStop: Set<string>): Set<string> => {
+  const out = new Set<string>();
+  for (const t of normTxt(s).split(/[^a-z0-9]+/)) {
+    if (/^\d+$/.test(t)) { if (t.length >= 2 && !GOLD_NUM_STOP.has(t)) out.add(t); continue; }
+    if (t.length < 5) continue;
+    const st = goldStem(t);
+    if (GOLD_STOP.has(t) || GOLD_STOP.has(st) || extraStop.has(t) || extraStop.has(st)) continue;
+    out.add(st);
+  }
+  return out;
+};
+type GoldMatch = { claim: string; via: "cita" | "tokens" } | null;
+function buildGoldMatcher(inventadas: Array<{ claim: string; cita?: string | null }>, issuerName: string): (txt: unknown) => GoldMatch {
+  const extraStop = new Set(normTxt(issuerName).split(/[^a-z0-9]+/).map(goldStem).filter((t) => t.length >= 4));
+  const refs = inventadas.map((c) => {
+    const toks = goldTokens(`${c.claim} ${c.cita ?? ""}`, extraStop);
+    const rare = new Set([...toks].filter((t) => t.length >= 9 || /\d/.test(t)));
+    return { claim: c.claim, citaNorm: normTxt(c.cita ?? ""), toks, rare };
+  });
+  return (txt: unknown): GoldMatch => {
+    const n = normTxt(txt);
+    if (!n || !refs.length) return null;
+    for (const r of refs) {
+      if (r.citaNorm.length >= 40 && (n.includes(r.citaNorm) || r.citaNorm.includes(n))) return { claim: r.claim, via: "cita" };
+    }
+    const T = goldTokens(txt, extraStop);
+    for (const r of refs) {
+      let shared = 0, rare = 0;
+      for (const t of T) { if (r.toks.has(t)) { shared++; if (r.rare.has(t)) rare++; } }
+      if (shared >= 5 || (shared >= 4 && rare >= 1) || (shared >= 3 && rare >= 2)) return { claim: r.claim, via: "tokens" };
+    }
+    return null;
+  };
+}
+
 const SYSTEM_PROMPT = `Eres el analista jefe de RepIndex, la máxima autoridad en REPUTACIÓN ALGORÍTMICA: cómo perciben las grandes inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) a las marcas cuando la gente les pregunta. No mides lo que dicen los medios, sino lo que las IAs han asimilado y devuelven — que es lo que cada vez más clientes, inversores y talento leen primero.
 
 Dominas el método RepIndex:
@@ -55,6 +111,12 @@ Reglas innegociables (anti-invención):
 - ADJETIVOS DE DIVERGENCIA SOLO POR UMBRAL: el rango máx−mín entre modelos se adjetiva EXCLUSIVAMENTE según los umbrales canónicos (0–8 consolidado, 9–14 moderada, 15+ frágil). PROHIBIDO llamar 'estable' a un rango de 9 o más, o 'frágil' a uno de menos de 15. 'Dispersión' y 'rango' son la misma magnitud: usa siempre la palabra 'rango' con su valor.
 - Si es una COMPARATIVA, analiza también las diferencias entre entidades: quién gana/pierde en qué y por qué.
 - IDENTIDAD DE MÉTRICAS: las 8 métricas y sus significados canónicos (definidos arriba) son la identidad de RepIndex. Úsalos SIEMPRE con exactitud y NUNCA inventes una métrica, su nombre, su significado, su peso ni un valor. Un solo error en una métrica hace flaquear toda la herramienta: ante la duda, cíñete literalmente a la definición canónica dada.
+- REGLA DE ORO DE LA AUDITORÍA: si el mensaje incluye una sección de AUDITORÍA DE VERACIDAD con afirmaciones verificadas como inventadas, tienes PROHIBIDO usarlas — o cualquier paráfrasis o consecuencia de ellas — en titular, esencial, que_pasa, riesgos, oportunidades o recomendaciones. Para este informe NO HAN OCURRIDO. Su único uso legítimo es señalarlas como invención (p. ej., como riesgo: 'un modelo sostiene su lectura en noticias que la auditoría marca como inventadas: su visión no es fiable esta semana').
+- NOMBRES CANÓNICOS SIN ALIAS: cuando nombres una métrica sin su sigla, usa SOLO su nombre canónico en minúscula: 'la calidad de la narrativa' (NVM), 'la fortaleza de la evidencia' (DRM), 'la autoridad de las fuentes' (SIM), 'la actualidad y el empuje' (RMM), 'la gestión de controversias' (CEM), 'la percepción de gobierno' (GAM), 'la coherencia informativa' (DCM), 'la ejecución corporativa' (CXM). PROHIBIDO inventar alias ('el empuje mediático', 'la tracción informativa').
+- EXPLICACIÓN SEGÚN LA DEFINICIÓN: la causa que des al movimiento de una métrica debe corresponder a SU definición canónica. La actualidad y el empuje (RMM) se explica por la frescura de las menciones, NUNCA por la calidad de las fuentes (eso es SIM) ni por controversias (eso es CEM). Si la explicación natural pertenece a otra métrica, estás explicando la métrica equivocada.
+- RIESGO PRESENTE NO SE OMITE: si los datos o las señales incluyen una cuestión legal, judicial o regulatoria que afecte a la entidad analizada (demanda, imputación, arbitraje, litigio, expediente), debe aparecer en 'riesgos' o en 'que_pasa'; PROHIBIDO omitirla o dejarla solo en el contexto de otra entidad.
+- REFERENCIAS CONCRETAS: cada riesgo, oportunidad y recomendación NOMBRA el hecho concreto que la motiva; PROHIBIDO 'el riesgo mencionado por un modelo' o referencias vagas equivalentes.
+- SEÑAL AISLADA: algo que solo aparece en las señales de 1 de los 6 modelos se presenta como 'detectado solo por X, pendiente de verificación', nunca como hecho consumado.
 
 FORMATO DE SALIDA: Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin markdown, sin \`\`\`). Nada de preámbulos. El objeto DEBE tener EXACTAMENTE esta forma:
 {
@@ -167,6 +229,11 @@ serve(async (req) => {
     let modelDatapack: any = null;
     let systemPrompt = SYSTEM_PROMPT;
     let userMessage = "";
+    // v47: auditoría de veracidad para los informes del dashboard
+    let inventadasDash: Array<{ claim: string; cita?: string | null; model?: string; ticker?: string }> = [];
+    let nombresEntidades = "";
+    let semanaAud: string | null = null;
+    let audPendiente = false;
 
     if (type === "weekly_brief") {
       if (!body?.payload || typeof body.payload !== "object") {
@@ -240,6 +307,53 @@ serve(async (req) => {
         }
       }
 
+      // ---- v47: cargar la auditoría de la última semana para estas entidades,
+      // y lanzarla en segundo plano si la empresa consultada aún no la tiene ----
+      try {
+        const tkAud = tickersForSignals.slice(0, 10);
+        if (tkAud.length) {
+          const { data: sem } = await db.from("rix_runs_v2").select('"07_period_to"').order('"07_period_to"', { ascending: false }).limit(1);
+          semanaAud = sem?.length ? String(sem[0]["07_period_to"]).slice(0, 10) : null;
+          if (semanaAud) {
+            const { data: audRows } = await db.from("rix_claim_checks")
+              .select("ticker, model, claim, cita, verdict")
+              .in("ticker", tkAud).eq("week_start", semanaAud);
+            const conAud = new Set((audRows ?? []).map((r: any) => r.ticker));
+            inventadasDash = (audRows ?? [])
+              .filter((r: any) => r.verdict === "inventada")
+              .map((r: any) => ({ claim: String(r.claim ?? ""), cita: r.cita ?? null, model: r.model, ticker: r.ticker }));
+            // Los nombres de las entidades no cuentan como coincidencia en el matcher
+            const nombres: string[] = [];
+            for (const s0 of (Array.isArray(signals) ? signals : [])) if (s0?.name) nombres.push(String(s0.name));
+            for (const r0 of (Array.isArray(datapack?.ranking) ? datapack.ranking : [])) if (r0?.name) nombres.push(String(r0.name));
+            nombresEntidades = nombres.join(" ");
+            // Bajo demanda: profile (1) y comparison (2); el servidor sigue aunque
+            // esta función ya haya respondido — queda para la próxima generación
+            const sinAud = (type === "profile" ? tkAud.slice(0, 1) : type === "comparison" ? tkAud.slice(0, 2) : []).filter((t) => !conAud.has(t));
+            if (sinAud.length) {
+              audPendiente = true;
+              const fuego = (async () => {
+                for (const t of sinAud) {
+                  const ctl = new AbortController();
+                  const tm = setTimeout(() => ctl.abort(), 5000);
+                  try {
+                    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/rix-verify`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+                      body: JSON.stringify({ ticker: t }),
+                      signal: ctl.signal,
+                    });
+                  } catch (_e) { /* el disparo basta: rix-verify sigue en el servidor */ } finally { clearTimeout(tm); }
+                }
+              })();
+              // @ts-ignore: waitUntil existe en el runtime de Supabase
+              if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any)?.waitUntil) (EdgeRuntime as any).waitUntil(fuego); else fuego.catch(() => {});
+              console.log(`[report-analysis] auditoría bajo demanda lanzada para: ${sinAud.join(", ")}`);
+            }
+          }
+        }
+      } catch (e) { console.error("[report-analysis] carga de auditoría (dashboard):", e instanceof Error ? e.message : String(e)); }
+
       const effFrom = type === "ranking" ? (scope?.from ?? null) : from;
       const effTo = type === "ranking" ? (scope?.to ?? null) : to;
       const windowLine = (effFrom && effTo)
@@ -247,7 +361,10 @@ serve(async (req) => {
         : "";
 
       const payloadForModel = type === "ranking" ? modelDatapack : datapack;
-      userMessage = `Tipo de informe: ${type}.${windowLine}\n\nDATOS DETERMINISTAS (datapack):\n${JSON.stringify(payloadForModel)}\n\nSEÑALES CUALITATIVAS (lo que dijo cada uno de los 6 modelos):\n${JSON.stringify(signals)}\n\nDevuelve el análisis como un ÚNICO objeto JSON estructurado, siguiendo EXACTAMENTE tus reglas de FORMATO DE SALIDA.`;
+      const audLine = inventadasDash.length
+        ? `\n\nAUDITORÍA DE VERACIDAD (afirmaciones de esta semana VERIFICADAS como inventadas por los modelos; PROHIBIDO usarlas o parafrasearlas salvo para señalarlas como invención):\n${JSON.stringify(inventadasDash.map((c) => ({ ticker: c.ticker, model: c.model, afirmacion: c.claim })))}`
+        : "";
+      userMessage = `Tipo de informe: ${type}.${windowLine}\n\nDATOS DETERMINISTAS (datapack):\n${JSON.stringify(payloadForModel)}\n\nSEÑALES CUALITATIVAS (lo que dijo cada uno de los 6 modelos):\n${JSON.stringify(signals)}${audLine}\n\nDevuelve el análisis como un ÚNICO objeto JSON estructurado, siguiendo EXACTAMENTE tus reglas de FORMATO DE SALIDA.`;
     }
 
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
@@ -326,6 +443,42 @@ serve(async (req) => {
         const c = String(m?.code ?? "").toUpperCase().replace(/\s+/g, "");
         return c !== "RIX" && c !== "RIXC";
       });
+    }
+
+    // ---- v47: candado de la regla de oro también en los informes del dashboard ----
+    // Nada que la auditoría marque como inventado sale en titular, esencial,
+    // que_pasa, riesgos, oportunidades ni recomendaciones. Mismo matcher
+    // calibrado que el briefing. weekly_brief no pasa por aquí (su candado
+    // vive en client-weekly-report).
+    if (analysisJson && type !== "weekly_brief") {
+      let retirados = 0;
+      if (inventadasDash.length) {
+        const matchInv = buildGoldMatcher(inventadasDash, nombresEntidades);
+        const esInv = (x: any): boolean => {
+          const txt = typeof x === "string" ? x : Object.values(x ?? {}).filter((v) => typeof v === "string").join(" ");
+          const m = matchInv(txt);
+          // Señalar una invención como invención es el uso legítimo: no se retira
+          if (m && /invent|auditor[ií]a|no es fiable/i.test(String(txt))) return false;
+          return !!m;
+        };
+        const limpia = (arr: any) => (Array.isArray(arr) ? arr.filter((x: any) => { const fuera = esInv(x); if (fuera) retirados++; return !fuera; }) : arr);
+        analysisJson.esencial = limpia(analysisJson.esencial);
+        analysisJson.que_pasa = limpia(analysisJson.que_pasa);
+        analysisJson.riesgos = limpia(analysisJson.riesgos);
+        analysisJson.oportunidades = limpia(analysisJson.oportunidades);
+        analysisJson.recomendaciones = limpia(analysisJson.recomendaciones);
+        if (typeof analysisJson.titular === "string" && esInv(analysisJson.titular)) {
+          analysisJson.titular = "La auditoría de veracidad retiró el titular propuesto por apoyarse en material que los modelos inventaron; las cifras del informe no se ven afectadas.";
+          retirados++;
+        }
+        if (retirados) console.log(`[report-analysis] regla de oro (dashboard): ${retirados} elemento(s) retirados (${type})`);
+      }
+      analysisJson._auditoria = {
+        semana: semanaAud,
+        inventadas_consideradas: inventadasDash.length,
+        retirados_regla_oro: retirados,
+        ...(audPendiente ? { nota: "auditoría lanzada en segundo plano para la empresa consultada; disponible en la próxima generación" } : {}),
+      };
     }
 
     if (analysisJson && typeof analysisJson === "object") {
