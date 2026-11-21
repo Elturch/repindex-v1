@@ -1,0 +1,126 @@
+.jwsj{--bg:#F7F5F0;--ink:#111111;--soft:#5e5a52;--rule:#111111;--line:#d6d1c6;--panel:#efece4;--ok:#4F6B2A;--mat:#9a6a00;--sv:#BDB8AE;--al:#a1261a;--c-esp:#e8e4da;--c-pres:#111111;--c-exe:#6b675e;--c-sec:#BDB8AE;--c-acc:#a1261a;--c-vid:#d6d1c6;background:var(--bg);color:var(--ink);font:17px/1.6 "Source Serif 4",Georgia,serif;margin:-1.5rem -1rem;overflow-x:clip}
+.dark .jwsj{--bg:#14130f;--ink:#ece9e1;--soft:#a8a397;--rule:#ece9e1;--line:#36332c;--panel:#1c1b16;--ok:#9dbb6b;--mat:#d9a640;--sv:#5a564d;--al:#e2695a;--c-esp:#24221c;--c-pres:#ece9e1;--c-exe:#8f8a7e;--c-sec:#56524a;--c-acc:#e2695a;--c-vid:#3a372f}
+.jwsj *{box-sizing:border-box;min-width:0}
+.jwsj h1,.jwsj h2,.jwsj h3{font-family:"Libre Caslon Text",Georgia,serif;font-weight:700}
+.jwsj h1{font-size:clamp(34px,5.2vw,56px);line-height:1.05;margin:.15em 0 .25em;text-wrap:balance;max-width:20ch}
+.jwsj h2{font-size:clamp(25px,3.2vw,34px);line-height:1.12;margin:0 0 .35em;text-wrap:balance}
+.jwsj h3{font-size:19px;margin:0 0 .3em}
+.jwsj p{max-width:68ch;margin:.5em 0}
+.jwsj a{color:inherit}
+.jwsj .wrap{max-width:1180px;margin:0 auto}
+.jwsj .band{padding:clamp(28px,4vw,52px) max(5vw,16px);border-top:1px solid var(--line)}
+.jwsj .mast{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;font-size:14px;padding:10px max(5vw,16px);border-bottom:3px double var(--rule)}
+.jwsj .mast a{color:var(--ok)}
+.jwsj .kicker{font-size:13px;letter-spacing:.02em;color:var(--soft);margin-bottom:6px}
+.jwsj .deck{font-size:20px;line-height:1.45;color:var(--soft);max-width:64ch}
+.jwsj .aviso{font-size:14px;color:var(--soft);border-left:3px solid var(--ok);padding:4px 12px;margin:14px 0;max-width:80ch}
+.jwsj .truth{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:14px;margin:14px 0 22px}
+.jwsj .truth span::before{content:"\2713\00a0";color:var(--ok);font-weight:700}
+.jwsj .figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:2px solid var(--rule);border-bottom:1px solid var(--rule)}
+.jwsj .fig4{all:unset;cursor:pointer;padding:16px 16px 18px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.jwsj .fig4:last-child{border-right:0}
+.jwsj .fig4:hover .n,.jwsj .fig4:focus-visible .n{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:6px}
+.jwsj .fig4:focus-visible{outline:2px solid var(--ok);outline-offset:-2px}
+.jwsj .fig4 .k{font-size:14px;font-weight:700}
+.jwsj .fig4 .n{font:700 clamp(40px,5vw,60px)/1 "Libre Caslon Text",Georgia,serif}
+.jwsj .fig4 .n small{font-size:.36em;color:var(--soft)}
+.jwsj .fig4 .tag{font-size:12px;color:var(--soft);font-style:italic}
+.jwsj .fig4 .t{font-size:14.5px;color:var(--soft);line-height:1.4;white-space:normal}
+.jwsj .fig4,.jwsj .who button,.jwsj .chip,.jwsj .seg,.jwsj .cell{box-sizing:border-box;min-width:0}
+.jwsj .fig4{width:100%}
+.jwsj .ok{color:var(--ok)}
+.jwsj .mat{color:var(--mat)}
+.jwsj .al{color:var(--al)}
+.jwsj .nav{display:flex;gap:4px 22px;flex-wrap:wrap;font-size:15px;padding:10px max(5vw,16px);border-bottom:1px solid var(--line);background:var(--bg)}
+.jwsj .nav a{text-decoration:none;color:var(--soft);padding:6px 0}
+.jwsj .nav a:hover{color:var(--ink);text-decoration:underline}
+@media(min-width:900px){}
+.jwsj .legend{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.jwsj .chip{all:unset;cursor:pointer;font-size:14.5px;padding:7px 12px;border:1px solid var(--line);min-height:28px;display:inline-flex;align-items:center;gap:7px}
+.jwsj .chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.jwsj .chip:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.jwsj .sw{width:12px;height:12px;display:inline-block;border:1px solid var(--line)}
+.jwsj .tl{display:flex;height:60px;border:1px solid var(--rule)}
+.jwsj .seg{all:unset;cursor:pointer;height:100%}
+.jwsj .seg:focus-visible,.jwsj .seg.sel{outline:3px solid var(--mat);outline-offset:-3px}
+.jwsj .seg.dim{opacity:.15}
+.jwsj .axis{display:flex;justify-content:space-between;font-size:13px;color:var(--soft);margin-top:5px}
+.jwsj .who{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-top:1px solid var(--rule);margin-top:16px}
+.jwsj .who button{all:unset;cursor:pointer;padding:10px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;flex-direction:column}
+.jwsj .who button[aria-pressed=true]{background:var(--panel);box-shadow:inset 0 -3px 0 var(--ink)}
+.jwsj .who .m{font:700 26px "Libre Caslon Text",serif}
+.jwsj .who .l{font-size:14px;color:var(--soft)}
+.jwsj .note{margin-top:14px;padding:12px 16px;background:var(--panel);border-left:3px solid var(--ink);min-height:70px}
+.jwsj .note .m{font-size:14px;color:var(--soft)}
+.jwsj .note .q{font-size:18px}
+.jwsj .grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:36px;align-items:start}
+.jwsj .list{list-style:none;padding:0;margin:0}
+.jwsj .list li{padding:11px 0;border-bottom:1px solid var(--line)}
+.jwsj .list li:last-child{border-bottom:0}
+.jwsj .st{font:700 12px "Source Serif 4",serif;padding:1px 7px;white-space:nowrap;margin-right:6px;color:#fff;display:inline-block;letter-spacing:.02em}
+.jwsj .st.ok{background:var(--ok)}
+.jwsj .st.mat{background:var(--mat)}
+.jwsj .st.sv{background:var(--sv);color:#111}
+.jwsj .st.al{background:var(--al)}
+.jwsj .st.cur{background:transparent;color:var(--ink);border:1px solid var(--ink)}
+.jwsj .small{font-size:14.5px;color:var(--soft)}
+.jwsj .big{font:700 clamp(44px,6vw,72px)/1 "Libre Caslon Text",serif}
+.jwsj .bars .row{display:grid;grid-template-columns:minmax(0,16em) minmax(0,1fr) 4.8em;gap:10px;align-items:center;padding:6px 0;font-size:15px}
+.jwsj .bars .track{height:12px;background:var(--panel);border:1px solid var(--line);position:relative}
+.jwsj .bars .fill{height:100%;background:var(--ink)}
+.jwsj .bars .v{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.jwsj .bars .goal{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--al)}
+.jwsj .box{border:1px solid var(--rule);padding:16px 18px}
+.jwsj .box.al{border-top:4px solid var(--al)}
+.jwsj .box.ok{border-top:4px solid var(--ok)}
+.jwsj .fig{position:relative;min-height:320px}
+.jwsj .fig>svg{position:absolute;inset:0;width:100%;height:100%}
+.jwsj .ledger{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px}
+.jwsj .cell{all:unset;cursor:pointer;aspect-ratio:1;display:grid;place-items:center;font:700 13px "Source Serif 4",serif;color:#fff}
+.jwsj .cell.ok{background:var(--ok)}
+.jwsj .cell.mat{background:var(--mat)}
+.jwsj .cell.sv{background:repeating-linear-gradient(135deg,var(--sv) 0 5px,transparent 5px 9px);color:var(--ink);border:1px solid var(--sv)}
+.jwsj .cell.dim{opacity:.15}
+.jwsj .cell:focus-visible,.jwsj .cell.sel{outline:3px solid var(--ink);outline-offset:2px}
+.jwsj table{border-collapse:collapse;width:100%;font-size:15.5px}
+.jwsj th,.jwsj td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.jwsj th{font-size:13px;color:var(--soft);font-weight:600;border-bottom:1px solid var(--rule)}
+.jwsj .scroll{overflow-x:auto}
+.jwsj .t{font-variant-numeric:tabular-nums;white-space:nowrap}
+.jwsj .play{font:600 14px "Source Serif 4",serif;color:var(--ok);text-decoration:none;white-space:nowrap}
+.jwsj .play::before{content:"\25B6\00a0";font-size:11px}
+.jwsj .play:hover{text-decoration:underline}
+.jwsj .acta td.t{width:6.5em}
+.jwsj .acta td.w{width:9em;font-size:14px;color:var(--soft)}
+.jwsj .acta tr.hit{background:color-mix(in srgb,var(--mat) 14%,transparent)}
+.jwsj .acta .ty{font-size:12px;color:var(--soft);font-style:italic;display:block}
+.jwsj .search{font:16px "Source Serif 4",serif;padding:9px 12px;border:1px solid var(--rule);background:var(--bg);color:var(--ink);min-width:16em;min-height:44px}
+.jwsj .count{font-size:14px;color:var(--soft);margin-left:8px}
+.jwsj .flash{animation:jwsjfl 1.2s ease}
+@keyframes jwsjfl{0%{background:color-mix(in srgb,var(--mat) 22%,transparent)}100%{background:transparent}}
+@media(prefers-reduced-motion:reduce){.jwsj .flash{animation:none}}
+@media(max-width:900px){.jwsj .figs{grid-template-columns:repeat(2,minmax(0,1fr))}.jwsj .fig4:nth-child(2){border-right:0}.jwsj .fig4:nth-child(-n+2){border-bottom:1px solid var(--line)}.jwsj .grid2{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.jwsj .figs{grid-template-columns:minmax(0,1fr)}.jwsj .fig4{border-right:0;border-bottom:1px solid var(--line)}.jwsj .bars .row{grid-template-columns:minmax(0,1fr) 4.8em}.jwsj .bars .track{grid-column:1/-1;order:3}.jwsj .tl{height:46px}.jwsj .search{min-width:0;width:100%}.jwsj table{font-size:14px}.jwsj .stack thead{display:none}.jwsj .stack tr{display:grid;padding-block:10px}.jwsj .stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:7em;text-align:start;width:auto!important}.jwsj .stack td::before{content:attr(data-l);float:inline-start;width:6.5em;margin-inline-start:-7em;white-space:normal;color:var(--soft);font-size:13px}.jwsj .stack td:empty{display:none}}
+.jwsj .nav{position:sticky;top:72px;z-index:20}
+.jwsj .nav a{text-decoration:none;color:var(--soft);padding:6px 0;white-space:nowrap}
+.jwsj .nav a.on{color:var(--ink);font-weight:700;box-shadow:inset 0 -2px 0 var(--ink)}
+.jwsj .nav{flex-wrap:nowrap;overflow-x:auto}
+.jwsj .toc{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));border-top:2px solid var(--rule)}
+.jwsj .toc li{border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
+.jwsj .toc a{display:block;padding:16px 18px 18px;text-decoration:none;height:100%}
+.jwsj .toc a:hover h3{text-decoration:underline}
+.jwsj .toc .no{font:700 13px "Source Serif 4",serif;color:var(--soft);letter-spacing:.04em}
+.jwsj .toc h3{font-size:20px;margin:4px 0 6px}
+.jwsj .toc p{font-size:15px;color:var(--soft);margin:0}
+.jwsj .toc .go{display:inline-block;margin-top:8px;font-size:14px;color:var(--ok);font-weight:600}
+.jwsj .pager{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:2px solid var(--rule);padding-top:14px;font-size:15px}
+.jwsj .pager a{text-decoration:none;color:var(--ink);max-width:45%}
+.jwsj .pager a:hover{text-decoration:underline}
+.jwsj .pager .k{display:block;font-size:12px;color:var(--soft)}
+.jwsj .crumb{font-size:14px;color:var(--soft)}
+.jwsj .crumb a{color:var(--ok);text-decoration:none}
+.jwsj h1.sm{font-size:clamp(24px,3vw,32px);max-width:none}
+.jwsj .fig4{text-decoration:none;color:inherit}
+@media(max-width:600px){.jwsj .pager a{max-width:100%}}
+.jwsj .nav a{flex:0 0 auto}
+.jwsj .box.ok,.jwsj .box.al{color:var(--ink)}

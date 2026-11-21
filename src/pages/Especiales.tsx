@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
 import { EspecialesSubscribe } from "@/components/especiales/EspecialesSubscribe";
@@ -117,6 +117,43 @@ export default function Especiales() {
                     <FlaskConical className="h-4 w-4" />
                     Metodología y control de sesgo
                   </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Juntas de accionistas 2026 */}
+        <section aria-label="Juntas de accionistas 2026">
+          <h2 className="text-xl font-semibold tracking-tight mb-4">Juntas de accionistas 2026</h2>
+          <Card className="overflow-hidden border-primary/20">
+            <CardHeader className="space-y-3 pb-4">
+              <Badge variant="secondary" className="w-fit">
+                Nuevo
+              </Badge>
+              <CardTitle className="text-2xl sm:text-3xl leading-tight">
+                La Junta de MAPFRE, examinada minuto a minuto
+              </CardTitle>
+              <CardDescription className="text-base sm:text-lg">
+                Junta General de MAPFRE · 13 de marzo de 2026 · analizada desde la grabación íntegra del directo
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
+                Fiabilidad del relato 91/100 · 5 de 6 promesas de 2025 cumplidas · esquive del 43% en las preguntas · 11 secciones · acta completa de 138 momentos con enlace al minuto exacto del vídeo · elaborado con IA
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button asChild size="lg" className="gap-2">
+                  <Link to="/especiales/juntas/mapfre-2026">
+                    Leer el especial
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+                  <Link to="/especiales/juntas/mapfre-2026/metodo">
+                    <FlaskConical className="h-4 w-4" />
+                    Metodología y control de sesgo
+                  </Link>
                 </Button>
               </div>
             </CardContent>
