@@ -2661,6 +2661,39 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_consensus_relato: {
+        Row: {
+          aisladas: Json | null
+          created_at: string | null
+          fiel: Json | null
+          id: string
+          n_afirmaciones: number | null
+          por_modelo: Json | null
+          ticker: string
+          week_start: string
+        }
+        Insert: {
+          aisladas?: Json | null
+          created_at?: string | null
+          fiel?: Json | null
+          id?: string
+          n_afirmaciones?: number | null
+          por_modelo?: Json | null
+          ticker: string
+          week_start: string
+        }
+        Update: {
+          aisladas?: Json | null
+          created_at?: string | null
+          fiel?: Json | null
+          id?: string
+          n_afirmaciones?: number | null
+          por_modelo?: Json | null
+          ticker?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       rix_consensus_weekly: {
         Row: {
           computed_at: string
@@ -2757,6 +2790,45 @@ export type Database = {
           must_be_present?: boolean
           note?: string | null
           version?: string
+        }
+        Relationships: []
+      }
+      rix_narrative_checks: {
+        Row: {
+          claim: string | null
+          created_at: string | null
+          evidencia_extracto: string | null
+          evidencia_url: string | null
+          fuente_tipo: string | null
+          id: string
+          model: string | null
+          ticker: string
+          verdict: string | null
+          week_start: string
+        }
+        Insert: {
+          claim?: string | null
+          created_at?: string | null
+          evidencia_extracto?: string | null
+          evidencia_url?: string | null
+          fuente_tipo?: string | null
+          id?: string
+          model?: string | null
+          ticker: string
+          verdict?: string | null
+          week_start: string
+        }
+        Update: {
+          claim?: string | null
+          created_at?: string | null
+          evidencia_extracto?: string | null
+          evidencia_url?: string | null
+          fuente_tipo?: string | null
+          id?: string
+          model?: string | null
+          ticker?: string
+          verdict?: string | null
+          week_start?: string
         }
         Relationships: []
       }
