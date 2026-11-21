@@ -514,7 +514,8 @@ function SecNav({ active }: { active?: string }) {
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = navRef.current?.querySelector("a.on") as HTMLElement | null;
-    el?.scrollIntoView({ block: "nearest", inline: "center" });
+    const nav = navRef.current;
+    if (el && nav) nav.scrollLeft = el.offsetLeft - (nav.clientWidth - el.offsetWidth) / 2;
   }, [active]);
   return (
     <nav className="nav" aria-label="Secciones del especial" ref={navRef}>
