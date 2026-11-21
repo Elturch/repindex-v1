@@ -27,6 +27,7 @@ import WeeklyNews from "./pages/WeeklyNews";
 import WarRoom from "./pages/WarRoom";
 import NewsArticleDetail from "./pages/NewsArticleDetail";
 import NewsArchive from "./pages/NewsArchive";
+import Especiales from "./pages/Especiales";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import MyDocuments from "./pages/MyDocuments";
@@ -94,6 +95,7 @@ const App = () => {
                 {/* Public routes */}
                 <Route path="/" element={<Landing />} />
                 <Route path="/noticias" element={<WeeklyNews />} />
+                <Route path="/especiales" element={<Especiales />} />
                 <Route path="/war-room" element={<WarRoom />} />
                 <Route path="/noticias/archivo" element={<NewsArchive />} />
                 <Route path="/noticias/:slug" element={<NewsArticleDetail />} />
