@@ -1,5 +1,5 @@
 import { ComponentType, Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
 import { JUNTA_MAPFRE_2026 as D } from "@/data/especiales/juntaMapfre2026";
@@ -511,20 +511,41 @@ function Mast() {
 }
 
 function SecNav({ active }: { active?: string }) {
+  const navigate = useNavigate();
   const navRef = useRef<HTMLElement>(null);
+  const [top, setTop] = useState(0);
+  // Se queda fijo justo debajo de la cabecera de RepIndex (mida lo que mida).
   useEffect(() => {
-    const el = navRef.current?.querySelector("a.on") as HTMLElement | null;
-    const nav = navRef.current;
-    if (el && nav) nav.scrollLeft = el.offsetLeft - (nav.clientWidth - el.offsetWidth) / 2;
-  }, [active]);
+    const h = document.querySelector("header.sticky") as HTMLElement | null;
+    const upd = () => setTop(h ? Math.max(0, Math.round(h.getBoundingClientRect().height)) : 0);
+    upd();
+    window.addEventListener("resize", upd);
+    return () => window.removeEventListener("resize", upd);
+  }, []);
+  const i = active ? SECCIONES.findIndex((s) => s.slug === active) : -1;
+  const prev = i > 0 ? `${BASE}/${SECCIONES[i - 1].slug}` : i === 0 ? BASE : null;
+  const next = i < SECCIONES.length - 1 ? `${BASE}/${SECCIONES[i + 1].slug}` : null;
   return (
-    <nav className="nav" aria-label="Secciones del especial" ref={navRef}>
-      <Link to={BASE} className={!active ? "on" : ""}>Portada</Link>
-      {SECCIONES.map((s, i) => (
-        <Link key={s.slug} to={`${BASE}/${s.slug}`} className={active === s.slug ? "on" : ""} aria-current={active === s.slug ? "page" : undefined}>
-          {i + 1}. {s.nav}
-        </Link>
-      ))}
+    <nav className="nav" aria-label="Secciones del especial" ref={navRef} style={{ top }}>
+      <div className="nav-full">
+        <Link to={BASE} className={!active ? "on" : ""}>Portada</Link>
+        {SECCIONES.map((s, j) => (
+          <Link key={s.slug} to={`${BASE}/${s.slug}`} className={active === s.slug ? "on" : ""} aria-current={active === s.slug ? "page" : undefined}>
+            {j + 1}. {s.nav}
+          </Link>
+        ))}
+      </div>
+      <div className="nav-mob">
+        {prev ? <Link className="arw" to={prev} aria-label="Sección anterior">←</Link> : <span className="arw off">←</span>}
+        <label className="sr-only" htmlFor="jwsj-sec">Ir a la sección</label>
+        <select id="jwsj-sec" value={active ?? ""} onChange={(e) => navigate(e.target.value ? `${BASE}/${e.target.value}` : BASE)}>
+          <option value="">Portada del especial</option>
+          {SECCIONES.map((s, j) => (
+            <option key={s.slug} value={s.slug}>{j + 1} de {SECCIONES.length} · {s.nav}</option>
+          ))}
+        </select>
+        {next ? <Link className="arw" to={next} aria-label="Sección siguiente">→</Link> : <span className="arw off">→</span>}
+      </div>
     </nav>
   );
 }

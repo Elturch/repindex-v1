@@ -12,7 +12,7 @@ export function Layout({ children, title }: LayoutProps) {
   // Auto-track page views and user activity
   useActivityLogger();
   return (
-    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
+    <div className="min-h-screen bg-background flex flex-col overflow-x-clip">
       <Header title={title} />
       <main className="container mx-auto px-4 py-6 flex-1 w-full max-w-full min-w-0 print:px-0 print:py-0 print:max-w-none">
         {children}
