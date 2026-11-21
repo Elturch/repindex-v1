@@ -1,5 +1,9 @@
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
+import { EspecialesSubscribe } from "@/components/especiales/EspecialesSubscribe";
+import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +36,35 @@ const UPCOMING_SPECIALS: Special[] = [
 ];
 
 export default function Especiales() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { toast } = useToast();
+
+  // Avisos de retorno desde los enlaces de confirmación/baja del correo.
+  // Se muestran una sola vez y se limpian de la URL.
+  useEffect(() => {
+    const confirmado = searchParams.get("confirmado");
+    const baja = searchParams.get("baja");
+
+    if (confirmado === "1") {
+      toast({ title: "¡Suscripción confirmada! Te avisaremos de cada nuevo especial." });
+    } else if (confirmado === "0") {
+      toast({
+        title: "No hemos podido confirmar tu suscripción: el enlace no es válido o ha caducado.",
+        variant: "destructive",
+      });
+    } else if (baja === "1") {
+      toast({ title: "Te has dado de baja. No recibirás más avisos de especiales." });
+    } else {
+      return;
+    }
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("confirmado");
+    next.delete("baja");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <Layout>
       <Helmet>
@@ -88,6 +121,12 @@ export default function Especiales() {
               </div>
             </CardContent>
           </Card>
+        </section>
+
+        {/* Suscripción por correo */}
+        <section aria-label="Suscripción a especiales" className="space-y-4">
+          <h2 className="text-xl font-semibold tracking-tight">Recibe cada nuevo especial</h2>
+          <EspecialesSubscribe source="especiales-index" />
         </section>
 
         {/* Rejilla de próximos especiales */}
