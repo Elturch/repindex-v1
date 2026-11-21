@@ -1187,6 +1187,84 @@ export type Database = {
         }
         Relationships: []
       }
+      especiales_notify_log: {
+        Row: {
+          especial_slug: string
+          id: string
+          recipients: number
+          sent_at: string
+          titulo: string | null
+          url: string | null
+        }
+        Insert: {
+          especial_slug: string
+          id?: string
+          recipients?: number
+          sent_at?: string
+          titulo?: string | null
+          url?: string | null
+        }
+        Update: {
+          especial_slug?: string
+          id?: string
+          recipients?: number
+          sent_at?: string
+          titulo?: string | null
+          url?: string | null
+        }
+        Relationships: []
+      }
+      especiales_subscribers: {
+        Row: {
+          confirm_sent_at: string | null
+          confirm_token: string
+          confirmed_at: string | null
+          consent_at: string
+          consent_ip: string | null
+          consent_text: string | null
+          created_at: string
+          email: string
+          id: string
+          source: string | null
+          status: string
+          unsubscribe_token: string
+          unsubscribed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          confirm_sent_at?: string | null
+          confirm_token?: string
+          confirmed_at?: string | null
+          consent_at?: string
+          consent_ip?: string | null
+          consent_text?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          source?: string | null
+          status?: string
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          confirm_sent_at?: string | null
+          confirm_token?: string
+          confirmed_at?: string | null
+          consent_at?: string
+          consent_ip?: string | null
+          consent_text?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          source?: string | null
+          status?: string
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       evaluation: {
         Row: {
           composite_chatgpt: number | null
