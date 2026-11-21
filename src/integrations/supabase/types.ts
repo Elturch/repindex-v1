@@ -1187,6 +1187,237 @@ export type Database = {
         }
         Relationships: []
       }
+      especiales: {
+        Row: {
+          actualizado_at: string
+          agenda_id: string | null
+          categoria_slug: string
+          cifras: Json
+          datos: Json | null
+          datos_sha256: string | null
+          destacado: boolean
+          entidad: string | null
+          estado: string
+          etiqueta_fecha: string | null
+          fecha_evento: string | null
+          fuente_video_url: string | null
+          metodo_url: string | null
+          publicado_at: string | null
+          resumen: string | null
+          slug: string
+          subtitulo: string | null
+          titulo: string
+          url: string | null
+          url_externa: boolean
+        }
+        Insert: {
+          actualizado_at?: string
+          agenda_id?: string | null
+          categoria_slug: string
+          cifras?: Json
+          datos?: Json | null
+          datos_sha256?: string | null
+          destacado?: boolean
+          entidad?: string | null
+          estado?: string
+          etiqueta_fecha?: string | null
+          fecha_evento?: string | null
+          fuente_video_url?: string | null
+          metodo_url?: string | null
+          publicado_at?: string | null
+          resumen?: string | null
+          slug: string
+          subtitulo?: string | null
+          titulo: string
+          url?: string | null
+          url_externa?: boolean
+        }
+        Update: {
+          actualizado_at?: string
+          agenda_id?: string | null
+          categoria_slug?: string
+          cifras?: Json
+          datos?: Json | null
+          datos_sha256?: string | null
+          destacado?: boolean
+          entidad?: string | null
+          estado?: string
+          etiqueta_fecha?: string | null
+          fecha_evento?: string | null
+          fuente_video_url?: string | null
+          metodo_url?: string | null
+          publicado_at?: string | null
+          resumen?: string | null
+          slug?: string
+          subtitulo?: string | null
+          titulo?: string
+          url?: string | null
+          url_externa?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "especiales_agenda_id_fkey"
+            columns: ["agenda_id"]
+            isOneToOne: false
+            referencedRelation: "especiales_agenda"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "especiales_categoria_slug_fkey"
+            columns: ["categoria_slug"]
+            isOneToOne: false
+            referencedRelation: "especiales_categorias"
+            referencedColumns: ["slug"]
+          },
+        ]
+      }
+      especiales_agenda: {
+        Row: {
+          actualizado_at: string
+          ambito: string
+          avisado_at: string | null
+          canal_url: string | null
+          decidido_at: string | null
+          decision_token: string
+          detectado_at: string
+          directo_url: string | null
+          entidad: string
+          estado: string
+          event_key: string
+          fecha: string
+          fuente_oficial: boolean
+          fuente_url: string
+          hora: string | null
+          id: string
+          lugar: string | null
+          por_que: string | null
+          retransmision: string
+          tipo: string
+          titulo: string
+          videodb_secret: string | null
+        }
+        Insert: {
+          actualizado_at?: string
+          ambito: string
+          avisado_at?: string | null
+          canal_url?: string | null
+          decidido_at?: string | null
+          decision_token?: string
+          detectado_at?: string
+          directo_url?: string | null
+          entidad: string
+          estado?: string
+          event_key: string
+          fecha: string
+          fuente_oficial?: boolean
+          fuente_url: string
+          hora?: string | null
+          id?: string
+          lugar?: string | null
+          por_que?: string | null
+          retransmision?: string
+          tipo: string
+          titulo: string
+          videodb_secret?: string | null
+        }
+        Update: {
+          actualizado_at?: string
+          ambito?: string
+          avisado_at?: string | null
+          canal_url?: string | null
+          decidido_at?: string | null
+          decision_token?: string
+          detectado_at?: string
+          directo_url?: string | null
+          entidad?: string
+          estado?: string
+          event_key?: string
+          fecha?: string
+          fuente_oficial?: boolean
+          fuente_url?: string
+          hora?: string | null
+          id?: string
+          lugar?: string | null
+          por_que?: string | null
+          retransmision?: string
+          tipo?: string
+          titulo?: string
+          videodb_secret?: string | null
+        }
+        Relationships: []
+      }
+      especiales_agenda_runs: {
+        Row: {
+          email_enviado: boolean
+          id: number
+          nota: string | null
+          nuevos: number
+          ran_at: string
+          revisados: number
+        }
+        Insert: {
+          email_enviado?: boolean
+          id?: number
+          nota?: string | null
+          nuevos?: number
+          ran_at?: string
+          revisados?: number
+        }
+        Update: {
+          email_enviado?: boolean
+          id?: number
+          nota?: string | null
+          nuevos?: number
+          ran_at?: string
+          revisados?: number
+        }
+        Relationships: []
+      }
+      especiales_backup_tokens: {
+        Row: {
+          creado_at: string | null
+          token: string
+          usado_at: string | null
+        }
+        Insert: {
+          creado_at?: string | null
+          token?: string
+          usado_at?: string | null
+        }
+        Update: {
+          creado_at?: string | null
+          token?: string
+          usado_at?: string | null
+        }
+        Relationships: []
+      }
+      especiales_categorias: {
+        Row: {
+          ambito: string
+          descripcion: string
+          nombre: string
+          orden: number
+          slug: string
+          videodb_secret: string | null
+        }
+        Insert: {
+          ambito: string
+          descripcion: string
+          nombre: string
+          orden?: number
+          slug: string
+          videodb_secret?: string | null
+        }
+        Update: {
+          ambito?: string
+          descripcion?: string
+          nombre?: string
+          orden?: number
+          slug?: string
+          videodb_secret?: string | null
+        }
+        Relationships: []
+      }
       especiales_notify_log: {
         Row: {
           especial_slug: string
