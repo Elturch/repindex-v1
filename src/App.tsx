@@ -29,6 +29,7 @@ import NewsArticleDetail from "./pages/NewsArticleDetail";
 import NewsArchive from "./pages/NewsArchive";
 import Especiales from "./pages/Especiales";
 import EspecialJuntaMapfre2026 from "./pages/EspecialJuntaMapfre2026";
+import EspecialDebateAOcho23n from "./pages/EspecialDebateAOcho23n";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import MyDocuments from "./pages/MyDocuments";
@@ -99,6 +100,7 @@ const App = () => {
                 <Route path="/especiales" element={<Especiales />} />
                 <Route path="/especiales/juntas/mapfre-2026" element={<EspecialJuntaMapfre2026 />} />
                 <Route path="/especiales/juntas/mapfre-2026/:seccion" element={<EspecialJuntaMapfre2026 />} />
+                <Route path="/especiales/debates/debate-a-ocho-23n" element={<EspecialDebateAOcho23n />} />
                 <Route path="/war-room" element={<WarRoom />} />
                 <Route path="/noticias/archivo" element={<NewsArchive />} />
                 <Route path="/noticias/:slug" element={<NewsArticleDetail />} />
