@@ -1418,6 +1418,93 @@ export type Database = {
         }
         Relationships: []
       }
+      especiales_directos: {
+        Row: {
+          clave: string
+          creado_at: string
+          estado: string
+          familia: string
+          iniciado_at: string | null
+          nombre: string
+          nota: string | null
+          rtstream_id: string | null
+          terminado_at: string | null
+          url: string
+          video_respaldo_id: string | null
+        }
+        Insert: {
+          clave: string
+          creado_at?: string
+          estado?: string
+          familia: string
+          iniciado_at?: string | null
+          nombre: string
+          nota?: string | null
+          rtstream_id?: string | null
+          terminado_at?: string | null
+          url: string
+          video_respaldo_id?: string | null
+        }
+        Update: {
+          clave?: string
+          creado_at?: string
+          estado?: string
+          familia?: string
+          iniciado_at?: string | null
+          nombre?: string
+          nota?: string | null
+          rtstream_id?: string | null
+          terminado_at?: string | null
+          url?: string
+          video_respaldo_id?: string | null
+        }
+        Relationships: []
+      }
+      especiales_gestualidad: {
+        Row: {
+          clave: string
+          creado_at: string | null
+          datos: Json | null
+          descripcion: string | null
+          hora_madrid: string | null
+          id: number
+          lector: string
+          plano: string | null
+          quien: string | null
+          t_fin: number
+          t_inicio: number
+          video_id: string
+        }
+        Insert: {
+          clave: string
+          creado_at?: string | null
+          datos?: Json | null
+          descripcion?: string | null
+          hora_madrid?: string | null
+          id?: number
+          lector: string
+          plano?: string | null
+          quien?: string | null
+          t_fin: number
+          t_inicio: number
+          video_id: string
+        }
+        Update: {
+          clave?: string
+          creado_at?: string | null
+          datos?: Json | null
+          descripcion?: string | null
+          hora_madrid?: string | null
+          id?: number
+          lector?: string
+          plano?: string | null
+          quien?: string | null
+          t_fin?: number
+          t_inicio?: number
+          video_id?: string
+        }
+        Relationships: []
+      }
       especiales_notify_log: {
         Row: {
           especial_slug: string
@@ -1442,6 +1529,24 @@ export type Database = {
           sent_at?: string
           titulo?: string | null
           url?: string | null
+        }
+        Relationships: []
+      }
+      especiales_ops_token: {
+        Row: {
+          creado_at: string | null
+          id: number
+          token: string
+        }
+        Insert: {
+          creado_at?: string | null
+          id?: number
+          token?: string
+        }
+        Update: {
+          creado_at?: string | null
+          id?: number
+          token?: string
         }
         Relationships: []
       }
@@ -1495,6 +1600,100 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      especiales_videodb_cuentas: {
+        Row: {
+          actualizado_at: string
+          collection_id: string
+          collection_name: string
+          familia: string
+          nota: string | null
+          secret_name: string
+        }
+        Insert: {
+          actualizado_at?: string
+          collection_id: string
+          collection_name: string
+          familia: string
+          nota?: string | null
+          secret_name: string
+        }
+        Update: {
+          actualizado_at?: string
+          collection_id?: string
+          collection_name?: string
+          familia?: string
+          nota?: string | null
+          secret_name?: string
+        }
+        Relationships: []
+      }
+      especiales_videodb_uso: {
+        Row: {
+          agenda_id: string | null
+          collection_id: string
+          coste_usd: number | null
+          creado_at: string
+          detalle: string | null
+          especial_slug: string | null
+          id: number
+          minutos: number | null
+          ok: boolean
+          operacion: string
+          secret_name: string
+          video_id: string | null
+        }
+        Insert: {
+          agenda_id?: string | null
+          collection_id: string
+          coste_usd?: number | null
+          creado_at?: string
+          detalle?: string | null
+          especial_slug?: string | null
+          id?: number
+          minutos?: number | null
+          ok?: boolean
+          operacion: string
+          secret_name: string
+          video_id?: string | null
+        }
+        Update: {
+          agenda_id?: string | null
+          collection_id?: string
+          coste_usd?: number | null
+          creado_at?: string
+          detalle?: string | null
+          especial_slug?: string | null
+          id?: number
+          minutos?: number | null
+          ok?: boolean
+          operacion?: string
+          secret_name?: string
+          video_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "especiales_videodb_uso_agenda_id_fkey"
+            columns: ["agenda_id"]
+            isOneToOne: false
+            referencedRelation: "especiales_agenda"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "especiales_videodb_uso_especial_slug_fkey"
+            columns: ["especial_slug"]
+            isOneToOne: false
+            referencedRelation: "especiales"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "especiales_videodb_uso_secret_name_fkey"
+            columns: ["secret_name"]
+            isOneToOne: false
+            referencedRelation: "especiales_videodb_cuentas"
+            referencedColumns: ["secret_name"]
+          },
+        ]
       }
       evaluation: {
         Row: {
@@ -5277,6 +5476,25 @@ export type Database = {
       }
     }
     Views: {
+      especiales_videodb_consumo_mensual: {
+        Row: {
+          coste_usd: number | null
+          familia: string | null
+          mes: string | null
+          minutos: number | null
+          operaciones: number | null
+          secret_name: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "especiales_videodb_uso_secret_name_fkey"
+            columns: ["secret_name"]
+            isOneToOne: false
+            referencedRelation: "especiales_videodb_cuentas"
+            referencedColumns: ["secret_name"]
+          },
+        ]
+      }
       rix_runs_v2_cited_urls: {
         Row: {
           batch_execution_date: string | null
