@@ -308,7 +308,7 @@ export const modelDivergenceSkill: Skill = {
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "gpt-6.1-sol",
-      reasoning_effort: "high",
+      reasoning_effort: "medium",
       maxTokens: 16000,
       temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },

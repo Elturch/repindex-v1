@@ -1439,7 +1439,7 @@ export const sectorRankingSkill: Skill = {
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "gpt-6.1-sol",
-      reasoning_effort: "high",
+      reasoning_effort: "medium",
       maxTokens: 32000,
       temperature: 0,
       onChunk: (_d) => { /* buffered: do not stream raw LLM output */ },

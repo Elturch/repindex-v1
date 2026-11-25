@@ -400,7 +400,7 @@ export const companyAnalysisSkill: Skill = {
       userMessage,
       logPrefix: tag,
       model: "gpt-6.1-sol",
-      reasoning_effort: "high",
+      reasoning_effort: "medium",
       maxTokens: 48000,
       temperature: 0,
       onChunk: (delta) => { try { onChunk?.(delta); } catch (_) { /* noop */ } },
