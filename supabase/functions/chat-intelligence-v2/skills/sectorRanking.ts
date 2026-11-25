@@ -1438,7 +1438,7 @@ export const sectorRankingSkill: Skill = {
     // finalContent in a single onChunk call below.
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
-      model: "o3",
+      model: "gpt-6.1-sol",
       reasoning_effort: "high",
       maxTokens: 32000,
       temperature: 0,

@@ -342,7 +342,7 @@ export const comparisonSkill: Skill = {
     console.log(`${tag} compact prompt | entities=${aggs.length} | user_chars=${userMessage.length} | sys_chars≈pending`);
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
-      model: "o3",
+      model: "gpt-6.1-sol",
       reasoning_effort: "high",
       maxTokens: 24000,
       temperature: 0,

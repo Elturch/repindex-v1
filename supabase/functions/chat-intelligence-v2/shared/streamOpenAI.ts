@@ -51,7 +51,7 @@ export interface StreamOpenAIResult {
 /** Reasoning families that require `reasoning_effort` and reject `temperature`. */
 function isReasoningModel(model: string): boolean {
   const m = model.toLowerCase();
-  return m.startsWith("o3") || m.startsWith("o1") || m.startsWith("gpt-5");
+  return m.startsWith("o3") || m.startsWith("o1") || m.startsWith("gpt-5") || m.startsWith("gpt-6");
 }
 
 /**
@@ -209,7 +209,7 @@ export async function streamOpenAIResponse(
   const {
     systemPrompt,
     userMessage,
-    model = "o3",
+    model = "gpt-6.1-sol",
     temperature = 0,
     maxTokens = 32000,
     timeoutMs = 90_000,

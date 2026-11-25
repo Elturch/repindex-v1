@@ -399,7 +399,7 @@ export const companyAnalysisSkill: Skill = {
       systemPrompt,
       userMessage,
       logPrefix: tag,
-      model: "o3",
+      model: "gpt-6.1-sol",
       reasoning_effort: "high",
       maxTokens: 48000,
       temperature: 0,

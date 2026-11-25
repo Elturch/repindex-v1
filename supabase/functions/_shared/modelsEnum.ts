@@ -83,6 +83,7 @@ const ALIAS_MAP: Record<string, ModelName> = {
   "open ai": "ChatGPT",
   "o1": "ChatGPT",
   "o3": "ChatGPT",
+  "gpt-6.1-sol": "ChatGPT",
   // ── Perplexity ──
   "perplexity": "Perplexity",
   "perplex": "Perplexity",

@@ -436,8 +436,8 @@ serve(async (req: Request) => {
         // upstream model id (and any Gemini fallback) is also surfaced via
         // the `done` SSE event so the FE can confirm post-stream.
         "x-rix-engine-version": "v2",
-        "x-rix-model-requested": "o3",
-        "x-rix-model-effective": "o3",
+      "x-rix-model-requested": "gpt-6.1-sol",
+      "x-rix-model-effective": "gpt-6.1-sol",
         "x-rix-fallback": "none",
         // PHASE 4 — only present for "esta semana" / "this week" queries.
         ...extraHeaders,
