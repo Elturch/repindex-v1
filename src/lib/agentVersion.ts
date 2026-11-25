@@ -167,8 +167,11 @@ export function setAgentVersion(version: AgentVersion): void {
   }
 }
 
-/** Map an agent version to its edge function name. */
+/** Map an agent version to its edge function name.
+ *  Motor v1 (chat-intelligence, o3) retirado por la deprecación de OpenAI
+ *  (o3 y GPT-5 se apagan el 11-12-2026). Cualquier override ?agent=v1 o
+ *  preferencia guardada se sirve ahora con el motor v2 (gpt-6.1-sol). */
 export function getEdgeFunctionName(version?: AgentVersion): "chat-intelligence" | "chat-intelligence-v2" {
-  const v = version ?? getAgentVersion();
-  return v === "v2" ? "chat-intelligence-v2" : "chat-intelligence";
+  void version; // v1 retirado (o3 deprecado); todo el tráfico va a v2
+  return "chat-intelligence-v2";
 }
