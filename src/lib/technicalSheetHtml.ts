@@ -452,7 +452,7 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
         <tbody>
           <tr>
             <td>Modelo primario</td>
-            <td>OpenAI <span class="formula">o3-2025-04-16</span> (reasoning effort: high)</td>
+            <td>OpenAI <span class="formula">gpt-6.1-sol</span> (reasoning effort: medium)</td>
           </tr>
           <tr>
             <td>Modelo de fallback</td>
@@ -472,6 +472,8 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
           </tr>
         </tbody>
       </table>
+
+      <p style="margin-top: 10px; font-size: 9.5px; color: #475569; background:#f7f9fa; border-left:3px solid #1a73e8; padding:8px 12px; border-radius:4px;"><strong>Nota de versión metodológica (noviembre de 2026).</strong> Ante la retirada de los modelos <span class="formula">o3</span> y <span class="formula">GPT-5</span> por parte de OpenAI (prevista para el 11 de diciembre de 2026), RepIndex actualizó su modelo de razonamiento y su motor de puntuación a <span class="formula">gpt-6.1-sol</span>. El motor de puntuación se recalibró sobre 210 observaciones reales para preservar LA MISMA escala del índice RIX, de modo que la serie histórica mantiene su comparabilidad. Esta actualización no modifica el universo de 6 modelos de captura web ni la fórmula del índice.</p>
 
       <h4>Trazabilidad de la Respuesta</h4>
       <p>

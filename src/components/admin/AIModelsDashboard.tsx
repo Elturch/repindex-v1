@@ -50,17 +50,17 @@ const PROCESS_MAP: ProcessConfig[] = [
     edgeFunction: 'rix-analyze-v2',
     actionTypes: ['rix_analysis'],
     models: [
-      { provider: 'openai', model: 'gpt-5', displayName: 'GPT-5', role: 'primary' },
+      { provider: 'openai', model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', role: 'primary' },
     ]
   },
   {
     id: 'chat',
     name: 'Agente Rix',
     icon: '💬',
-    edgeFunction: 'chat-intelligence',
+    edgeFunction: 'chat-intelligence-v2',
     actionTypes: ['chat', 'enrich', 'bulletin'],
     models: [
-      { provider: 'openai', model: 'o3', displayName: 'o3', role: 'primary' },
+      { provider: 'openai', model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', role: 'primary' },
       { provider: 'gemini', model: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', role: 'fallback' },
     ]
   },

@@ -1644,7 +1644,7 @@ export function SweepMonitorPanel() {
               <div className="pt-3 border-t text-xs text-muted-foreground flex items-center gap-4">
                 <div className="flex items-center gap-1">
                   <FlaskConical className="h-3 w-3" />
-                  <span>Análisis: GPT-5</span>
+                  <span>Análisis: GPT-6.1 Sol</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
