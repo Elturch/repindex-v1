@@ -3049,6 +3049,141 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_calib_gpt61: {
+        Row: {
+          cotiza: boolean | null
+          created_at: string
+          g5_cem: number | null
+          g5_cxm: number | null
+          g5_dcm: number | null
+          g5_drm: number | null
+          g5_gam: number | null
+          g5_nvm: number | null
+          g5_rix: number | null
+          g5_rmm: number | null
+          g5_sim: number | null
+          g6_at: string | null
+          g6_cem: number | null
+          g6_cxm: number | null
+          g6_dcm: number | null
+          g6_drm: number | null
+          g6_error: string | null
+          g6_gam: number | null
+          g6_nvm: number | null
+          g6_rix: number | null
+          g6_rmm: number | null
+          g6_sim: number | null
+          model_name: string | null
+          record_id: string
+          sector: string | null
+          ticker: string | null
+        }
+        Insert: {
+          cotiza?: boolean | null
+          created_at?: string
+          g5_cem?: number | null
+          g5_cxm?: number | null
+          g5_dcm?: number | null
+          g5_drm?: number | null
+          g5_gam?: number | null
+          g5_nvm?: number | null
+          g5_rix?: number | null
+          g5_rmm?: number | null
+          g5_sim?: number | null
+          g6_at?: string | null
+          g6_cem?: number | null
+          g6_cxm?: number | null
+          g6_dcm?: number | null
+          g6_drm?: number | null
+          g6_error?: string | null
+          g6_gam?: number | null
+          g6_nvm?: number | null
+          g6_rix?: number | null
+          g6_rmm?: number | null
+          g6_sim?: number | null
+          model_name?: string | null
+          record_id: string
+          sector?: string | null
+          ticker?: string | null
+        }
+        Update: {
+          cotiza?: boolean | null
+          created_at?: string
+          g5_cem?: number | null
+          g5_cxm?: number | null
+          g5_dcm?: number | null
+          g5_drm?: number | null
+          g5_gam?: number | null
+          g5_nvm?: number | null
+          g5_rix?: number | null
+          g5_rmm?: number | null
+          g5_sim?: number | null
+          g6_at?: string | null
+          g6_cem?: number | null
+          g6_cxm?: number | null
+          g6_dcm?: number | null
+          g6_drm?: number | null
+          g6_error?: string | null
+          g6_gam?: number | null
+          g6_nvm?: number | null
+          g6_rix?: number | null
+          g6_rmm?: number | null
+          g6_sim?: number | null
+          model_name?: string | null
+          record_id?: string
+          sector?: string | null
+          ticker?: string | null
+        }
+        Relationships: []
+      }
+      rix_calib_variants: {
+        Row: {
+          cem: number | null
+          created_at: string
+          cxm: number | null
+          dcm: number | null
+          drm: number | null
+          g6_error: string | null
+          gam: number | null
+          nvm: number | null
+          record_id: string
+          rix: number | null
+          rmm: number | null
+          sim: number | null
+          variant: string
+        }
+        Insert: {
+          cem?: number | null
+          created_at?: string
+          cxm?: number | null
+          dcm?: number | null
+          drm?: number | null
+          g6_error?: string | null
+          gam?: number | null
+          nvm?: number | null
+          record_id: string
+          rix?: number | null
+          rmm?: number | null
+          sim?: number | null
+          variant: string
+        }
+        Update: {
+          cem?: number | null
+          created_at?: string
+          cxm?: number | null
+          dcm?: number | null
+          drm?: number | null
+          g6_error?: string | null
+          gam?: number | null
+          nvm?: number | null
+          record_id?: string
+          rix?: number | null
+          rmm?: number | null
+          sim?: number | null
+          variant?: string
+        }
+        Relationships: []
+      }
       rix_claim_checks: {
         Row: {
           accion: string | null
@@ -5642,6 +5777,7 @@ export type Database = {
           sql_generado: string
         }[]
       }
+      claim_next_calib: { Args: never; Returns: string }
       claim_next_rix_analysis_record: {
         Args: { p_lock_ttl_seconds?: number; p_worker_id: string }
         Returns: {
