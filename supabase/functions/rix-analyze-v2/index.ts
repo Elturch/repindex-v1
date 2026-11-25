@@ -7,7 +7,22 @@ const corsHeaders = {
 };
 
 // Model used for RIX analysis (single source of truth)
-const RIX_ANALYSIS_MODEL = 'gpt-5';
+const RIX_ANALYSIS_MODEL = 'gpt-6.1-sol';
+
+// Calibración de escala (semana del 6-12-2026): al cambiar el juez de gpt-5 a
+// gpt-6.1-sol por la deprecación de gpt-5 en OpenAI, gpt-6.1-sol puntuaba ~10
+// puntos más bajo (sobre todo DRM, GAM y DCM). Esta guía recalibra esas métricas
+// para mantener la MISMA escala que gpt-5. Validado sobre 210 fichas del barrido
+// del 22-11 (sesgo de la nota resultante: +2,3). No alterar sin recalibrar.
+const RIX_SCALE_CALIBRATION = `
+
+CALIBRACIÓN DE ESCALA (OBLIGATORIO, máxima prioridad):
+Puntúas SOLO sobre lo que el texto MUESTRA. La AUSENCIA de información NO es una señal negativa: cuando el texto no cubre un aspecto, usa la banda neutra, nunca la banda baja.
+- Fortaleza de evidencia (DRM): si hay fuentes secundarias claras o corroboración parcial, banda 55-72. Reserva <40 SOLO para afirmaciones sin ninguna fuente ni trazabilidad. No hundas DRM por falta de fuentes primarias u oficiales si el relato está razonablemente sostenido.
+- Percepción de independencia de gobierno (GAM): en ausencia de señales explícitas de conflicto, falta de independencia o mala gobernanza, usa la banda neutra 55-65. Reserva puntuaciones bajas SOLO para conflictos o problemas de gobernanza presentes en el texto. El silencio sobre gobierno NO se penaliza.
+- Integridad del grafo de conocimiento (DCM): en ausencia de contradicciones reales (nombres/roles/fechas/cifras que se contradigan), usa la banda alta 70-85. Reserva puntuaciones bajas SOLO para inconsistencias presentes. La brevedad NO baja DCM.
+- Impacto de mercado/ejecución (CXM, solo cotizadas): mantente FIEL a las señales de mercado presentes en el texto. No la hundas por falta de detalle, pero tampoco la infles: en ausencia de señales claras de ejecución, usa la banda media 45-58.
+- El RESTO de métricas (Calidad de la narrativa NVM, Autoridad de fuentes SIM, Actualidad y empuje RMM, Gestión de controversias CEM) se puntúan ESTRICTAMENTE según su definición y fórmula originales, SIN subir la banda ni suavizar: esta calibración NO las afecta.`;
 
 // Full ORG_RIXSchema_V2 Tool Definition for GPT-5
 const RIX_ANALYSIS_TOOL = {
@@ -499,7 +514,8 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
 
   console.log(`[rix-analyze-v2] Calling ${RIX_ANALYSIS_MODEL} to analyze ${modelName} response...`);
 
-  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+  const RESP_TOOL = { type: 'function', name: RIX_ANALYSIS_TOOL.function.name, description: RIX_ANALYSIS_TOOL.function.description, parameters: RIX_ANALYSIS_TOOL.function.parameters };
+  const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${openaiApiKey}`,
@@ -507,9 +523,10 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
     },
     body: JSON.stringify({
       model: RIX_ANALYSIS_MODEL,
-      messages: [{ role: 'user', content: analysisPrompt }],
-      tools: [RIX_ANALYSIS_TOOL],
-      tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
+      input: analysisPrompt + RIX_SCALE_CALIBRATION,
+      tools: [RESP_TOOL],
+      tool_choice: { type: 'function', name: 'submit_rix_analysis' },
+      reasoning: { effort: 'low' },
     }),
   });
 
@@ -519,14 +536,16 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
   }
 
   const openaiData = await openaiResponse.json();
-  
-  // Extract tool call arguments
-  const toolCall = openaiData.choices?.[0]?.message?.tool_calls?.[0];
-  if (!toolCall || toolCall.function.name !== 'submit_rix_analysis') {
-    throw new Error('No valid analysis returned from GPT-5');
+
+  // Extract tool call arguments (Responses API para gpt-6.1-sol)
+  const toolCall = Array.isArray(openaiData.output)
+    ? openaiData.output.find((o: any) => o.type === 'function_call' && o.name === 'submit_rix_analysis')
+    : null;
+  if (!toolCall || !toolCall.arguments) {
+    throw new Error('No valid analysis returned from gpt-6.1-sol');
   }
 
-  const analysis = JSON.parse(toolCall.function.arguments);
+  const analysis = JSON.parse(toolCall.arguments);
   console.log(`[rix-analyze-v2] Analysis received for ${modelName}, processing...`);
 
   // Calculate effective weights and final RIX score
