@@ -212,7 +212,7 @@ export async function streamOpenAIResponse(
     model = "gpt-6.1-sol",
     temperature = 0,
     maxTokens = 32000,
-    timeoutMs = 90_000,
+    timeoutMs = 150_000,
     reasoning_effort = "medium",
     provider = "openai",
     onChunk,
