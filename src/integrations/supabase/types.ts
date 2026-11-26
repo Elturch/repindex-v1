@@ -1187,6 +1187,33 @@ export type Database = {
         }
         Relationships: []
       }
+      elec29n_apuesta: {
+        Row: {
+          contenido_texto: string
+          id: number
+          revelar_desde: string
+          sellado_at: string
+          sha256: string
+          vigente: boolean
+        }
+        Insert: {
+          contenido_texto: string
+          id?: number
+          revelar_desde?: string
+          sellado_at?: string
+          sha256: string
+          vigente?: boolean
+        }
+        Update: {
+          contenido_texto?: string
+          id?: number
+          revelar_desde?: string
+          sellado_at?: string
+          sha256?: string
+          vigente?: boolean
+        }
+        Relationships: []
+      }
       elec29n_config: {
         Row: {
           k: string
@@ -6005,6 +6032,7 @@ export type Database = {
         Args: { p_ttl_seconds?: number }
         Returns: number
       }
+      elec29n_apuesta_publica: { Args: never; Returns: Json }
       enforce_sweep_completeness: { Args: { p_week?: string }; Returns: Json }
       execute_sql: { Args: { sql_query: string }; Returns: Json }
       expand_entity_graph: {
