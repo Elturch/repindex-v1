@@ -111,7 +111,7 @@ const signed = (x: number | null) => (x == null ? "—" : `${x > 0 ? "+" : x < 0
 
 function senalItems(senales: Any) {
   if (Array.isArray(senales) && senales.length) {
-    return senales.map((s: Any) => typeof s === "string" ? { t: s, d: "", p: "" } : { t: s.nombre ?? s.titulo ?? s.t ?? "", d: s.descripcion ?? s.detalle ?? s.d ?? "", p: s.peso != null ? String(s.peso) : s.p ?? "" });
+    return senales.map((s: Any) => typeof s === "string" ? { t: s, d: "", p: "" } : { t: s.senal ?? s.nombre ?? s.titulo ?? s.t ?? "", d: s.detalle ?? s.descripcion ?? s.d ?? "", p: s.peso != null ? String(s.peso) : s.p ?? "" });
   }
   return SENALES_DEFAULT;
 }
@@ -276,13 +276,15 @@ function SobreAbierto({ d, demo }: { d: Any; demo: boolean }) {
 
   const provs: Any[] = J?.provincias ?? [];
   const sim = useMemo(() => simulate(provs, T, T0, M), [provs, T, T0, M]);
+  const simBase = useMemo(() => simulate(provs, T0, T0, 0), [provs, T0]);
   if (!J) return <p className="py-20 text-center" style={{ color: C.red }}>No se ha podido leer el texto sellado.</p>;
 
   const escanos: Record<string, number> = J.escanos ?? {};
   const horq: Record<string, number[]> = J.horquillas_80 ?? {};
   const probs: [string, number][] = Object.entries(J.probabilidades ?? {}).map(([k, v]) => [k, Number(v)]);
   const isBase = T === T0 && M === 0;
-  const cambian = provs.filter((p) => !sameReparto(sim.byProv[p.codigo], p.reparto));
+  const totalsShow = isBase ? escanos : sim.totals;
+  const cambian = isBase ? [] : provs.filter((p) => !sameReparto(sim.byProv[p.codigo], simBase.byProv[p.codigo]));
 
   const filtered = provs
     .filter((p) => norm(p.provincia).includes(norm(q)))
@@ -337,12 +339,14 @@ function SobreAbierto({ d, demo }: { d: Any; demo: boolean }) {
             <div className="flex justify-between text-xs" style={{ color: C.muted }}><span>Izquierda</span><span>Igual</span><span>Derecha</span></div>
           </div>
         </div>
-        <div className="mt-6"><SeatBars totals={sim.totals} base={escanos} /></div>
+        <div className="mt-6"><SeatBars totals={totalsShow} base={isBase ? undefined : simBase.totals} horq={isBase ? horq : undefined} /></div>
+        {isBase && <p className="text-xs mt-2" style={{ color: C.muted }}>Sin mover los controles, se muestran las cifras selladas tal cual, sin recalcular.</p>}
         <div className="grid gap-3 md:grid-cols-2 mt-6">
-          <BloqueSum label="PP + Vox" n={sumBloque(sim.totals, BLOQUE_DER)} />
-          <BloqueSum label="PSOE + Frente Amplio + Front Valencià + Podemos + ERC + Junts + EH Bildu + PNV + BNG + CC" n={sumBloque(sim.totals, BLOQUE_IZQ)} />
+          <BloqueSum label="PP + Vox" n={sumBloque(totalsShow, BLOQUE_DER)} />
+          <BloqueSum label="PSOE + Frente Amplio + Front Valencià + Podemos + ERC + Junts + EH Bildu + PNV + BNG + CC" n={sumBloque(totalsShow, BLOQUE_IZQ)} />
         </div>
         <p className="text-xs mt-2" style={{ color: C.muted }}>Son sumas de escaños, no probabilidades: aquí no hay simulaciones.</p>
+        {!isBase && (
         <div className="mt-6">
           <h3 className="text-lg mb-2" style={{ fontFamily: SERIF }}>Provincias que cambian de reparto ({cambian.length})</h3>
           {cambian.length === 0 ? <p className="text-sm" style={{ color: C.muted }}>Ninguna frente a la apuesta.</p> : (
@@ -353,15 +357,18 @@ function SobreAbierto({ d, demo }: { d: Any; demo: boolean }) {
                 </button>
                 {openP === p.codigo && (
                   <div className="px-3 pb-3 text-sm space-y-2">
-                    <div><div className="text-xs" style={{ color: C.muted }}>Apuesta</div><Chips r={p.reparto ?? {}} /></div>
+                    <div><div className="text-xs" style={{ color: C.muted }}>Apuesta sellada</div><Chips r={p.reparto ?? {}} /></div>
+                    <div><div className="text-xs" style={{ color: C.muted }}>Base de la calculadora</div><Chips r={simBase.byProv[p.codigo] ?? {}} /></div>
                     <div><div className="text-xs" style={{ color: C.muted }}>Con tus valores</div><Chips r={sim.byProv[p.codigo] ?? {}} /></div>
                   </div>
                 )}
               </div>))}</div>
           )}
         </div>
+        )}
         {!isBase && <Btn className="mt-4" onClick={() => { setT(T0); setM(0); }}>Volver a la apuesta</Btn>}
         <p className="mt-6 italic text-lg" style={{ fontFamily: SERIF }}>La participación por sí sola mueve poco; lo que cambia el resultado es quién va y quién se queda en casa.</p>
+        <p className="text-xs mt-2" style={{ color: C.muted }}>Al mover los controles se recalcula con los porcentajes redondeados a una décima, por lo que puede haber un escaño de diferencia con la apuesta sellada.</p>
       </Section>
 
       <Section id="provincias" title="Las 52 circunscripciones">
@@ -411,7 +418,7 @@ function demoPayload() {
     voto_nacional: { PP: 34, PSOE: 27, Vox: 13 },
     probabilidades: { "PP primera fuerza": 0.92, "PP + Vox ≥ 176": 0.61, "Bloque de investidura ≥ 176": 0.12 },
     participacion_apostada: 67.5, nota_participacion: "ejemplo",
-    provincias, senales: SENALES_DEFAULT.map((s) => ({ nombre: s.t, descripcion: s.d, peso: s.p })), metodo: METODO_DEFAULT,
+    provincias, senales: SENALES_DEFAULT.map((s) => ({ senal: s.t, detalle: s.d, peso: s.p })), metodo: METODO_DEFAULT,
     limites: [], naturaleza: "ejemplo", sellado: "ejemplo",
   };
   return { sha256: "0".repeat(64), sellado_at: new Date().toISOString(), revelar_desde: new Date().toISOString(), abierta: true, contenido_texto: JSON.stringify(json) };
