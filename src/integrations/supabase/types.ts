@@ -1187,6 +1187,195 @@ export type Database = {
         }
         Relationships: []
       }
+      elec29n_config: {
+        Row: {
+          k: string
+          updated_at: string | null
+          v: Json
+        }
+        Insert: {
+          k: string
+          updated_at?: string | null
+          v: Json
+        }
+        Update: {
+          k?: string
+          updated_at?: string | null
+          v?: Json
+        }
+        Relationships: []
+      }
+      elec29n_live: {
+        Row: {
+          bl: number | null
+          camara: string
+          censo_esc: number | null
+          esc: number
+          id: string
+          nulos: number | null
+          ts: string | null
+          v: Json
+          votantes: number | null
+        }
+        Insert: {
+          bl?: number | null
+          camara?: string
+          censo_esc?: number | null
+          esc?: number
+          id: string
+          nulos?: number | null
+          ts?: string | null
+          v?: Json
+          votantes?: number | null
+        }
+        Update: {
+          bl?: number | null
+          camara?: string
+          censo_esc?: number | null
+          esc?: number
+          id?: string
+          nulos?: number | null
+          ts?: string | null
+          v?: Json
+          votantes?: number | null
+        }
+        Relationships: []
+      }
+      elec29n_live_senado: {
+        Row: {
+          esc: number | null
+          id: string
+          ts: string | null
+          v: Json
+        }
+        Insert: {
+          esc?: number | null
+          id: string
+          ts?: string | null
+          v?: Json
+        }
+        Update: {
+          esc?: number | null
+          id?: string
+          ts?: string | null
+          v?: Json
+        }
+        Relationships: []
+      }
+      elec29n_relato: {
+        Row: {
+          explicacion: string | null
+          frase: string
+          fuente: string | null
+          id: number
+          minuto_video: string | null
+          modo: string
+          proyeccion: Json | null
+          quien: string | null
+          tipo: string | null
+          ts: string
+          veredicto: string | null
+        }
+        Insert: {
+          explicacion?: string | null
+          frase: string
+          fuente?: string | null
+          id?: number
+          minuto_video?: string | null
+          modo?: string
+          proyeccion?: Json | null
+          quien?: string | null
+          tipo?: string | null
+          ts?: string
+          veredicto?: string | null
+        }
+        Update: {
+          explicacion?: string | null
+          frase?: string
+          fuente?: string | null
+          id?: number
+          minuto_video?: string | null
+          modo?: string
+          proyeccion?: Json | null
+          quien?: string | null
+          tipo?: string | null
+          ts?: string
+          veredicto?: string | null
+        }
+        Relationships: []
+      }
+      elec29n_runs: {
+        Row: {
+          id: number
+          info: Json | null
+          ms: number | null
+          ok: boolean | null
+          op: string | null
+          ts: string | null
+        }
+        Insert: {
+          id?: number
+          info?: Json | null
+          ms?: number | null
+          ok?: boolean | null
+          op?: string | null
+          ts?: string | null
+        }
+        Update: {
+          id?: number
+          info?: Json | null
+          ms?: number | null
+          ok?: boolean | null
+          op?: string | null
+          ts?: string | null
+        }
+        Relationships: []
+      }
+      elec29n_snap: {
+        Row: {
+          data: Json
+          escrutado: number | null
+          id: number
+          modo: string
+          ts: string
+        }
+        Insert: {
+          data: Json
+          escrutado?: number | null
+          id?: number
+          modo: string
+          ts?: string
+        }
+        Update: {
+          data?: Json
+          escrutado?: number | null
+          id?: number
+          modo?: string
+          ts?: string
+        }
+        Relationships: []
+      }
+      elec29n_trail: {
+        Row: {
+          esc: number | null
+          id: string
+          ts: string
+          z: Json | null
+        }
+        Insert: {
+          esc?: number | null
+          id: string
+          ts?: string
+          z?: Json | null
+        }
+        Update: {
+          esc?: number | null
+          id?: string
+          ts?: string
+          z?: Json | null
+        }
+        Relationships: []
+      }
       especiales: {
         Row: {
           actualizado_at: string
