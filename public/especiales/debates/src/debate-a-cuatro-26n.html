@@ -357,7 +357,7 @@ const DATA = {
     titulo:"Debate a cuatro · Elecciones generales 29-N",
     fecha:"Jueves 26 de noviembre de 2026 · 22:00",
     organiza:"Academia de las Ciencias y las Artes de Televisión",
-    actualizado:"01:09 del 27-11-2026",modera:/*D:modera*/"María Casado"/*F:modera*/,
+    actualizado:"01:11 del 27-11-2026",modera:/*D:modera*/"María Casado"/*F:modera*/,
     orden:/*D:orden*/"Atriles y turnos por sorteo; temas y duración de los bloques pactados entre todas las partes"/*F:orden*/,
     estado:/*D:estado*/"analizado"/*F:estado*/,
     fuente:"Vídeo íntegro de la emisión y su transcripción"
@@ -1616,12 +1616,13 @@ window.addEventListener("hashchange",()=>{render();window.scrollTo({top:0,behavi
 render();
 </script>
 <script>
-(function(){ // número de visitas: páginas vistas según los datos de tráfico de Cloudflare (sin robots)
+(function(){ // número de visitas: contador propio en el archivo de RepIndex (una visita por navegador y día)
   var el=document.getElementById("visitas"); if(!el) return;
   if(location.protocol==="file:") return;
-  fetch("/api/visitas",{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
-    if(d&&typeof d.visitas==="number"&&d.visitas>0) el.textContent="Número de visitas: "+d.visitas.toLocaleString("es-ES")+" ·";
-  }).catch(function(){});
+  var k="rpx_visita_debate-a-cuatro-26n", hoy=new Date().toISOString().slice(0,10), sumar=true;
+  try{ if(localStorage.getItem(k)===hoy) sumar=false; else localStorage.setItem(k,hoy); }catch(e){}
+  fetch("https://jzkjykmrwisijiqlwuua.supabase.co/rest/v1/rpc/especiales_visita",{method:"POST",headers:{"apikey":"sb_publishable_fDeQo6Q5jctQ725bE-f7KA_-TlSYxcs","Content-Type":"application/json"},body:JSON.stringify({p_slug:"debate-a-cuatro-26n",p_sumar:sumar})})
+   .then(function(r){return r.json()}).then(function(n){ if(typeof n==="number"&&n>0) el.innerHTML="<b>"+n.toLocaleString("es-ES")+"</b> visitas ·"; }).catch(function(){});
 })();
 </script>
 </body>
