@@ -27,7 +27,7 @@ export default function EspecialDebateAOcho23n() {
         <link rel="canonical" href="https://repindex.ai/especiales/debates/debate-a-ocho-23n" />
       </Helmet>
       <iframe
-        src={`/especiales/debates/src/debate-a-ocho-23n.html?v=${CACHE_BUST}`}
+        src={`/especiales/debates/src/debate-a-ocho-23n.html?v=${CACHE_BUST}${typeof window !== "undefined" ? window.location.hash : ""}`}
         title="El Debate a Ocho · RepIndex"
         style={{
           width: "100%",
