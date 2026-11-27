@@ -357,7 +357,7 @@ const DATA = {
     titulo:"Debate a cuatro · Elecciones generales 29-N",
     fecha:"Jueves 26 de noviembre de 2026 · 22:00",
     organiza:"Academia de las Ciencias y las Artes de Televisión",
-    actualizado:"08:38 del 27-11-2026",modera:/*D:modera*/"María Casado"/*F:modera*/,
+    actualizado:"08:45 del 27-11-2026",modera:/*D:modera*/"María Casado"/*F:modera*/,
     orden:/*D:orden*/"Atriles y turnos por sorteo; temas y duración de los bloques pactados entre todas las partes"/*F:orden*/,
     estado:/*D:estado*/"analizado"/*F:estado*/,
     fuente:"Vídeo íntegro de la emisión y su transcripción"
@@ -871,7 +871,7 @@ function vVeredicto(){
     <div class="eyebrow">${d.meta.fecha}</div>
     <div class="big" style="margin-top:10px;${win&&win!=="empate"?`color:${C[win].color}`:""}">${big}</div>
     ${line?`<div class="line">${line}</div>`:""}
-    ${ok?`<div style="max-width:760px;margin:14px auto 0;padding:10px 14px;border:1px solid var(--ink);background:#fff8e6;font:500 14px var(--sans);text-align:left"><b>Resultado provisional · actualizado a las ${DATA.meta.actualizado||""}.</b> Ya incluye las anécdotas comprobadas y la comprobación sobre el audio original del momento «calladita». Ya incluye también la gestualidad: quién sale en pantalla y cuánto, y la lectura de gestos con dos lectores a ciegas. La gestualidad no cambia las notas, que se basan en las ideas. Las notas pueden cambiar con esa revisión; cada cambio quedará indicado en esta página.</div><div class="qual" style="font-size:14px;max-width:760px;margin:10px auto 0"><b>Todo parte de las ideas.</b> El programa —cuántas propuestas, de qué calidad y con cuánto alcance, puntuadas a ciegas— pesa el 55 % y es lo que decide. La veracidad, contrastada solo con fuentes oficiales, pesa el 15 %; la forma de comunicar, de responder y de debatir, el resto. No puntúan la oratoria ni la puesta en escena, y no es una encuesta.</div>`:""}
+    ${ok?`<div class="qual" style="font-size:14px;max-width:760px;margin:10px auto 0"><b>Todo parte de las ideas.</b> El programa —cuántas propuestas, de qué calidad y con cuánto alcance, puntuadas a ciegas— pesa el 55 % y es lo que decide. La veracidad, contrastada solo con fuentes oficiales, pesa el 15 %; la forma de comunicar, de responder y de debatir, el resto. No puntúan la oratoria ni la puesta en escena, y no es una encuesta.</div>`:""}
     ${ok&&d.robustez?robustLine():""}
     ${ok?`<div class="eyebrow" style="margin-top:10px">Nota de programa (pesa el 55 %): ${IDS.slice().sort((a,b)=>DATA.o2.comps.total[b].programa-DATA.o2.comps.total[a].programa).map(c=>`${C[c].corto} ${Math.round(DATA.o2.comps.total[c].programa)}`).join(" · ")}</div>`:""}
     <div class="meta">${[d.meta.organiza,d.meta.modera?"Modera "+d.meta.modera:"",d.meta.orden].filter(Boolean).join(" · ")}</div>
