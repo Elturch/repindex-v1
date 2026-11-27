@@ -1409,19 +1409,25 @@ export type Database = {
           agenda_id: string | null
           categoria_slug: string
           cifras: Json
+          cuerpo: string | null
           datos: Json | null
           datos_sha256: string | null
           destacado: boolean
+          enlaces: Json
           entidad: string | null
+          entradilla: string | null
           estado: string
           etiqueta_fecha: string | null
           fecha_evento: string | null
           fuente_video_url: string | null
           metodo_url: string | null
+          orden_portada: number
           publicado_at: string | null
           resumen: string | null
+          seccion: string | null
           slug: string
           subtitulo: string | null
+          titular: string | null
           titulo: string
           url: string | null
           url_externa: boolean
@@ -1431,19 +1437,25 @@ export type Database = {
           agenda_id?: string | null
           categoria_slug: string
           cifras?: Json
+          cuerpo?: string | null
           datos?: Json | null
           datos_sha256?: string | null
           destacado?: boolean
+          enlaces?: Json
           entidad?: string | null
+          entradilla?: string | null
           estado?: string
           etiqueta_fecha?: string | null
           fecha_evento?: string | null
           fuente_video_url?: string | null
           metodo_url?: string | null
+          orden_portada?: number
           publicado_at?: string | null
           resumen?: string | null
+          seccion?: string | null
           slug: string
           subtitulo?: string | null
+          titular?: string | null
           titulo: string
           url?: string | null
           url_externa?: boolean
@@ -1453,19 +1465,25 @@ export type Database = {
           agenda_id?: string | null
           categoria_slug?: string
           cifras?: Json
+          cuerpo?: string | null
           datos?: Json | null
           datos_sha256?: string | null
           destacado?: boolean
+          enlaces?: Json
           entidad?: string | null
+          entradilla?: string | null
           estado?: string
           etiqueta_fecha?: string | null
           fecha_evento?: string | null
           fuente_video_url?: string | null
           metodo_url?: string | null
+          orden_portada?: number
           publicado_at?: string | null
           resumen?: string | null
+          seccion?: string | null
           slug?: string
           subtitulo?: string | null
+          titular?: string | null
           titulo?: string
           url?: string | null
           url_externa?: boolean
