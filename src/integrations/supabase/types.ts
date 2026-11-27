@@ -1289,6 +1289,45 @@ export type Database = {
         }
         Relationships: []
       }
+      elec29n_pastillas: {
+        Row: {
+          ancla: string
+          clave: string
+          escrutado: number | null
+          id: number
+          modo: string
+          partido: string | null
+          prioridad: number
+          texto: string
+          tipo: string
+          ts: string
+        }
+        Insert: {
+          ancla: string
+          clave: string
+          escrutado?: number | null
+          id?: number
+          modo: string
+          partido?: string | null
+          prioridad?: number
+          texto: string
+          tipo: string
+          ts?: string
+        }
+        Update: {
+          ancla?: string
+          clave?: string
+          escrutado?: number | null
+          id?: number
+          modo?: string
+          partido?: string | null
+          prioridad?: number
+          texto?: string
+          tipo?: string
+          ts?: string
+        }
+        Relationships: []
+      }
       elec29n_relato: {
         Row: {
           explicacion: string | null
