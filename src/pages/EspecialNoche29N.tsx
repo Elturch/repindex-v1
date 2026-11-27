@@ -61,6 +61,8 @@ export default function EspecialNoche29N() {
   const [pastillas, setPastillas] = useState<Pastilla[]>([]);
   const [newKeys, setNewKeys] = useState<Set<string>>(new Set());
   const [showDecided, setShowDecided] = useState(false);
+  const [showAllAir, setShowAllAir] = useState(false);
+  const [showAllHora, setShowAllHora] = useState(false);
   const [sortProv, setSortProv] = useState({ key: "votesNeeded", asc: true });
   const carousel = useRef<HTMLDivElement>(null);
   const liveBar = useRef<HTMLDivElement>(null);
@@ -163,6 +165,11 @@ export default function EspecialNoche29N() {
     </EditorialButton>
   );
 
+  const abiertoList = [...(panel?.certezas?.abierto ?? [])].sort((a, b) => b.prob - a.prob);
+  const abiertoShown = showAllAir ? abiertoList : abiertoList.slice(0, 12);
+  const conHoraList = panel?.certezas?.conHora ?? [];
+  const conHoraShown = showAllHora ? conHoraList : conHoraList.slice(0, 8);
+
   const chartData = historia.map((h) => {
     const row: Any = { hora: h.hora ?? madrid(h.ts) };
     for (const k of top4) {
@@ -182,10 +189,11 @@ export default function EspecialNoche29N() {
       <Helmet><link rel="canonical" href="https://repindex.ai/especiales/elecciones/noche-29n" /></Helmet>
       <div className="elec-page" style={{ background: C.paper, color: C.ink, minHeight: "100vh" }}>
         <style>{`
-          .elec-page .elec-section { scroll-margin-top: 160px; transition: background-color 1.5s, box-shadow 1.5s; }
+          .elec-page .elec-section { scroll-margin-top: 150px; transition: background-color 1.5s, box-shadow 1.5s; }
           .elec-page [data-lit="true"] { background-color: ${C.ochre}18; box-shadow: inset 3px 0 ${C.ochre}; }
           .elec-page .elec-ticker { scrollbar-width: thin; scrollbar-color: ${C.grey} ${C.ink}; }
           .elec-page .elec-pill { border-radius: 999px; flex-shrink: 0; scroll-snap-align: start; }
+          @media (max-width: 640px) { .elec-page .elec-pill { max-width: 85vw; } }
           .elec-page .elec-new { animation: elec-enter .4s ease-out, elec-ring 1s ease-in-out 3; }
           .elec-page .elec-live-dot { animation: elec-pulse 1.5s ease-in-out infinite; }
           .elec-page table th, .elec-page table td { padding-right: 16px; }
@@ -194,13 +202,13 @@ export default function EspecialNoche29N() {
           @keyframes elec-pulse { 50% { opacity: .4; } }
           @media (prefers-reduced-motion: reduce) { .elec-page *, .elec-page .elec-new, .elec-page .elec-live-dot { animation: none; transition: none; scroll-behavior: auto; } }
         `}</style>
-        <div ref={liveBar} className="sticky top-16 z-40 w-full" style={{ background: C.ink, color: C.paper }}>
+        <div ref={liveBar} className="sticky top-[72px] z-40 w-full" style={{ background: C.ink, color: C.paper }}>
           {st?.modo === "simulacro" && <div className="text-center text-xs sm:text-sm font-semibold px-3 py-2" style={{ background: C.red, color: C.paper }}>SIMULACRO con los votos reales del 23J y un orden de llegada simulado — no son datos del 29-N</div>}
           <div className="flex items-center gap-2 px-2 sm:px-4 min-h-14" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onTouchCancel={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
             <div className="shrink-0 text-[10px] sm:text-xs leading-tight pr-1"><span className="flex items-center gap-1 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN DIRECTO</span><span style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
             <EditorialButton aria-label="Titulares más recientes" title="Titulares más recientes" className="shrink-0 h-10 w-6 text-3xl" style={{ color: C.paper }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(-1); }}>‹</EditorialButton>
             <div ref={carousel} className="elec-ticker flex min-w-0 flex-1 gap-3 overflow-x-auto snap-x snap-proximity py-2 px-1" style={{ touchAction: "pan-x pan-y" }}>
-              {!panel?.vacio && pastillas.length > 0 ? pastillas.map(p => <EditorialButton key={keyOf(p)} title={p.texto} onClick={() => navigatePill(p)} className={`elec-pill flex items-center gap-2 px-3 py-2 max-w-[460px] ${newKeys.has(keyOf(p)) ? "elec-new" : ""}`} style={{ background: C.card, color: C.ink, fontSize: 13, fontWeight: p.prioridad === 3 ? 700 : 400 }}>
+              {!panel?.vacio && pastillas.length > 0 ? pastillas.map(p => <EditorialButton key={keyOf(p)} title={p.texto} onClick={() => navigatePill(p)} className={`elec-pill flex items-center gap-2 px-3 py-2 max-w-[560px] ${newKeys.has(keyOf(p)) ? "elec-new" : ""}`} style={{ background: C.card, color: C.ink, fontSize: 14, fontWeight: p.prioridad === 3 ? 700 : 400 }}>
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: pillColor(p), border: ["hora", "tramo"].includes(p.tipo) ? `1px solid ${C.grey}` : undefined }} />
                 <time className="shrink-0 text-[10px]" style={{ color: C.grey }}>{madrid(p.ts)}</time><span className="truncate text-left">{p.texto}</span>
               </EditorialButton>) : <p className="text-xs sm:text-sm py-1" style={{ color: C.grey }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</p>}
@@ -208,7 +216,7 @@ export default function EspecialNoche29N() {
             <EditorialButton aria-label="Titulares anteriores" title="Titulares anteriores" className="shrink-0 h-10 w-6 text-3xl" style={{ color: C.paper }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(1); }}>›</EditorialButton>
           </div>
         </div>
-        <div className="max-w-5xl mx-auto px-4 pb-16">
+        <div className="max-w-5xl mx-auto px-4 pt-2 pb-16">
           <header className="pt-8 pb-4 text-center" style={{ borderBottom: `3px double ${C.ink}` }}>
             <div className="text-xs uppercase tracking-[0.3em]" style={{ color: C.muted }}>Especiales RepIndex · En directo</div>
             <h1 className="text-4xl md:text-6xl my-2" style={{ fontFamily: SERIF }}>Noche electoral 29-N</h1>
@@ -266,8 +274,8 @@ export default function EspecialNoche29N() {
                     {panel?.certezas?.seguro?.filter(i => !i.prov).map(i => certezaItem(i))}
                     {!!panel?.certezas?.seguro?.filter(i => i.prov).length && <><EditorialButton className="text-sm underline py-3" onClick={() => setShowDecided(!showDecided)} aria-expanded={showDecided}>+ {panel?.certezas?.seguro?.filter(i => i.prov).length} provincias decididas {showDecided ? "▾" : "▸"}</EditorialButton>{showDecided && panel?.certezas?.seguro?.filter(i => i.prov).map(i => certezaItem(i))}</>}
                   </div>
-                  <div><h3 className="font-semibold pb-2" style={{ color: C.ochre }}>Aún en el aire</h3>{[...(panel?.certezas?.abierto ?? [])].sort((a, b) => b.prob - a.prob).map(i => certezaItem(i, true))}</div>
-                  <div><h3 className="font-semibold pb-2">Lo sabremos hacia…</h3>{panel?.certezas?.conHora?.map(i => <EditorialButton key={i.id} className="block w-full py-3 text-left" onClick={() => go(i.prov ? "alambre" : i.ancla, i.prov)}><span className="block text-3xl" style={{ fontFamily: SERIF }}>{i.hora ?? "—"}</span><span className="block text-sm mt-1">{i.texto}</span></EditorialButton>)}<p className="text-xs italic" style={{ color: C.muted }}>estimación al ritmo actual de recuento</p></div>
+                  <div><h3 className="font-semibold pb-2" style={{ color: C.ochre }}>Aún en el aire</h3>{abiertoShown.map(i => certezaItem(i, true))}{abiertoList.length > 12 && <EditorialButton className="text-sm underline py-2" onClick={() => setShowAllAir(v => !v)} aria-expanded={showAllAir}>{showAllAir ? "Cerrar" : `Ver todos (${abiertoList.length})`}</EditorialButton>}</div>
+                  <div><h3 className="font-semibold pb-2">Lo sabremos hacia…</h3>{conHoraShown.map(i => <EditorialButton key={i.id} className="block w-full py-3 text-left" onClick={() => go(i.prov ? "alambre" : i.ancla, i.prov)}><span className="block text-3xl" style={{ fontFamily: SERIF }}>{i.hora ?? "—"}</span><span className="block text-sm mt-1">{i.texto}</span></EditorialButton>)}{conHoraList.length > 8 && <EditorialButton className="text-sm underline py-2" onClick={() => setShowAllHora(v => !v)} aria-expanded={showAllHora}>{showAllHora ? "Cerrar" : `Ver todos (${conHoraList.length})`}</EditorialButton>}<p className="text-xs italic" style={{ color: C.muted }}>estimación al ritmo actual de recuento</p></div>
                 </div>{panel?.certezas?.nota && <p className="text-xs mt-4" style={{ color: C.muted }}>{panel?.certezas?.nota}</p>}
               </Section>}
               {panel?.pendiente && <Section id="pendiente" title="El voto que falta por contar">
