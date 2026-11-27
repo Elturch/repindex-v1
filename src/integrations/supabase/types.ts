@@ -1911,6 +1911,24 @@ export type Database = {
           },
         ]
       }
+      especiales_visitas: {
+        Row: {
+          actualizado_at: string
+          slug: string
+          visitas: number
+        }
+        Insert: {
+          actualizado_at?: string
+          slug: string
+          visitas?: number
+        }
+        Update: {
+          actualizado_at?: string
+          slug?: string
+          visitas?: number
+        }
+        Relationships: []
+      }
       evaluation: {
         Row: {
           composite_chatgpt: number | null
@@ -6034,6 +6052,10 @@ export type Database = {
       }
       elec29n_apuesta_publica: { Args: never; Returns: Json }
       enforce_sweep_completeness: { Args: { p_week?: string }; Returns: Json }
+      especiales_visita: {
+        Args: { p_slug: string; p_sumar?: boolean }
+        Returns: number
+      }
       execute_sql: { Args: { sql_query: string }; Returns: Json }
       expand_entity_graph: {
         Args: { p_depth?: number; p_ticker: string }
