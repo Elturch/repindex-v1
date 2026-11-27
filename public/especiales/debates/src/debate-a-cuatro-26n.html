@@ -357,7 +357,7 @@ const DATA = {
     titulo:"Debate a cuatro · Elecciones generales 29-N",
     fecha:"Jueves 26 de noviembre de 2026 · 22:00",
     organiza:"Academia de las Ciencias y las Artes de Televisión",
-    actualizado:"08:45 del 27-11-2026",modera:/*D:modera*/"María Casado"/*F:modera*/,
+    actualizado:"09:05 del 27-11-2026",modera:/*D:modera*/"María Casado"/*F:modera*/,
     orden:/*D:orden*/"Atriles y turnos por sorteo; temas y duración de los bloques pactados entre todas las partes"/*F:orden*/,
     estado:/*D:estado*/"analizado"/*F:estado*/,
     fuente:"Vídeo íntegro de la emisión y su transcripción"
@@ -812,7 +812,7 @@ function wLabel(w,etapa){ if(!w) return "Pendiente"; if(w==="empate") return "Em
    5 · PIEZAS COMUNES
    ===================================================================== */
 function portrait(c,size=96){ if(c.foto) return `<div class="portrait" style="width:${size}px;height:${size}px"><img src="${c.foto}" alt="${c.nombre}"></div>`; return ""; }
-const VIEWS=[["veredicto","Veredicto"],["clasificacion","Clasificación"],["minuto","Minuto a minuto"],["etapas","Bloques"],["ideas","Ideas"],["verificacion","Verificación"],["reproches","Reproches"],["fuego","Fuego cruzado"],["preguntas","Sin respuesta"],["tono","Tono"],["agentes","Método"]];
+const VIEWS=[["veredicto","Veredicto"],["clasificacion","Clasificación"],["minuto","Minuto a minuto"],["etapas","Bloques"],["ideas","Ideas"],["verificacion","Verificación"],["reproches","Reproches"],["fuego","Fuego cruzado"],["preguntas","Sin respuesta"],["tono","Tono"],["gestual","Gestualidad"],["agentes","Método"]];
 const $=s=>document.querySelector(s);
 function go(view,opts={}){ Object.assign(S,opts); if(location.hash.slice(1)===view) render(); else location.hash=view; }
 function chips(){
@@ -1517,7 +1517,7 @@ function candSegP2(){const P2=["ps","af"].filter(isCand);return `<div class="seg
    6 bis · AUDITORÍA 20-NOV (llevada desde el cara a cara): robustez, grupos de pestañas,
    glosario emergente, buscador, descarga de datos, enlaces directos y listas plegadas
    ===================================================================== */
-const GRUPOS=[["Resultado",["veredicto","clasificacion","minuto","etapas"]],["Contenido",["ideas","reproches","fuego","preguntas","tono"]],["Verdad",["verificacion"]],["Método",["agentes"]]];
+const GRUPOS=[["Resultado",["veredicto","clasificacion","minuto","etapas"]],["Contenido",["ideas","reproches","fuego","preguntas","tono","gestual"]],["Verdad",["verificacion"]],["Método",["agentes"]]];
 /* Línea de robustez: DATA.robustez = {frase:"…", posiciones:{ps:{p1,p2,p3,p4},…}} (posiciones opcional) */
 function robustLine(){
   const r=D().robustez; if(!r||!r.frase) return "";
@@ -1656,7 +1656,7 @@ function render(){
   $("#tabs").innerHTML=GRUPOS.map(([g,ids])=>`<span class="gw"><span class="grp">${g}</span>`+ids.filter(id=>VL2[id]).map(id=>`<a href="#${id}" class="${id===S.view?"on":""}">${VL2[id]}</a>`).join("")+`</span>`).join("");
   const on=$("#tabs a.on"); if(on&&window.innerWidth<900) on.scrollIntoView({block:"nearest",inline:"center"});
   
-  const fn={agentes:()=>metodoBase()+vAgentes(),veredicto:vVeredicto,clasificacion:vClasif,minuto:vMinuto,etapas:vEtapas,ideas:vIdeas,verificacion:vVerif,reproches:vRep,fuego:vFuego,posiciones:vPos,preguntas:vPreg,tono:vTono,gestual:vGest,hemeroteca:vHemeroteca,comparativa:vComparativa}[S.view];
+  const fn={agentes:()=>metodoBase()+vAgentes(),veredicto:vVeredicto,clasificacion:vClasif,minuto:vMinuto,etapas:vEtapas,ideas:vIdeas,verificacion:vVerif,reproches:vRep,fuego:vFuego,posiciones:vPos,preguntas:vPreg,tono:vTono,gestual:gestualBox,hemeroteca:vHemeroteca,comparativa:vComparativa}[S.view];
   $("#app").innerHTML=(window.PRUEBA?`<div class="prueba-band">Prueba interna con datos ficticios · no publicar · ${N} candidatos</div>`:"")+(DATA.meta.estado!=="analizado"&&DATA.ideas.length?`<div style="border:1px solid var(--ink);border-left:4px solid var(--warn);padding:10px 14px;margin:0 0 18px;font:14px/1.45 var(--sans)"><b>AVANCE PROVISIONAL.</b> El análisis se hace sobre la transcripción íntegra del debate (la prensa solo sirve de cotejo). Falta cerrar la verificación con doble control; hasta entonces el veredicto es provisional.</div>`:"")+fn();
   if(document.getElementById("banco")){BQ={b:"",q:""};filtraBanco();}
   glosar(document.getElementById("app"));
