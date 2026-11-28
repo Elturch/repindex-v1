@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
+import { supabase } from "@/integrations/supabase/client";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { MapaEspana } from "@/components/especiales/MapaEspana";
 import { HistoricoElectoral, ChipsHistoricos, FaroHistorial } from "@/components/especiales/HistoricoElectoral";
-import { familia2023, loadHistorico, resultado2023, type Historico } from "@/components/especiales/historicoElectoral";
+import { FUENTE_HISTORICA, familia2023, loadHistorico, resultado2023, type Historico } from "@/components/especiales/historicoElectoral";
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid, Legend,
 } from "recharts";
@@ -43,6 +44,7 @@ function EditorialButton({ className = "", style, ...props }: ButtonProps) {
   return <Button variant="ghost" className={`block h-auto rounded-none whitespace-normal p-0 hover:opacity-80 ${className}`} style={{ color: C.ink, background: "transparent", ...style }} {...props} />;
 }
 const pct = (x?: number | null) => (x == null ? "—" : `${Math.round(x * 100)} %`);
+const madridFecha = (ts: string) => new Date(ts).toLocaleString("es-ES", { timeZone: "Europe/Madrid", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 const num = (x?: number | null) => (x == null ? "—" : x.toLocaleString("es-ES"));
 /* Separador de miles es-ES también con 4 cifras (1.317). */
 const miles = (x?: number | null) => {
@@ -118,6 +120,34 @@ function SinDatos({ view, historico }: { view: (typeof VIEWS)[number]; historico
   );
 }
 
+const SELLO_TXT = "Pronóstico sellado; se abre el domingo 29 a las 21:00";
+function SinPanelVista({ view, historico, sello, distinto, metodo }: { view: (typeof VIEWS)[number]; historico: Historico | null; sello: { sha256?: string; sellado_at?: string } | null; distinto: React.ReactNode; metodo: React.ReactNode }) {
+  return (
+    <div>
+      <div className="elec-viewhead"><div className="elec-crumb">{view.group} › {view.label}</div><h2 className="mt-1">{view.label}</h2><p className="lede">{view.lede}</p></div>
+      {view.id === "distinto" && distinto}
+      {view.id === "metodo" && metodo}
+      {view.id === "apuesta" && <Section id="apuesta" title="La apuesta sellada">
+        {sello?.sha256 ? <div className="p-6 text-center" style={{ borderTop: `2px solid ${C.ink}`, borderBottom: `1px solid ${C.rule}` }}>
+          <p className="text-2xl" style={{ fontFamily: SERIF }}>Pronóstico sellado{sello.sellado_at ? ` el ${madridFecha(sello.sellado_at)}` : ""}. Se abre el domingo 29 a las 21:00.</p>
+          <p className="text-xs uppercase tracking-widest mt-4" style={{ color: C.muted }}>Huella SHA-256</p>
+          <p className="font-mono text-xs break-all mt-1">{sello.sha256}</p>
+          <p className="text-sm mt-3" style={{ color: C.muted }}>La huella demuestra que el pronóstico no se cambia después.</p>
+        </div> : <p className="text-xl" style={{ fontFamily: SERIF }}>{SELLO_TXT}</p>}
+        <EditorialButton asChild className="underline mt-4 text-sm"><a href="/especiales/elecciones/apuesta-29n">La Apuesta RepIndex · 29-N →</a></EditorialButton>
+      </Section>}
+      {view.id === "territorio" && <>
+        <Section id="mapa-territorio" title="Dónde ha cambiado el voto"><p style={{ fontFamily: SERIF, color: C.muted }}>{SIN_DATOS}</p></Section>
+        <Section id="faros" kicker="Muestra" title="Pueblos faro">
+          <p className="mb-4 text-lg" style={{ fontFamily: SERIF }}>{historico?.faros.length ?? 25} municipios que llevan seis elecciones votando como España. Cada ficha compara su voto a PP y PSOE con el resultado nacional de cada año.</p>
+          {historico ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">{historico.faros.map(f => <div key={f.id} className="p-3 text-sm" style={{ borderTop: `2px solid ${C.ink}` }}><b className="block">{f.n}</b><span className="block text-xs">Censo {num(f.censo)}</span><FaroHistorial id={f.id} historico={historico} /><div className="text-xs mt-1 pt-1" style={{ borderTop: `1px solid ${C.rule}` }}>29-N · PP — · PSOE —</div></div>)}</div> : <p style={{ color: C.muted }}>Cargando histórico oficial…</p>}
+          <p className="text-xs mt-4" style={{ color: C.muted }}>{FUENTE_HISTORICA}</p>
+        </Section>
+      </>}
+    </div>
+  );
+}
+
 export default function EspecialNoche29N() {
   const [historicoOficial, setHistoricoOficial] = useState<Historico | null>(null);
   const [provinciaHistoria, setProvinciaHistoria] = useState("28");
@@ -132,6 +162,8 @@ export default function EspecialNoche29N() {
   const [view, setView] = useState(() => hashInicial.current ? viewFor(hashInicial.current) : "historia");
   const [titularesHist, setTitularesHist] = useState<{ fuente?: string; titulares: { texto: string; ancla: string }[] } | null>(null);
   useEffect(() => { let a = true; fetch("/especiales/elecciones/titulares-historico.json").then(r => r.ok ? r.json() : null).then(j => { if (a && j?.titulares) setTitularesHist(j); }).catch(() => {}); return () => { a = false; }; }, []);
+  const [selloApuesta, setSelloApuesta] = useState<{ sha256?: string; sellado_at?: string } | null>(null);
+  useEffect(() => { let a = true; (supabase as Any).rpc("elec29n_apuesta_publica").then(({ data }: Any) => { const d = Array.isArray(data) ? data[0] : data; if (a && d?.sha256) setSelloApuesta({ sha256: String(d.sha256), sellado_at: d.sellado_at }); }).catch(() => {}); return () => { a = false; }; }, []);
   const [tick, setTick] = useState(0);
   const [showAllPills, setShowAllPills] = useState(false);
   const tabsRef = useRef<HTMLElement>(null);
@@ -291,7 +323,7 @@ export default function EspecialNoche29N() {
     const frase = ref ? `Con el ${miles(ref.esc)} % escrutado, la proyección decía ${miles(ref.p50)} y el recuento ${miles(ref.bruto)}${final != null ? `; el resultado fue ${miles(final)}` : ""}` : "";
     return { data, final, frase };
   })();
-  const viewHas: Record<string, boolean> = { ahora: true, mayorias: !!panel?.poder || !!reparto, provincias: provs.length > 0 || !!panel?.cera, senado: !!panel?.senado, pendiente: !!panel?.pendiente || !!panel?.porque, "votos-escanos": !!reparto && (reparto.votosSinEscanoPct != null || reparto.partidos?.length > 0), territorio: !!tamano || !!panel?.faros, movilizacion: !!panel?.movilizacion || !!st?.sobre2, noche: chartData.length > 0 || historia.length > 0, relato: relato.length > 0, apuesta: !!panel?.apuesta, distinto: true, metodo: true };
+  const viewHas: Record<string, boolean> = { ahora: true, mayorias: !!panel?.poder || !!reparto, provincias: provs.length > 0 || !!panel?.cera, senado: !!panel?.senado, pendiente: !!panel?.pendiente || !!panel?.porque, "votos-escanos": !!reparto && (reparto.votosSinEscanoPct != null || reparto.partidos?.length > 0), territorio: !!tamano || !!panel?.faros || !panel, movilizacion: !!panel?.movilizacion || !!st?.sobre2, noche: chartData.length > 0 || historia.length > 0, relato: relato.length > 0, apuesta: !!panel?.apuesta || !panel, distinto: true, metodo: true };
   const curView = panel?.vacio && !vistaHistorica ? VIEWS[0] : VIEWS.find(v => v.id === view) ?? VIEWS[0];
   for (const id of ["historia", "mapa-historico", "provincia-historia"]) viewHas[id] = !!historicoOficial;
   const realPills = panel?.vacio ? [] : pastillas;
@@ -303,6 +335,52 @@ export default function EspecialNoche29N() {
   const curPill = showPills[pillIdx];
   const viewCss = `.elec-page .elec-views > [data-sec] { display:none; } ${curView.secs.map((sec, i) => `.elec-page .elec-views > [data-sec="${sec}"] { display:block; order:${i + 1}; }`).join(" ")}`;
 
+  const distintoSec = (
+              <Section id="distinto" kicker="Por qué este panel" title="Lo que este panel ve y los demás no">
+                <p className="text-lg max-w-3xl" style={{ fontFamily: SERIF }}>La noche electoral de siempre enseña los votos según llegan. Este panel enseña lo que esos votos dicen del final, con cuánta seguridad y desde cuándo, y explica cómo se convierten en escaños.</p>
+                <div className="mt-6 p-5" style={{ background: "transparent", borderTop: `2px solid ${C.ink}`, borderLeft: `4px solid ${C.ochre}` }}>
+                  <h3 className="text-xl mb-3" style={{ fontFamily: HEAD }}>Lo que pasó el 23J</h3>
+                  <ul className="space-y-4 text-base">
+                    <li>A las 21:13, con el 11 % escrutado, el recuento daba al PSOE 128 escaños y al PP 122. El PP acabó la noche con 136 y el PSOE con 122.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: <a className="underline" href="https://maldita.es/malditodato/20230723/resultados-elecciones-generales/" target="_blank" rel="noopener noreferrer">Maldita.es, directo del 23J</a></span></li>
+                    <li>Con los votos de aquella noche, a PP + Vox les faltaron 7 escaños para la mayoría: 23.323 votos más, colocados donde menos costaban, se los habrían dado.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: cálculo de RepIndex con los datos oficiales del Ministerio del Interior</span></li>
+                    <li>El escaño más frágil del PSOE estaba en Madrid, a 1.317 votos. Días después, el voto desde el extranjero se lo dio al PP.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: cálculo de RepIndex; <a className="underline" href="https://www.elindependiente.com/espana/2023/07/28/baile-de-escanos-voto-cera/" target="_blank" rel="noopener noreferrer">El Independiente</a></span></li>
+                  </ul>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+                  {DISTINTO.filter(([, , a]) => !panel || sectionOn[a]).map(([t, d, a]) => <EditorialButton key={t} className="block w-full p-4 text-left" style={{ background: "transparent", borderTop: `2px solid ${C.ink}` }} onClick={() => go(a)}><b className="block">{t}</b><span className="block text-sm mt-1" style={{ color: C.muted }}>{d}</span></EditorialButton>)}
+                </div>
+                <h3 className="text-xl mt-8 mb-3" style={{ fontFamily: HEAD }}>La IA: dónde sí y dónde no</h3>
+                <div className="grid md:grid-cols-2 gap-6 text-sm">
+                  <div><div className="font-bold mb-2" style={{ color: C.olive }}>SÍ</div><ul className="space-y-2 list-disc pl-5">
+                    <li>Escucha y transcribe la emisión completa de La 1, distingue quién habla y localiza cada afirmación comprobable para contrastarla con el dato de ese minuto.</li>
+                    <li>Agentes de IA construyeron los métodos y los pusieron a prueba con seis elecciones generales (2011-2023) antes de publicarlos.</li>
+                    <li>Los titulares del carrusel salen de reglas fijas y un verificador comprueba cada cifra contra los datos: si una cifra no cuadra, el titular no se publica.</li>
+                  </ul></div>
+                  <div><div className="font-bold mb-2" style={{ color: C.red }}>NO</div><ul className="space-y-2 list-disc pl-5">
+                    <li>Ninguna IA calcula ni redacta una cifra. Los números salen de aritmética que cualquiera puede repetir con los datos de Interior.</li>
+                    <li>Nuestro límite: si dentro de un mismo municipio se cuentan antes las mesas de un signo, eso no se ve con datos por municipio. Por eso las horquillas son anchas al principio.</li>
+                  </ul></div>
+                </div>
+              </Section>
+  );
+  const metodoSec = (
+          <section id="metodo" data-sec="metodo" className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
+            <details open={!panel}>
+              <summary className="cursor-pointer text-xl" style={{ fontFamily: HEAD }}>Método</summary>
+              <div className="mt-3 space-y-2 text-sm leading-relaxed">
+                <p><b>Fuente:</b> Ministerio del Interior (resultados provisionales oficiales).</p>
+                <p>Cada municipio contado se compara consigo mismo en elecciones anteriores; lo que falta por contar se estima con municipios parecidos (misma provincia y tamaño).</p>
+                <p>El sistema aprende durante la noche cuánto cambia un municipio desde que empieza a contar hasta que termina.</p>
+                <p>Reparto con la ley D'Hondt y barrera del 3 % por provincia. 300 simulaciones por cotejo (600 en total) por minuto dan las horquillas (p10–p90).</p>
+                <p>Regla de publicación: solo se declara primera fuerza con un 90 % o más; si no, «empate técnico».</p>
+                <p>Cada proyección queda guardada con su hora y se publicará al final el acierto a cada hora.</p>
+                <p>{GUARDARRAILES}</p>
+                {panel?.margenOrden != null && <p><b>Margen por orden de llegada:</b> {panel.margenOrden.toLocaleString("es-ES")}</p>}
+              </div>
+            </details>
+          </section>
+  );
+  const sinPanelVista = !panel && ["distinto", "metodo", "apuesta", "territorio"].includes(curView.id);
   return (
     <Layout>
       <Helmet>
@@ -432,7 +510,7 @@ export default function EspecialNoche29N() {
         </header>}
         <main className="elec-main">
           {vistaHistorica ? <HistoricoElectoral historico={historicoOficial} panel={panel} vista={view} provincia={provinciaHistoria} onProvincia={abrirHistoriaProvincia} /> : !panel ? (
-            <SinDatos view={curView} historico={historicoOficial} />
+            sinPanelVista ? <SinPanelVista view={curView} historico={historicoOficial} sello={selloApuesta} distinto={distintoSec} metodo={metodoSec} /> : <SinDatos view={curView} historico={historicoOficial} />
           ) : (
             <div className="elec-views">
               {!panel?.vacio && <div className="elec-viewhead" style={{ order: 0 }}><div className="elec-crumb">{curView.group} › {curView.label}</div><h2 className="mt-1">{curView.label}</h2><p className="lede">{curView.lede}</p></div>}
@@ -467,32 +545,7 @@ export default function EspecialNoche29N() {
                 {!panel?.vacio && panel?.pendiente?.engano && <EditorialButton className="block w-full p-4 mt-5 text-left" style={{ background: C.red, color: C.paper }} onClick={() => go("pendiente")}>El recuento engaña: {panel?.pendiente?.engano?.recuentoNombre} va primero en votos contados, pero el voto que falta da ventaja a {panel?.pendiente?.engano?.proyeccionNombre}</EditorialButton>}
                 </div>
               </section>
-              {!panel?.vacio && <Section id="distinto" kicker="Por qué este panel" title="Lo que este panel ve y los demás no">
-                <p className="text-lg max-w-3xl" style={{ fontFamily: SERIF }}>La noche electoral de siempre enseña los votos según llegan. Este panel enseña lo que esos votos dicen del final, con cuánta seguridad y desde cuándo, y explica cómo se convierten en escaños.</p>
-                <div className="mt-6 p-5" style={{ background: "transparent", borderTop: `2px solid ${C.ink}`, borderLeft: `4px solid ${C.ochre}` }}>
-                  <h3 className="text-xl mb-3" style={{ fontFamily: HEAD }}>Lo que pasó el 23J</h3>
-                  <ul className="space-y-4 text-base">
-                    <li>A las 21:13, con el 11 % escrutado, el recuento daba al PSOE 128 escaños y al PP 122. El PP acabó la noche con 136 y el PSOE con 122.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: <a className="underline" href="https://maldita.es/malditodato/20230723/resultados-elecciones-generales/" target="_blank" rel="noopener noreferrer">Maldita.es, directo del 23J</a></span></li>
-                    <li>Con los votos de aquella noche, a PP + Vox les faltaron 7 escaños para la mayoría: 23.323 votos más, colocados donde menos costaban, se los habrían dado.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: cálculo de RepIndex con los datos oficiales del Ministerio del Interior</span></li>
-                    <li>El escaño más frágil del PSOE estaba en Madrid, a 1.317 votos. Días después, el voto desde el extranjero se lo dio al PP.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: cálculo de RepIndex; <a className="underline" href="https://www.elindependiente.com/espana/2023/07/28/baile-de-escanos-voto-cera/" target="_blank" rel="noopener noreferrer">El Independiente</a></span></li>
-                  </ul>
-                </div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
-                  {DISTINTO.filter(([, , a]) => sectionOn[a]).map(([t, d, a]) => <EditorialButton key={t} className="block w-full p-4 text-left" style={{ background: "transparent", borderTop: `2px solid ${C.ink}` }} onClick={() => go(a)}><b className="block">{t}</b><span className="block text-sm mt-1" style={{ color: C.muted }}>{d}</span></EditorialButton>)}
-                </div>
-                <h3 className="text-xl mt-8 mb-3" style={{ fontFamily: HEAD }}>La IA: dónde sí y dónde no</h3>
-                <div className="grid md:grid-cols-2 gap-6 text-sm">
-                  <div><div className="font-bold mb-2" style={{ color: C.olive }}>SÍ</div><ul className="space-y-2 list-disc pl-5">
-                    <li>Escucha y transcribe la emisión completa de La 1, distingue quién habla y localiza cada afirmación comprobable para contrastarla con el dato de ese minuto.</li>
-                    <li>Agentes de IA construyeron los métodos y los pusieron a prueba con seis elecciones generales (2011-2023) antes de publicarlos.</li>
-                    <li>Los titulares del carrusel salen de reglas fijas y un verificador comprueba cada cifra contra los datos: si una cifra no cuadra, el titular no se publica.</li>
-                  </ul></div>
-                  <div><div className="font-bold mb-2" style={{ color: C.red }}>NO</div><ul className="space-y-2 list-disc pl-5">
-                    <li>Ninguna IA calcula ni redacta una cifra. Los números salen de aritmética que cualquiera puede repetir con los datos de Interior.</li>
-                    <li>Nuestro límite: si dentro de un mismo municipio se cuentan antes las mesas de un signo, eso no se ve con datos por municipio. Por eso las horquillas son anchas al principio.</li>
-                  </ul></div>
-                </div>
-              </Section>}
+              {!panel?.vacio && distintoSec}
               {!panel?.vacio && <>
               {panel?.certezas && <Section id="certezas" title="Lo que ya sabemos y lo que no">
                 <div className="grid md:grid-cols-3 gap-6">
@@ -803,21 +856,7 @@ export default function EspecialNoche29N() {
               </Section>}
               </>}
           {/* I. MÉTODO */}
-          {!panel?.vacio && <section id="metodo" data-sec="metodo" className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
-            <details>
-              <summary className="cursor-pointer text-xl" style={{ fontFamily: HEAD }}>Método</summary>
-              <div className="mt-3 space-y-2 text-sm leading-relaxed">
-                <p><b>Fuente:</b> Ministerio del Interior (resultados provisionales oficiales).</p>
-                <p>Cada municipio contado se compara consigo mismo en elecciones anteriores; lo que falta por contar se estima con municipios parecidos (misma provincia y tamaño).</p>
-                <p>El sistema aprende durante la noche cuánto cambia un municipio desde que empieza a contar hasta que termina.</p>
-                <p>Reparto con la ley D'Hondt y barrera del 3 % por provincia. 300 simulaciones por cotejo (600 en total) por minuto dan las horquillas (p10–p90).</p>
-                <p>Regla de publicación: solo se declara primera fuerza con un 90 % o más; si no, «empate técnico».</p>
-                <p>Cada proyección queda guardada con su hora y se publicará al final el acierto a cada hora.</p>
-                <p>{GUARDARRAILES}</p>
-                {panel?.margenOrden != null && <p><b>Margen por orden de llegada:</b> {panel.margenOrden.toLocaleString("es-ES")}</p>}
-              </div>
-            </details>
-          </section>}
+          {!panel?.vacio && metodoSec}
             </div>
           )}
         </main>
