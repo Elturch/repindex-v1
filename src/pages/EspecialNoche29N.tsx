@@ -30,7 +30,7 @@ type Panel = {
   apuesta?: { total: number; aciertaMasVotado: number; repartoExacto: number; nacional?: { k: string; nombre: string; apuesta: number; ahora: number }[]; provincias?: { p: string; nombre: string; apuestaMasVotado: string; ahoraMasVotado: string; aciertaMasVotado: boolean; repartoExacto: boolean }[]; sha256?: string; nota?: string } | null;
   calidad?: { cuarentena?: { id: string; n: string; p: string; motivo: string }[]; nota?: string };
 };
-type Estado = { modo?: "simulacro" | "real"; panel?: Panel | null; historia?: Any[]; relato?: Any[]; pastillas?: Pastilla[] };
+type Estado = { modo?: "simulacro" | "real"; panel?: Panel | null; historia?: Any[]; relato?: Any[]; pastillas?: Pastilla[]; sobre2?: { sellado_at?: string; sha256?: string } | null };
 const GUARDARRAILES = "Ninguna cifra la escribe una inteligencia artificial: todas salen del motor de cálculo. Los titulares se generan con reglas fijas y un verificador comprueba que cada número del texto coincide con los datos; si no coincide, no se publica. Solo se declara primera fuerza con un 90 % o más. Nada se publica por debajo del 0,5 % escrutado.";
 const madrid = (ts?: string | Date | null) => ts ? new Date(ts).toLocaleTimeString("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit" }) : "—";
 const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("es-ES", { maximumFractionDigits: 1 })}`;
@@ -264,7 +264,7 @@ export default function EspecialNoche29N() {
                 </div>}
                 {!panel?.vacio && panel?.pendiente?.engano && <EditorialButton className="block w-full p-4 mt-5 text-left" style={{ background: C.red, color: C.paper }} onClick={() => go("pendiente")}>El recuento engaña: {panel?.pendiente?.engano?.recuentoNombre} va primero en votos contados, pero el voto que falta da ventaja a {panel?.pendiente?.engano?.proyeccionNombre}</EditorialButton>}
                 {!panel?.vacio && <nav aria-label="Secciones del especial" className="flex flex-wrap justify-center gap-2 mt-6">
-                  {[["certezas", "Certezas", panel?.certezas], ["pendiente", "Voto pendiente", panel?.pendiente], ["porque", "Por qué cambia", panel?.porque], ["rangos", "Rangos", true], ["poder", "Poder", panel?.poder], ["noche", "La noche", true], ["alambre", "En juego", true], ["apuesta", "Apuesta", true], ["cera", "CERA", true], ["senado", "Senado", true], ["relato", "Relato", true], ["cotejos", "Cotejos", true], ["calidad", "Calidad", panel?.calidad], ["metodo", "Método", true]].filter(([, , visible]) => visible).map(([id, label]) => <EditorialButton key={String(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: C.rule }} onClick={() => go(String(id))}>{String(label)}</EditorialButton>)}
+                  {[["certezas", "Certezas", panel?.certezas], ["pendiente", "Voto pendiente", panel?.pendiente], ["porque", "Por qué cambia", panel?.porque], ["rangos", "Rangos", true], ["faros", "Pueblos faro", panel?.faros], ["movilizacion", "Movilización", true], ["poder", "Poder", panel?.poder], ["noche", "La noche", true], ["alambre", "En juego", true], ["apuesta", "Apuesta", true], ["cera", "CERA", true], ["senado", "Senado", true], ["relato", "Relato", true], ["cotejos", "Cotejos", true], ["calidad", "Calidad", panel?.calidad], ["metodo", "Método", true]].filter(([, , visible]) => visible).map(([id, label]) => <EditorialButton key={String(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: C.rule }} onClick={() => go(String(id))}>{String(label)}</EditorialButton>)}
                 </nav>}
               </section>
               {!panel?.vacio && <>
@@ -320,6 +320,29 @@ export default function EspecialNoche29N() {
                 </div>
                 <div className="text-xs mt-1 text-right" style={{ color: C.red }}>línea roja: 176, mayoría absoluta</div>
                 <p className="italic mt-4" style={{ fontFamily: SERIF }}>La diferencia entre las dos marcas es lo que el orden de recuento aún esconde.</p>
+              </Section>
+              {panel?.faros && (() => { const F = panel.faros; const est = F.estimacion ?? {}; const pro = F.proyeccion ?? {}; const lista = [...(F.lista ?? [])].sort((a: Any, b: Any) => Number(!!b.terminado) - Number(!!a.terminado)); const FC: Record<string, string> = { PP: "#1d5fa8", PSOE: "#d4202c" }; const fx = (v?: number | null) => v == null ? "—" : v.toLocaleString("es-ES", { maximumFractionDigits: 1 }); return (
+              <Section id="faros" kicker="Muestra" title="Pueblos faro">
+                <div className="text-center mb-6">
+                  {F.terminados != null && <div className="text-4xl sm:text-6xl" style={{ fontFamily: SERIF }}>{F.terminados} de {F.total ?? 25} pueblos faro han terminado</div>}
+                  <p className="mt-3 text-lg" style={{ fontFamily: SERIF }}>{est.PP == null ? "Aún no ha terminado ninguno" : `Apuntan a PP ${fx(est.PP)} % y PSOE ${fx(est.PSOE)} %; la proyección del modelo dice ${fx(pro.PP)} % y ${fx(pro.PSOE)} %`}</p>
+                </div>
+                {est.PP != null && <div className="space-y-4 mb-8">{(["PP", "PSOE"] as const).map(k => <div key={k}><b style={{ color: FC[k] }}>{k}</b>{[["Faros", est[k], 1], ["Proyección", pro[k], 0.45]].map(([l, v, o]) => v == null ? null : <div key={String(l)} className="flex items-center gap-2 text-sm mt-1"><span className="w-24 shrink-0">{l}</span><div className="flex-1 h-4" style={{ background: C.rule }}><div className="h-full" style={{ width: `${Math.min(100, Number(v))}%`, background: FC[k], opacity: Number(o) }} /></div><span className="w-14 text-right">{fx(Number(v))} %</span></div>)}</div>)}</div>}
+                {lista.length > 0 && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">{lista.map((f: Any) => <div key={f.id} className="p-3 text-sm" style={{ background: C.card, border: `1px solid ${C.rule}`, color: f.terminado ? C.ink : C.grey }}><b className="block">{f.n}</b>{f.censo != null && <span className="block text-xs">Censo {num(f.censo)}</span>}{f.terminado ? <span className="block text-xs mt-1">{f.PP != null && <span style={{ color: FC.PP }}>PP {fx(f.PP)} % </span>}{f.PSOE != null && <span style={{ color: FC.PSOE }}>PSOE {fx(f.PSOE)} %</span>}</span> : <span className="block text-xs mt-1 italic">contando</span>}</div>)}</div>}
+                {F.nota && <p className="text-xs italic mt-4" style={{ color: C.muted }}>{F.nota}</p>}
+              </Section>); })()}
+              <Section id="movilizacion" kicker="Participación" title="Quién está votando (sobre de las 18:30)">
+                {panel?.movilizacion ? (() => { const M = panel.movilizacion; const e = M.efecto ?? {}; const big = (l: string, v?: number | null) => v == null ? null : <div className="p-4 text-center" style={{ background: C.card }}><div className="text-sm">{l}</div><div className="text-4xl" style={{ fontFamily: SERIF, color: v > 0 ? C.olive : v < 0 ? C.red : C.ink }}>{signed(v)} puntos</div></div>; const parts = ["PP", "PSOE", "VOX", "SUMAR", "OTR"].filter(k => e[k] != null); const mx = Math.max(1, ...parts.map(k => Math.abs(e[k]))); return <>
+                  {M.lectura && <p className="text-2xl sm:text-3xl text-center mb-6" style={{ fontFamily: SERIF }}>{M.lectura}</p>}
+                  <div className="grid sm:grid-cols-2 gap-4 mb-4">{big("Derecha (PP + Vox)", e.DER)}{big("Izquierda (PSOE + Sumar)", e.IZQ)}</div>
+                  {M.participacion26 != null && <p className="text-center mb-6">Participación a las {M.hora ?? "—"}: {num(M.participacion26)} %{M.participacion23 != null && ` (en 2023, ${num(M.participacion23)} %)`}</p>}
+                  <div className="space-y-2">{parts.map(k => <div key={k} className="flex items-center gap-2 text-sm"><span className="w-14 shrink-0 font-semibold">{k}</span><div className="flex-1 flex h-4"><div className="w-1/2 flex justify-end" style={{ borderRight: `1px solid ${C.ink}` }}>{e[k] < 0 && <div className="h-full" style={{ width: `${Math.abs(e[k]) / mx * 100}%`, background: color(k) }} />}</div><div className="w-1/2">{e[k] > 0 && <div className="h-full" style={{ width: `${e[k] / mx * 100}%`, background: color(k) }} />}</div></div><span className="w-14 text-right">{signed(e[k])}</span></div>)}</div>
+                  <div className="text-xs mt-4 space-y-1" style={{ color: C.muted }}>{M.validacion && <p>{M.validacion}</p>}{M.nota && <p>{M.nota}</p>}{M.sha256 && <p className="break-all">Huella del sobre: <span className="font-mono">{M.sha256}</span></p>}</div>
+                </>; })() : st?.sobre2 ? <div className="p-6 text-center" style={{ background: C.card, border: `1px dashed ${C.ochre}` }}>
+                  <p className="text-2xl" style={{ fontFamily: SERIF }}>Sobre sellado a las {madrid(st.sobre2.sellado_at)}. Se abre a las 21:00.</p>
+                  {st.sobre2.sha256 && <p className="font-mono text-xs break-all mt-3">{st.sobre2.sha256}</p>}
+                  <p className="text-sm mt-3" style={{ color: C.muted }}>Calculamos con el avance de participación de las 18:00 qué electorados están acudiendo más y lo sellamos antes de que cierren las urnas. La huella demuestra que no lo cambiamos después.</p>
+                </div> : <p style={{ color: C.muted }}>El sobre se sella el domingo hacia las 18:30, con el avance de participación de las 18:00.</p>}
               </Section>
 
               {panel?.poder && <Section id="poder" title="Quién tiene la llave">
