@@ -252,7 +252,7 @@ export default function Especiales() {
               <article className="lead" style={{ marginBottom: 24 }}>
                 <div className="kick">Noche electoral<em> · Domingo 29</em></div>
                 <h3><Go to="/especiales/elecciones/noche-29n">La Noche Electoral</Go></h3>
-                <p className="ent">En directo el domingo 29 desde las 20:00. Proyección con los datos oficiales del Ministerio del Interior.</p>
+                <p className="ent">En directo el domingo 29: primeros resultados a las 21:00. Proyección con los datos oficiales del Ministerio del Interior.</p>
                 <div><Go to="/especiales/elecciones/noche-29n" className="cta">Leer el especial: La Noche Electoral →</Go></div>
               </article>
               <div className="g-lead">

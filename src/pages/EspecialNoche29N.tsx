@@ -4,7 +4,7 @@ import { Layout } from "@/components/layout/Layout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { BarraEspeciales29N } from "@/components/especiales/BarraEspeciales29N";
-import { cuentaAtras } from "@/components/especiales/cuentaAtras";
+import { cuentaAtras, peninsulaCerrada } from "@/components/especiales/cuentaAtras";
 import { MapaEspana } from "@/components/especiales/MapaEspana";
 import { HistoricoElectoral, ChipsHistoricos, FaroHistorial } from "@/components/especiales/HistoricoElectoral";
 import { FUENTE_HISTORICA, familia2023, loadHistorico, resultado2023, type Historico } from "@/components/especiales/historicoElectoral";
@@ -105,7 +105,7 @@ function Section({ id, title, kicker, children }: { id: string; title: string; k
   );
 }
 
-const SIN_DATOS = "Sin datos todavía. Los primeros resultados oficiales del Ministerio del Interior llegan a partir de las 20:00 del domingo 29; los avances de participación, a lo largo del día.";
+const SIN_DATOS = "Sin datos todavía. El Ministerio del Interior difunde los primeros resultados oficiales a partir de las 21:00 del domingo 29, al cerrar los colegios en Canarias; los avances de participación, a las 14:00 y a las 18:00.";
 function SinDatos({ view, historico }: { view: (typeof VIEWS)[number]; historico: Historico | null }) {
   const r23 = resultado2023(historico);
   const filas = (r23?.partidos ?? []).filter(p => (p.escanos ?? 0) > 0);
@@ -159,9 +159,10 @@ function CuentaAtras({ panel, name, go }: { panel: Panel | null; name: (k: strin
     return <div className="elec-cd" aria-live="off">
       {txt ? <>
         <div className="elec-cd-big">{txt}</div>
-        <p className="mt-2" style={{ fontFamily: SERIF, fontSize: 17 }}>Cierran los colegios y empieza el escrutinio oficial: domingo 29, 20:00 hora peninsular. En Canarias cierran a las 20:00 hora local (21:00 peninsular).</p>
+        <p className="mt-2" style={{ fontFamily: SERIF, fontSize: 17 }}>Primeros resultados oficiales: domingo 29, 21:00 hora peninsular, cuando cierran los colegios en Canarias. En la Península los colegios cierran a las 20:00.</p>
+        {peninsulaCerrada(ahora) && <p className="mt-2 font-bold" style={{ fontFamily: SANS, color: C.ochre }}>Colegios cerrados en la Península; Interior difunde los primeros datos a las 21:00</p>}
       </> : <div className="elec-cd-big" style={{ fontSize: "clamp(22px,4vw,36px)" }}>Escrutinio en marcha: esperando los primeros datos oficiales</div>}
-      <p className="mt-2 text-xs" style={{ fontFamily: SANS, color: C.muted, letterSpacing: ".04em" }}>14:00 primer avance de participación · 18:00 segundo avance · 20:00 cierre y escrutinio · 21:00 se abre el pronóstico sellado</p>
+      <p className="mt-2 text-xs" style={{ fontFamily: SANS, color: C.muted, letterSpacing: ".04em" }}>14:00 primer avance de participación · 18:00 segundo avance · 20:00 cierran los colegios en la Península · 21:00 cierran en Canarias, primeros resultados y se abre el pronóstico sellado</p>
     </div>;
   }
   const K = panel.concluyente;
