@@ -39,6 +39,30 @@ function EditorialButton({ className = "", style, ...props }: ButtonProps) {
 }
 const pct = (x?: number | null) => (x == null ? "—" : `${Math.round(x * 100)} %`);
 const num = (x?: number | null) => (x == null ? "—" : x.toLocaleString("es-ES"));
+/* Separador de miles es-ES también con 4 cifras (1.317). */
+const miles = (x?: number | null) => {
+  if (x == null || Number.isNaN(x)) return "—";
+  const [i, d] = x.toLocaleString("es-ES", { maximumFractionDigits: 1, useGrouping: false }).split(",");
+  const neg = i.startsWith("-"); const int = (neg ? i.slice(1) : i).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${neg ? "−" : ""}${int}${d ? "," + d : ""}`;
+};
+const DISTINTO: [string, string, string][] = [
+  ["La proyección, no el recuento", "Cada municipio contado se compara consigo mismo en elecciones anteriores para estimar lo que falta.", "rangos"],
+  ["Horquillas, no números mágicos", "Un mínimo, un máximo y la probabilidad de cada escenario. Si no se sabe, lo decimos.", "rangos"],
+  ["Cuándo lo sabremos", "Qué es ya seguro y a qué hora, al ritmo del recuento, lo será lo demás.", "certezas"],
+  ["El recuento engaña", "Qué falta por contar y hacia quién se inclina ese voto.", "pendiente"],
+  ["A cuántos votos", "Cuántos votos bien colocados cambiarían una mayoría. El escaño más barato y el más frágil de cada partido.", "reparto"],
+  ["Concentrar o dispersar", "Cuánto premia o castiga el sistema a cada partido por dónde tiene sus votos, y cuántos votos no eligen a nadie.", "reparto"],
+  ["Quién decide", "El poder real de cada partido para formar mayoría, más allá de sus escaños.", "poder"],
+  ["Por qué se ha movido", "Cada cambio de la proyección, explicado por la provincia que lo provoca.", "porque"],
+  ["Dónde ha cambiado el voto", "Del pueblo de 500 vecinos a la gran ciudad.", "tamano"],
+  ["Pueblos faro", "25 municipios que llevan seis elecciones votando como España, probados contra el pasado.", "faros"],
+  ["El sobre sellado", "Antes de que cierren las urnas sellamos quién está votando más; la huella demuestra que no lo tocamos.", "movilizacion"],
+  ["Lo que se dice contra lo que dicen los datos", "Escuchamos la emisión completa de La 1 y contrastamos cada afirmación con la proyección de ese minuto.", "relato"],
+  ["El voto del exterior", "Qué escaños puede mover el recuento del extranjero, días después.", "cera"],
+  ["Nos examinamos en público", "Cómo se movió nuestra proyección frente al recuento y frente al resultado final.", "examen"],
+];
+const EXAM_TABS: [string, string][] = [["PP", "PP"], ["PSOE", "PSOE"], ["VOX", "Vox"], ["SUMAR", "Sumar"]];
 
 function Section({ id, title, kicker, children }: { id: string; title: string; kicker?: string; children: React.ReactNode }) {
   return (
@@ -63,6 +87,8 @@ export default function EspecialNoche29N() {
   const [showDecided, setShowDecided] = useState(false);
   const [showAllAir, setShowAllAir] = useState(false);
   const [showAllHora, setShowAllHora] = useState(false);
+  const [openMay, setOpenMay] = useState<number | null>(null);
+  const [examTab, setExamTab] = useState("PP");
   const [sortProv, setSortProv] = useState({ key: "votesNeeded", asc: true });
   const carousel = useRef<HTMLDivElement>(null);
   const liveBar = useRef<HTMLDivElement>(null);
@@ -183,6 +209,17 @@ export default function EspecialNoche29N() {
   const primera = panel?.primera?.[0];
   const sumas: Any[] = panel?.sumas ?? [];
   const hora = panel?.horaSimulada;
+  const reparto: Any = panel?.reparto;
+  const tamano: Any = panel?.tamano;
+  const sectionOn: Record<string, boolean> = { rangos: true, certezas: !!panel?.certezas, pendiente: !!panel?.pendiente, reparto: !!reparto, poder: !!panel?.poder, porque: !!panel?.porque, tamano: !!tamano, faros: !!panel?.faros, movilizacion: true, relato: true, cera: true, examen: historia.length > 0 };
+  const examen = (() => {
+    const data = historia.filter(h => h.esc != null && h.p?.[examTab]).map(h => { const v = h.p[examTab]; return { esc: h.esc, band: [v[0], v[2]], p50: v[1], bruto: v[3] }; });
+    const last = data[data.length - 1];
+    const final = last && last.esc >= 99 ? last.p50 : null;
+    const ref = data.find(d => d.esc >= 25);
+    const frase = ref ? `Con el ${miles(ref.esc)} % escrutado, la proyección decía ${miles(ref.p50)} y el recuento ${miles(ref.bruto)}${final != null ? `; el resultado fue ${miles(final)}` : ""}` : "";
+    return { data, final, frase };
+  })();
 
   return (
     <Layout>
@@ -203,14 +240,14 @@ export default function EspecialNoche29N() {
           @media (prefers-reduced-motion: reduce) { .elec-page *, .elec-page .elec-new, .elec-page .elec-live-dot { animation: none; transition: none; scroll-behavior: auto; } }
         `}</style>
         <div ref={liveBar} className="sticky top-[72px] z-40 w-full" style={{ background: C.ink, color: C.paper }}>
-          {st?.modo === "simulacro" && <div className="text-center text-xs sm:text-sm font-semibold px-3 py-2" style={{ background: C.red, color: C.paper }}>SIMULACRO con los votos reales del 23J y un orden de llegada simulado — no son datos del 29-N</div>}
+          {st?.modo === "simulacro" && <div className="text-center text-xs sm:text-sm font-semibold px-3 py-2" style={{ background: C.ochre, color: C.ink }}>ENSAYO · Así habría funcionado este panel la noche del 23J de 2023. Votos reales de cada municipio; el orden de llegada de las mesas es simulado.{panel?.horaSimulada != null && <> Hora simulada: {panel.horaSimulada}</>}{panel?.ensayo?.vuelta != null && <> · Vuelta {panel.ensayo.vuelta}</>}. La noche real empieza aquí el domingo 29 a las 21:00.{panel?.ensayo?.final === true && <> · Fin del recuento: vuelve a empezar en unos minutos</>}</div>}
           <div className="flex items-center gap-2 px-2 sm:px-4 min-h-14" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onTouchCancel={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
             <div className="shrink-0 text-[10px] sm:text-xs leading-tight pr-1"><span className="flex items-center gap-1 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN DIRECTO</span><span style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
             <EditorialButton aria-label="Titulares más recientes" title="Titulares más recientes" className="shrink-0 h-10 w-6 text-3xl" style={{ color: C.paper }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(-1); }}>‹</EditorialButton>
             <div ref={carousel} className="elec-ticker flex min-w-0 flex-1 gap-3 overflow-x-auto snap-x snap-proximity py-2 px-1" style={{ touchAction: "pan-x pan-y" }}>
               {!panel?.vacio && pastillas.length > 0 ? pastillas.map(p => <EditorialButton key={keyOf(p)} title={p.texto} onClick={() => navigatePill(p)} className={`elec-pill flex items-center gap-2 px-3 py-2 max-w-[560px] ${newKeys.has(keyOf(p)) ? "elec-new" : ""}`} style={{ background: C.card, color: C.ink, fontSize: 14, fontWeight: p.prioridad === 3 ? 700 : 400 }}>
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: pillColor(p), border: ["hora", "tramo"].includes(p.tipo) ? `1px solid ${C.grey}` : undefined }} />
-                <time className="shrink-0 text-[10px]" style={{ color: C.grey }}>{madrid(p.ts)}</time><span className="truncate text-left">{p.texto}</span>
+                <time className="shrink-0 text-[10px]" style={{ color: C.grey }}>{madrid(p.ts)}</time>{st?.modo === "simulacro" && <span className="shrink-0 rounded-full px-1.5 text-[9px] font-bold uppercase" style={{ background: C.ochre, color: C.ink }}>Ensayo 23J</span>}<span className="truncate text-left">{p.texto}</span>
               </EditorialButton>) : <p className="text-xs sm:text-sm py-1" style={{ color: C.grey }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</p>}
             </div>
             <EditorialButton aria-label="Titulares anteriores" title="Titulares anteriores" className="shrink-0 h-10 w-6 text-3xl" style={{ color: C.paper }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(1); }}>›</EditorialButton>
@@ -236,7 +273,9 @@ export default function EspecialNoche29N() {
           ) : (
             <>
               {/* A. GOLPE */}
-              <section id="arriba" className="elec-section py-8 text-center">
+              <section id="arriba" className="elec-section relative overflow-hidden py-8 text-center">
+                {st?.modo === "simulacro" && <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center select-none" style={{ zIndex: 0 }}><span className="whitespace-nowrap font-bold" style={{ fontFamily: SERIF, fontSize: "clamp(64px, 16vw, 200px)", color: C.ochre, opacity: 0.09, transform: "rotate(-24deg)" }}>ENSAYO 23J</span></div>}
+                <div className="relative" style={{ zIndex: 1 }}>
                 {!panel?.vacio && <>
                 <EditorialButton onClick={() => go("rangos")} className="block mx-auto">
                   <div className="text-7xl md:text-9xl font-bold leading-none" style={{ fontFamily: SERIF }}>
@@ -264,9 +303,36 @@ export default function EspecialNoche29N() {
                 </div>}
                 {!panel?.vacio && panel?.pendiente?.engano && <EditorialButton className="block w-full p-4 mt-5 text-left" style={{ background: C.red, color: C.paper }} onClick={() => go("pendiente")}>El recuento engaña: {panel?.pendiente?.engano?.recuentoNombre} va primero en votos contados, pero el voto que falta da ventaja a {panel?.pendiente?.engano?.proyeccionNombre}</EditorialButton>}
                 {!panel?.vacio && <nav aria-label="Secciones del especial" className="flex flex-wrap justify-center gap-2 mt-6">
-                  {[["certezas", "Certezas", panel?.certezas], ["pendiente", "Voto pendiente", panel?.pendiente], ["porque", "Por qué cambia", panel?.porque], ["rangos", "Rangos", true], ["faros", "Pueblos faro", panel?.faros], ["movilizacion", "Movilización", true], ["poder", "Poder", panel?.poder], ["noche", "La noche", true], ["alambre", "En juego", true], ["apuesta", "Apuesta", true], ["cera", "CERA", true], ["senado", "Senado", true], ["relato", "Relato", true], ["cotejos", "Cotejos", true], ["calidad", "Calidad", panel?.calidad], ["metodo", "Método", true]].filter(([, , visible]) => visible).map(([id, label]) => <EditorialButton key={String(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: C.rule }} onClick={() => go(String(id))}>{String(label)}</EditorialButton>)}
+                  {[["distinto", "Por qué este panel", true], ["certezas", "Certezas", panel?.certezas], ["pendiente", "Voto pendiente", panel?.pendiente], ["porque", "Por qué cambia", panel?.porque], ["rangos", "Rangos", true], ["faros", "Pueblos faro", panel?.faros], ["movilizacion", "Movilización", true], ["poder", "Poder", panel?.poder], ["reparto", "Votos y escaños", panel?.reparto], ["tamano", "Territorio", panel?.tamano], ["noche", "La noche", true], ["examen", "A examen", historia.length > 0], ["alambre", "En juego", true], ["apuesta", "Apuesta", true], ["cera", "CERA", true], ["senado", "Senado", true], ["relato", "Relato", true], ["cotejos", "Cotejos", true], ["calidad", "Calidad", panel?.calidad], ["metodo", "Método", true]].filter(([, , visible]) => visible).map(([id, label]) => <EditorialButton key={String(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: C.rule }} onClick={() => go(String(id))}>{String(label)}</EditorialButton>)}
                 </nav>}
+                </div>
               </section>
+              {!panel?.vacio && <Section id="distinto" kicker="Por qué este panel" title="Lo que este panel ve y los demás no">
+                <p className="text-lg max-w-3xl" style={{ fontFamily: SERIF }}>La noche electoral de siempre enseña los votos según llegan. Este panel enseña lo que esos votos dicen del final, con cuánta seguridad y desde cuándo, y explica cómo se convierten en escaños.</p>
+                <div className="mt-6 p-5" style={{ background: C.card, border: `1px solid ${C.rule}`, borderLeft: `4px solid ${C.ochre}` }}>
+                  <h3 className="text-xl mb-3" style={{ fontFamily: SERIF }}>Lo que pasó el 23J</h3>
+                  <ul className="space-y-4 text-base">
+                    <li>A las 21:13, con el 11 % escrutado, el recuento daba al PSOE 128 escaños y al PP 122. El PP acabó la noche con 136 y el PSOE con 122.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: <a className="underline" href="https://maldita.es/malditodato/20230723/resultados-elecciones-generales/" target="_blank" rel="noopener noreferrer">Maldita.es, directo del 23J</a></span></li>
+                    <li>Con los votos de aquella noche, a PP + Vox les faltaron 7 escaños para la mayoría: 23.323 votos más, colocados donde menos costaban, se los habrían dado.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: cálculo de RepIndex con los datos oficiales del Ministerio del Interior</span></li>
+                    <li>El escaño más frágil del PSOE estaba en Madrid, a 1.317 votos. Días después, el voto desde el extranjero se lo dio al PP.<span className="block text-xs mt-1" style={{ color: C.muted }}>Fuente: cálculo de RepIndex; <a className="underline" href="https://www.elindependiente.com/espana/2023/07/28/baile-de-escanos-voto-cera/" target="_blank" rel="noopener noreferrer">El Independiente</a></span></li>
+                  </ul>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+                  {DISTINTO.filter(([, , a]) => sectionOn[a]).map(([t, d, a]) => <EditorialButton key={t} className="block w-full p-4 text-left" style={{ background: C.card, border: `1px solid ${C.rule}` }} onClick={() => go(a)}><b className="block">{t}</b><span className="block text-sm mt-1" style={{ color: C.muted }}>{d}</span></EditorialButton>)}
+                </div>
+                <h3 className="text-xl mt-8 mb-3" style={{ fontFamily: SERIF }}>La IA: dónde sí y dónde no</h3>
+                <div className="grid md:grid-cols-2 gap-6 text-sm">
+                  <div><div className="font-bold mb-2" style={{ color: C.olive }}>SÍ</div><ul className="space-y-2 list-disc pl-5">
+                    <li>Escucha y transcribe la emisión completa de La 1, distingue quién habla y localiza cada afirmación comprobable para contrastarla con el dato de ese minuto.</li>
+                    <li>Agentes de IA construyeron los métodos y los pusieron a prueba con seis elecciones generales (2011-2023) antes de publicarlos.</li>
+                    <li>Los titulares del carrusel salen de reglas fijas y un verificador comprueba cada cifra contra los datos: si una cifra no cuadra, el titular no se publica.</li>
+                  </ul></div>
+                  <div><div className="font-bold mb-2" style={{ color: C.red }}>NO</div><ul className="space-y-2 list-disc pl-5">
+                    <li>Ninguna IA calcula ni redacta una cifra. Los números salen de aritmética que cualquiera puede repetir con los datos de Interior.</li>
+                    <li>Nuestro límite: si dentro de un mismo municipio se cuentan antes las mesas de un signo, eso no se ve con datos por municipio. Por eso las horquillas son anchas al principio. Este ensayo lo reproduce a propósito: en él, las mesas con más participación y más voto a la derecha se cuentan al final.</li>
+                  </ul></div>
+                </div>
+              </Section>}
               {!panel?.vacio && <>
               {panel?.certezas && <Section id="certezas" title="Lo que ya sabemos y lo que no">
                 <div className="grid md:grid-cols-3 gap-6">
@@ -353,6 +419,39 @@ export default function EspecialNoche29N() {
                 <div className="grid sm:grid-cols-2 gap-4 mt-8">{sumas.map((s, i) => <EditorialButton key={i} className="block p-4 text-left" style={{ background: C.card, border: `1px solid ${C.rule}` }} onClick={() => go("noche")}><span className="block text-4xl" style={{ fontFamily: SERIF }}>{pct(s.prob176)}</span><b className="block mt-2">{s.nombre}</b><span className="block text-sm">Probabilidad de llegar a 176 · horquilla {s.p10}–{s.p90} · central {s.p50}</span><span className="block text-xs mt-1" style={{ color: C.muted }}>{s.partidos?.map(name).join(" + ")}</span></EditorialButton>)}</div>
                 {panel?.poder?.nota && <p className="italic text-sm mt-4" style={{ color: C.muted }}>{panel?.poder?.nota}</p>}
               </Section>}
+              {reparto && <Section id="reparto" kicker="Votos y escaños" title="A cuántos votos está cada mayoría">
+                <div className="grid md:grid-cols-2 gap-4">{(reparto.mayorias ?? []).map((m: Any, i: number) => {
+                  const margen = m.sobran != null && m.faltan == null;
+                  return <div key={i} style={{ background: C.card, border: `1px solid ${C.rule}` }}>
+                    <EditorialButton className="block w-full p-5 text-left" aria-expanded={openMay === i} onClick={() => setOpenMay(openMay === i ? null : i)}>
+                      <span className="block font-semibold">{margen ? `${m.nombre}: ${miles(m.escanos)} escaños. Mayoría con ${miles(m.sobran)} de margen.` : `${m.nombre}: ${miles(m.escanos)} escaños. Le faltan ${miles(m.faltan)}.`}</span>
+                      {(margen ? m.votosDeMargen : m.votosQueFaltan) != null && <span className="block text-5xl md:text-6xl mt-3" style={{ fontFamily: SERIF, color: margen ? C.olive : C.red }}>{miles(margen ? m.votosDeMargen : m.votosQueFaltan)} votos</span>}
+                      <span className="block text-sm mt-1" style={{ color: C.muted }}>{margen ? "perdidos donde menos cuesta, se la quitarían" : "bien colocados, le darían la mayoría"}</span>
+                      {m.pasos?.length > 0 && <span className="block text-xs mt-2 underline" style={{ color: C.ochre }}>{openMay === i ? "Ocultar pasos" : `Ver pasos (${m.pasos.length})`}</span>}
+                    </EditorialButton>
+                    {openMay === i && m.pasos?.length > 0 && <ol className="px-5 pb-5 space-y-1 text-sm list-decimal pl-9">{m.pasos.map((s: Any, j: number) => <li key={j}>{margen ? `${s.prov}: ${miles(s.votos)} votos menos a ${s.partidoNombre} le dan el escaño a ${s.aQuienNombre}` : `${s.prov}: ${miles(s.votos)} votos más a ${s.partidoNombre} le quitan un escaño a ${s.aQuienNombre}`}</li>)}</ol>}
+                  </div>;
+                })}</div>
+                {reparto.votosSinEscanoPct != null && <p className="mt-8 text-2xl md:text-3xl" style={{ fontFamily: SERIF }}><span className="text-5xl" style={{ color: C.ochre }}>{miles(reparto.votosSinEscanoPct)} %</span> de los votos no eligen a ningún diputado en su provincia{reparto.votosSinEscano != null && <> ({miles(reparto.votosSinEscano)} votos)</>}</p>}
+                {reparto.partidos?.length > 0 && <>
+                  <h3 className="text-xl mt-8 mb-1" style={{ fontFamily: SERIF }}>Concentrar o dispersar</h3>
+                  <p className="text-xs mb-4" style={{ color: C.muted }}>Barra llena: escaños reales. Barra clara: si España fuera una sola circunscripción.</p>
+                  <div className="space-y-4">{(() => { const mx = Math.max(1, ...reparto.partidos.map((p: Any) => Math.max(p.escanos ?? 0, p.proporcional ?? 0))); return reparto.partidos.map((p: Any) => <div key={p.k} className="grid gap-2 md:grid-cols-[1fr_220px] items-center text-sm">
+                    <div><div className="flex justify-between gap-2 mb-1"><b>{p.nombre}</b>{p.prima != null && <span style={{ color: p.prima > 0 ? C.olive : p.prima < 0 ? C.red : C.muted }}>{signed(p.prima)} escaños</span>}</div>
+                      <div className="h-3" style={{ background: C.rule }}><div className="h-full" style={{ width: `${((p.escanos ?? 0) / mx) * 100}%`, background: color(p.k) }} /></div>
+                      <div className="h-3 mt-1" style={{ background: C.rule }}><div className="h-full" style={{ width: `${((p.proporcional ?? 0) / mx) * 100}%`, background: color(p.k), opacity: .35 }} /></div>
+                      <div className="text-xs mt-1" style={{ color: C.muted }}>{miles(p.escanos)} reales · {miles(p.proporcional)} proporcionales</div></div>
+                    <div className="text-xs">{p.votosPorEscano != null && <span className="block">{miles(p.votosPorEscano)} votos por escaño</span>}{p.huerfanosPct != null && <span className="block" style={{ color: C.muted }}>{miles(p.huerfanosPct)} % de sus votos sin escaño</span>}</div>
+                  </div>); })()}</div>
+                  <div className="overflow-x-auto mt-8"><table className="w-full text-sm text-left"><thead><tr style={{ borderBottom: `1px solid ${C.ink}` }}><th className="py-2">Partido</th><th>Escaño más barato</th><th>Escaño más frágil</th></tr></thead><tbody>{reparto.partidos.map((p: Any) => <tr key={p.k} style={{ borderBottom: `1px solid ${C.rule}` }}><td className="py-2 font-semibold" style={{ color: color(p.k) }}>{p.nombre}</td><td>{p.barato ? `${p.barato.prov}: ${miles(p.barato.votos)} votos · se lo quitaría a ${p.barato.aQuienNombre}` : "—"}</td><td>{p.fragil ? `${p.fragil.prov}: ${miles(p.fragil.votos)} votos · sería para ${p.fragil.paraQuienNombre}` : "—"}</td></tr>)}</tbody></table></div>
+                </>}
+                {reparto.nota && <p className="text-xs mt-4" style={{ color: C.muted }}>{reparto.nota}</p>}
+              </Section>}
+              {tamano && <Section id="tamano" kicker="Territorio" title="Dónde ha cambiado el voto">
+                {tamano.referenciaNombre && <p className="text-sm mb-4" style={{ color: C.muted }}>Cambio frente a {tamano.referenciaNombre}, en puntos, solo con municipios ya contados al 100 %</p>}
+                {(() => { const cols: Any[] = tamano.filas?.[0]?.cambios ?? []; const mx = Math.max(1, ...(tamano.filas ?? []).flatMap((f: Any) => (f.cambios ?? []).map((c: Any) => Math.abs(c.cambio ?? 0)))); return <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead><tr style={{ borderBottom: `1px solid ${C.ink}` }}><th className="py-2">Tamaño</th>{cols.map(c => <th key={c.k} style={{ color: color(c.k) }}>{c.nombre}</th>)}</tr></thead><tbody>{(tamano.filas ?? []).map((f: Any) => <tr key={f.nombre} style={{ borderBottom: `1px solid ${C.rule}` }}><td className="py-2"><b>{f.nombre}</b>{f.municipios != null && <span className="block text-xs" style={{ color: C.muted }}>{miles(f.municipios)} municipios</span>}</td>{cols.map(col => { const c = f.cambios?.find((x: Any) => x.k === col.k); if (!c || c.cambio == null) return <td key={col.k}>—</td>; const col2 = c.cambio > 0 ? C.olive : c.cambio < 0 ? C.red : C.muted; return <td key={col.k} className="min-w-[80px]"><span style={{ color: col2, fontWeight: 600 }}>{signed(c.cambio)}</span><span className="block h-1.5 mt-1" style={{ width: `${(Math.abs(c.cambio) / mx) * 100}%`, background: col2 }} /></td>; })}</tr>)}</tbody></table></div>; })()}
+                {tamano.nota && <p className="text-xs mt-4" style={{ color: C.muted }}>{tamano.nota}</p>}
+              </Section>}
               {/* C. NOCHE */}
               <Section id="noche" kicker="Evolución" title="El gráfico de la noche">
                 {chartData.length === 0 ? <p style={{ color: C.muted }}>Aún no hay histórico.</p> : (
@@ -389,6 +488,23 @@ export default function EspecialNoche29N() {
                   </>
                 )}
               </Section>
+
+              {historia.length > 0 && <Section id="examen" kicker="Transparencia" title="El panel, a examen">
+                <div className="flex flex-wrap gap-2 mb-4" role="tablist">{EXAM_TABS.map(([k, l]) => <EditorialButton key={k} role="tab" aria-selected={examTab === k} className="rounded-full border px-3 py-1 text-sm" style={{ borderColor: examTab === k ? color(k) : C.rule, background: examTab === k ? color(k) : "transparent", color: examTab === k ? C.paper : C.ink }} onClick={() => setExamTab(k)}>{l}</EditorialButton>)}</div>
+                {examen.frase && <p className="text-lg mb-3" style={{ fontFamily: SERIF }}>{examen.frase}</p>}
+                <div className="h-80"><ResponsiveContainer><ComposedChart data={examen.data}>
+                  <CartesianGrid stroke={C.rule} strokeDasharray="2 4" />
+                  <XAxis dataKey="esc" type="number" domain={[0, 100]} unit=" %" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
+                  <Tooltip />
+                  <Area dataKey="band" stroke="none" fill={color(examTab)} fillOpacity={0.18} name="horquilla p10–p90" isAnimationActive={false} />
+                  <Line dataKey="p50" stroke={color(examTab)} strokeWidth={2} dot={false} name="proyección" isAnimationActive={false} />
+                  <Line dataKey="bruto" stroke={C.grey} strokeDasharray="5 4" dot={false} name="recuento" isAnimationActive={false} />
+                  {examen.final != null && <ReferenceLine y={examen.final} stroke={C.ink} strokeWidth={1} label={{ value: `resultado final: ${examen.final}`, position: "insideTopLeft", fontSize: 11, fill: C.ink }} />}
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                </ComposedChart></ResponsiveContainer></div>
+                <p className="text-xs mt-2" style={{ color: C.muted }}>Cada punto es lo que el panel publicó en ese minuto. No borramos ni corregimos lo publicado.</p>
+              </Section>}
 
               <Section id="alambre" kicker="Provincias" title="Escaños en juego y lo que vale un voto">
                 {panel?.enJuego?.total != null && <EditorialButton className="block text-left mb-5" onClick={() => { setAllProv(true); document.getElementById("tabla-alambre")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><span className="block text-6xl" style={{ fontFamily: SERIF, color: C.ochre }}>{num(panel?.enJuego?.total)}</span><span className="block text-sm">escaños en juego</span></EditorialButton>}
