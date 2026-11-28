@@ -101,7 +101,7 @@ export default function EspecialNoche29N() {
     if (prov) { setAllProv(true); setOpenProv(prov); }
     const el = document.getElementById(id);
     if (!el) return;
-    const offset = (document.querySelector("header.sticky")?.getBoundingClientRect().height ?? 64) + (liveBar.current?.getBoundingClientRect().height ?? 56) + 16;
+    const offset = (liveBar.current?.getBoundingClientRect().bottom ?? 222) + 16;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: reduced ? "auto" : "smooth" });
     window.history.replaceState(null, "", `#${encodeURIComponent(id)}`);
@@ -179,7 +179,7 @@ export default function EspecialNoche29N() {
   const provShown = allProv ? provs : provs.slice(0, 15);
   const sortColumn = (key: string) => setSortProv(s => ({ key, asc: s.key === key ? !s.asc : key !== "enJuego" && key !== "valorVoto" }));
   const openProvince = (p: string) => go("alambre", p);
-  const pillColor = (p: Pastilla) => ["certeza", "apuesta"].includes(p.tipo) ? C.olive : ["vuelco", "engano"].includes(p.tipo) ? C.red : ["mayoria", "poder", "alambre"].includes(p.tipo) ? C.ochre : ["escanos", "primera"].includes(p.tipo) ? color(p.partido ?? "") : ["hora", "tramo", "inicio"].includes(p.tipo) ? C.ink : p.tipo === "cera" ? "#4a6a8a" : C.grey;
+  const pillColor = (p: Pastilla) => ["vuelco", "mayoria", "engano"].includes(p.tipo) ? C.red : ["certeza", "hora"].includes(p.tipo) ? C.ochre : C.olive;
   const navigatePill = (p: Pastilla) => {
     const province = p.ancla === "alambre" ? provs.find(v => p.texto.toLocaleLowerCase("es").startsWith(v.nombre.toLocaleLowerCase("es"))) : null;
     go(p.ancla, province?.p);
@@ -226,11 +226,13 @@ export default function EspecialNoche29N() {
       <Helmet><link rel="canonical" href="https://repindex.ai/especiales/elecciones/noche-29n" /></Helmet>
       <div className="elec-page" style={{ background: C.paper, color: C.ink, minHeight: "100vh" }}>
         <style>{`
-          .elec-page .elec-section { scroll-margin-top: 150px; transition: background-color 1.5s, box-shadow 1.5s; }
+          .elec-page .elec-section { scroll-margin-top: 260px; transition: background-color 1.5s, box-shadow 1.5s; }
           .elec-page [data-lit="true"] { background-color: ${C.ochre}18; box-shadow: inset 3px 0 ${C.ochre}; }
           .elec-page .elec-ticker { scrollbar-width: thin; scrollbar-color: ${C.grey} ${C.ink}; }
-          .elec-page .elec-pill { border-radius: 999px; flex-shrink: 0; scroll-snap-align: start; }
-          @media (max-width: 640px) { .elec-page .elec-pill { max-width: 85vw; } }
+          .elec-page .elec-pill { border-radius: 12px; flex-shrink: 0; scroll-snap-align: start; width: 85vw; max-width: 85vw; overflow: hidden; }
+          .elec-page .elec-pill-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+          @media (min-width: 641px) { .elec-page .elec-pill { width: 380px; max-width: 380px; } .elec-page .elec-pill.elec-latest { width: 420px; max-width: 420px; } }
+          @media (max-width: 640px) { .elec-page .elec-section { scroll-margin-top: 280px; } }
           .elec-page .elec-new { animation: elec-enter .4s ease-out, elec-ring 1s ease-in-out 3; }
           .elec-page .elec-live-dot { animation: elec-pulse 1.5s ease-in-out infinite; }
           .elec-page table th, .elec-page table td { padding-right: 16px; }
@@ -239,18 +241,29 @@ export default function EspecialNoche29N() {
           @keyframes elec-pulse { 50% { opacity: .4; } }
           @media (prefers-reduced-motion: reduce) { .elec-page *, .elec-page .elec-new, .elec-page .elec-live-dot { animation: none; transition: none; scroll-behavior: auto; } }
         `}</style>
-        <div ref={liveBar} className="sticky top-[72px] z-40 w-full" style={{ background: C.ink, color: C.paper }}>
+        <div ref={liveBar} className="sticky top-[72px] z-40 w-full" style={{ background: C.ink, color: C.paper, width: "100vw", marginLeft: "calc(50% - 50vw)" }}>
           {st?.modo === "simulacro" && <div className="text-center text-xs sm:text-sm font-semibold px-3 py-2" style={{ background: C.ochre, color: C.ink }}>ENSAYO · Así habría funcionado este panel la noche del 23J de 2023. Votos reales de cada municipio; el orden de llegada de las mesas es simulado.{panel?.horaSimulada != null && <> Hora simulada: {panel.horaSimulada}</>}{panel?.ensayo?.vuelta != null && <> · Vuelta {panel.ensayo.vuelta}</>}. La noche real empieza aquí el domingo 29 a las 21:00.{panel?.ensayo?.final === true && <> · Fin del recuento: vuelve a empezar en unos minutos</>}</div>}
-          <div className="flex items-center gap-2 px-2 sm:px-4 min-h-14" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onTouchCancel={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
-            <div className="shrink-0 text-[10px] sm:text-xs leading-tight pr-1"><span className="flex items-center gap-1 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN DIRECTO</span><span style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
-            <EditorialButton aria-label="Titulares más recientes" title="Titulares más recientes" className="shrink-0 h-10 w-6 text-3xl" style={{ color: C.paper }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(-1); }}>‹</EditorialButton>
-            <div ref={carousel} className="elec-ticker flex min-w-0 flex-1 gap-3 overflow-x-auto snap-x snap-proximity py-2 px-1" style={{ touchAction: "pan-x pan-y" }}>
-              {!panel?.vacio && pastillas.length > 0 ? pastillas.map(p => <EditorialButton key={keyOf(p)} title={p.texto} onClick={() => navigatePill(p)} className={`elec-pill flex items-center gap-2 px-3 py-2 max-w-[560px] ${newKeys.has(keyOf(p)) ? "elec-new" : ""}`} style={{ background: C.card, color: C.ink, fontSize: 14, fontWeight: p.prioridad === 3 ? 700 : 400 }}>
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: pillColor(p), border: ["hora", "tramo"].includes(p.tipo) ? `1px solid ${C.grey}` : undefined }} />
-                <time className="shrink-0 text-[10px]" style={{ color: C.grey }}>{madrid(p.ts)}</time>{st?.modo === "simulacro" && <span className="shrink-0 rounded-full px-1.5 text-[9px] font-bold uppercase" style={{ background: C.ochre, color: C.ink }}>Ensayo 23J</span>}<span className="truncate text-left">{p.texto}</span>
-              </EditorialButton>) : <p className="text-xs sm:text-sm py-1" style={{ color: C.grey }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</p>}
+          <div className="relative flex h-24 sm:h-[110px] items-stretch gap-0 sm:gap-2 px-0 sm:px-4" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onTouchCancel={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
+            <div className="hidden sm:block shrink-0 self-center text-sm leading-tight pr-1"><span className="flex items-center gap-1.5 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN DIRECTO</span><span className="block mt-1" style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
+            <div className="sm:hidden absolute left-1 top-1/2 z-10 w-12 -translate-y-1/2 text-center text-[13px] leading-[14px]"><span className="flex items-center justify-center gap-1 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN</span><span className="block font-bold">DIRECTO</span><span className="block mt-1" style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
+            <EditorialButton aria-label="Titulares más recientes" title="Titulares más recientes" className="absolute sm:static left-14 top-1/2 sm:top-auto z-20 -translate-y-1/2 sm:translate-y-0 shrink-0 self-center h-10 w-10 text-3xl" style={{ color: C.paper, background: C.ink, border: `1px solid ${C.muted}`, borderRadius: "50%" }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(-1); }}>‹</EditorialButton>
+            <div ref={carousel} className="elec-ticker flex h-full min-w-0 flex-1 items-center gap-3 overflow-x-auto snap-x snap-proximity py-1 sm:py-2 pl-14 sm:pl-1 pr-0 sm:pr-1" style={{ touchAction: "pan-x pan-y" }}>
+              {!panel?.vacio && pastillas.length > 0 ? pastillas.map((p, index) => {
+                const latest = index === 0;
+                return <EditorialButton key={keyOf(p)} aria-label={p.texto} title={p.texto} onClick={() => navigatePill(p)} className={`elec-pill ${latest ? "elec-latest" : ""} ${newKeys.has(keyOf(p)) ? "elec-new" : ""}`} style={{ display: "flex", height: "100%", background: C.card, color: C.ink, border: latest ? `2px solid ${C.ochre}` : `1px solid ${C.rule}` }}>
+                  <span aria-hidden="true" className="h-full w-1 shrink-0" style={{ background: pillColor(p) }} />
+                  <span className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-12 sm:px-3 py-1.5 sm:py-2 text-left">
+                    <span className="flex items-center gap-2 whitespace-nowrap text-[11px] leading-[13px]" style={{ color: C.muted }}>
+                      {latest && <span className="font-bold uppercase" style={{ color: C.ochre }}>Último</span>}
+                      <time className="shrink-0">{madrid(p.ts)}</time>
+                      {st?.modo === "simulacro" && <span className="shrink-0 rounded-sm px-1 font-semibold uppercase" style={{ background: C.ochre, color: C.ink }}>Ensayo 23J</span>}
+                    </span>
+                    <span className="elec-pill-text text-[15px] sm:text-base font-medium leading-[1.2]">{p.texto}</span>
+                  </span>
+                </EditorialButton>;
+              }) : <p className="text-sm sm:text-base py-1" style={{ color: C.grey }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</p>}
             </div>
-            <EditorialButton aria-label="Titulares anteriores" title="Titulares anteriores" className="shrink-0 h-10 w-6 text-3xl" style={{ color: C.paper }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(1); }}>›</EditorialButton>
+            <EditorialButton aria-label="Titulares anteriores" title="Titulares anteriores" className="absolute sm:static right-0 top-1/2 sm:top-auto z-20 -translate-y-1/2 sm:translate-y-0 shrink-0 self-center h-10 w-10 text-3xl" style={{ color: C.paper, background: C.ink, border: `1px solid ${C.muted}`, borderRadius: "50%" }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(1); }}>›</EditorialButton>
           </div>
         </div>
         <div className="max-w-5xl mx-auto px-4 pt-2 pb-16">
