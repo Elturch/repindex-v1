@@ -100,6 +100,24 @@ function Section({ id, title, kicker, children }: { id: string; title: string; k
   );
 }
 
+const SIN_DATOS = "Sin datos todavía. Los primeros resultados oficiales del Ministerio del Interior llegan a partir de las 20:00 del domingo 29; los avances de participación, a lo largo del día.";
+function SinDatos({ view, historico }: { view: (typeof VIEWS)[number]; historico: Historico | null }) {
+  const r23 = resultado2023(historico);
+  const filas = (r23?.partidos ?? []).filter(p => (p.escanos ?? 0) > 0);
+  return (
+    <div>
+      <div className="elec-viewhead"><div className="elec-crumb">{view.group} › {view.label}</div><h2 className="mt-1">{view.label}</h2></div>
+      <p className="py-4 text-lg" style={{ fontFamily: SERIF, color: C.muted, borderTop: `2px solid ${C.ink}` }}>{SIN_DATOS}</p>
+      {view.id === "ahora" && <>
+        <div className="text-center py-6"><div className="text-7xl md:text-9xl font-bold leading-none" style={{ fontFamily: HEAD }}>0<span className="text-4xl md:text-6xl"> %</span></div><div className="text-sm uppercase tracking-widest mt-1" style={{ color: C.muted }}>escrutado</div></div>
+        {filas.length > 0 && <div className="overflow-x-auto my-6"><table className="w-full text-left" style={{ fontSize: 15 }}><thead><tr><th className="py-2">Partido</th><th>2023</th><th>29-N</th></tr></thead><tbody>{filas.map(p => <tr key={p.k} style={{ borderTop: `1px solid ${C.hair ?? "#e2ddd3"}` }}><td className="py-2">{p.nombre}</td><td>{p.escanos}</td><td>—</td></tr>)}</tbody></table></div>}
+        <MapaEspana panel={null} vacio historico={historico} name={k => k} color={() => C.grey} capas={["gana"]} />
+      </>}
+      {view.id !== "ahora" && <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 my-6">{[0, 1, 2, 3].map(i => <div key={i} className="p-4" style={{ borderTop: `2px solid ${C.ink}` }}><span className="block text-5xl font-bold" style={{ fontFamily: HEAD, color: C.muted }}>—</span></div>)}</div>}
+    </div>
+  );
+}
+
 export default function EspecialNoche29N() {
   const [historicoOficial, setHistoricoOficial] = useState<Historico | null>(null);
   const [provinciaHistoria, setProvinciaHistoria] = useState("28");
@@ -110,7 +128,10 @@ export default function EspecialNoche29N() {
   const [openProv, setOpenProv] = useState<string | null>(null);
   const [allProv, setAllProv] = useState(false);
   const [focusParty, setFocusParty] = useState<string | null>(null);
-  const [view, setView] = useState(() => viewFor(decodeURIComponent(window.location.hash.slice(1))));
+  const hashInicial = useRef(decodeURIComponent(window.location.hash.slice(1)));
+  const [view, setView] = useState(() => hashInicial.current ? viewFor(hashInicial.current) : "historia");
+  const [titularesHist, setTitularesHist] = useState<{ fuente?: string; titulares: { texto: string; ancla: string }[] } | null>(null);
+  useEffect(() => { let a = true; fetch("/especiales/elecciones/titulares-historico.json").then(r => r.ok ? r.json() : null).then(j => { if (a && j?.titulares) setTitularesHist(j); }).catch(() => {}); return () => { a = false; }; }, []);
   const [tick, setTick] = useState(0);
   const [showAllPills, setShowAllPills] = useState(false);
   const tabsRef = useRef<HTMLElement>(null);
@@ -196,7 +217,7 @@ export default function EspecialNoche29N() {
         const r = await fetch(ELEC29N_STATE_URL, { method: "GET" });
         if (!r.ok) throw new Error(String(r.status));
         const j = await r.json();
-        if (alive) { setSt(j); setErr(false); setUpdated(new Date()); }
+        if (alive) { setSt(j?.modo === "simulacro" ? { ...j, modo: "real", panel: null, pastillas: [], historia: [], relato: [] } : j); setErr(false); setUpdated(new Date()); }
       } catch { if (alive) setErr(true); }
     };
     load();
@@ -205,6 +226,8 @@ export default function EspecialNoche29N() {
   }, []);
 
   const panel = st?.panel ?? null;
+  const hayPanel = !!panel;
+  useEffect(() => { if (hayPanel && !hashInicial.current && view === "historia" && !window.location.hash) setView("ahora"); }, [hayPanel]); // eslint-disable-line react-hooks/exhaustive-deps
   const vistaHistorica = ["historia", "mapa-historico", "provincia-historia"].includes(view);
   const abrirHistoriaProvincia = (p: string) => { setProvinciaHistoria(p); if (view !== "provincia-historia") openView("provincia-historia"); };
   const historia: Any[] = st?.historia ?? [];
@@ -256,7 +279,7 @@ export default function EspecialNoche29N() {
 
   const primera = panel?.primera?.[0];
   const sumas: Any[] = panel?.sumas ?? [];
-  const hora = panel?.horaSimulada;
+  const hora: string | undefined = undefined;
   const reparto: Any = panel?.reparto;
   const tamano: Any = panel?.tamano;
   const sectionOn: Record<string, boolean> = { rangos: true, certezas: !!panel?.certezas, pendiente: !!panel?.pendiente, reparto: !!reparto, poder: !!panel?.poder, porque: !!panel?.porque, tamano: !!tamano, faros: !!panel?.faros, movilizacion: true, relato: true, cera: true, examen: historia.length > 0 };
@@ -271,7 +294,11 @@ export default function EspecialNoche29N() {
   const viewHas: Record<string, boolean> = { ahora: true, mayorias: !!panel?.poder || !!reparto, provincias: provs.length > 0 || !!panel?.cera, senado: !!panel?.senado, pendiente: !!panel?.pendiente || !!panel?.porque, "votos-escanos": !!reparto && (reparto.votosSinEscanoPct != null || reparto.partidos?.length > 0), territorio: !!tamano || !!panel?.faros, movilizacion: !!panel?.movilizacion || !!st?.sobre2, noche: chartData.length > 0 || historia.length > 0, relato: relato.length > 0, apuesta: !!panel?.apuesta, distinto: true, metodo: true };
   const curView = panel?.vacio && !vistaHistorica ? VIEWS[0] : VIEWS.find(v => v.id === view) ?? VIEWS[0];
   for (const id of ["historia", "mapa-historico", "provincia-historia"]) viewHas[id] = !!historicoOficial;
-  const showPills = panel?.vacio ? [] : pastillas;
+  const realPills = panel?.vacio ? [] : pastillas;
+  const esHist = realPills.length === 0 && (titularesHist?.titulares.length ?? 0) > 0;
+  const showPills: Pastilla[] = esHist ? titularesHist!.titulares.map((t, i) => ({ ts: "", clave: `hist-${i}`, tipo: "inicio", texto: t.texto, ancla: t.ancla, prioridad: 1, partido: null, escrutado: 0 })) : realPills;
+  const abrirPill = (p: Pastilla) => esHist ? openView(viewFor(p.ancla)) : navigatePill(p);
+  const horaPill = (p: Pastilla) => esHist ? "HISTÓRICO" : madrid(p.ts);
   const pillIdx = showPills.length ? tick % showPills.length : 0;
   const curPill = showPills[pillIdx];
   const viewCss = `.elec-page .elec-views > [data-sec] { display:none; } ${curView.secs.map((sec, i) => `.elec-page .elec-views > [data-sec="${sec}"] { display:block; order:${i + 1}; }`).join(" ")}`;
@@ -353,7 +380,6 @@ export default function EspecialNoche29N() {
           .elec-page .elec-swipe { display:none; font:600 11px var(--sans); color:var(--muted); text-align:center; padding:0 0 6px; }
           .elec-page .elec-section { scroll-margin-top:200px; transition:background-color 1.5s, box-shadow 1.5s; }
           .elec-page [data-lit="true"] { background-color:color-mix(in srgb, ${C.ochre} 12%, transparent); box-shadow:inset 3px 0 ${C.ochre}; }
-          .elec-page .elec-ensayo { background:var(--warn); color:var(--paper); font:700 12px/1.45 var(--sans); }
           .elec-page .elec-live-label { font-family:var(--sans); }
           .elec-page .elec-ticker { scrollbar-width:thin; scrollbar-color:${C.grey} ${C.ink}; scroll-padding-left:56px; }
           .elec-page svg text { font-family:var(--sans); }
@@ -365,7 +391,7 @@ export default function EspecialNoche29N() {
           @keyframes elec-enter { from { opacity:0; transform:translateX(-28px); } to { opacity:1; transform:translateX(0); } }
           @keyframes elec-ring { 50% { box-shadow:0 0 0 3px ${C.ochre}; } }
           @keyframes elec-pulse { 50% { opacity:.4; } }
-          @media (min-width:641px) { .elec-page .elec-ticker { scroll-padding-left:4px; } .elec-page .elec-pill { width:380px; max-width:380px; } .elec-page .elec-pill.elec-latest { width:420px; max-width:420px; } .elec-page .elec-ensayo { font-size:13px; } }
+          @media (min-width:641px) { .elec-page .elec-ticker { scroll-padding-left:4px; } .elec-page .elec-pill { width:380px; max-width:380px; } .elec-page .elec-pill.elec-latest { width:420px; max-width:420px; } }
           @media (min-width:900px) { .elec-page .tabs { flex-wrap:wrap; overflow:visible; justify-content:center; } .elec-page .tabs .elec-tab { padding:9px 6px; letter-spacing:.04em; font-size:12px!important; } }
           @media (max-width:899px) { .elec-page .tabs { mask-image:linear-gradient(90deg,#000 85%,transparent); padding-right:24px; } }
           @media (max-width:640px) { .elec-page .elec-cinta { position:static; } .elec-page .elec-top { top:72px; } .elec-page .elec-swipe { display:block; } .elec-page .elec-cinta-in { flex-wrap:wrap; gap:8px; } .elec-page .elec-cinta-txt { flex-basis:100%; order:3; font-size:18px; } .elec-page .elec-cinta-ctl { margin-left:auto; }  .elec-page .dbx-t,.elec-page .dbx-d { display:none; } .elec-page .dbx a { padding:8px 9px; } .elec-page .masthead,.elec-page .elec-main { width:100vw; margin-left:calc(50% - 50vw); } .elec-page .masthead .dateline { font-size:10px; letter-spacing:.04em; } .elec-page .elec-section { scroll-margin-top:140px; } }
@@ -382,14 +408,13 @@ export default function EspecialNoche29N() {
           <div className="dateline"><span>Domingo, 29 de noviembre de 2026</span><span>Un análisis del equipo de RepIndex.ai</span><span>Madrid</span></div>
           <h1>La Noche Electoral</h1>
           <div className="sub">Elecciones generales 29-N · proyección en directo con los datos oficiales del Ministerio del Interior</div>
-          {st?.modo === "simulacro" && <div className="elec-status" style={{ fontStyle: "italic" }}>Ensayo con la noche del 23J de 2023: votos reales de cada municipio, orden de llegada simulado. La noche real empieza aquí el domingo 29 a las 21:00.</div>}
           <div className="elec-status">Última actualización: {updated ? madrid(updated) : "—"}{panel?.ts && <> · dato del panel {madrid(panel.ts)}</>}{hora && <> · hora {hora}</>}{err && <span style={{ color: C.red }}> · sin conexión, reintentando</span>}</div>
         </header>
         <div ref={cintaRef} className="elec-cinta" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
           <div className="elec-cinta-in">
-            <span className="elec-cinta-lab" style={{ color: st?.modo === "simulacro" ? "#e0b26a" : C.paper }}>{st?.modo === "simulacro" ? <>ENSAYO 23J{panel?.horaSimulada != null && <> · {panel.horaSimulada}</>}</> : <><span className="elec-live-dot inline-block h-2 w-2 rounded-full mr-1.5" style={{ background: "#d33" }} />EN DIRECTO</>}</span>
+            <span className="elec-cinta-lab" style={{ color: C.paper }}>{esHist || !realPills.length ? <>TITULARES</> : <><span className="elec-live-dot inline-block h-2 w-2 rounded-full mr-1.5" style={{ background: "#d33" }} />EN DIRECTO</>}</span>
             <div className="elec-cinta-txt" aria-live="polite">
-              {curPill ? <EditorialButton key={keyOf(curPill)} style={{ color: C.paper }} className={`text-left ${newKeys.has(keyOf(curPill)) ? "elec-new" : ""}`} aria-label={curPill.texto} title={curPill.texto} onClick={() => navigatePill(curPill)}><span className="elec-cinta-hora block">{madrid(curPill.ts)}</span><span className="elec-cinta-t">{curPill.texto}</span></EditorialButton> : <span style={{ color: C.grey, fontSize: 15 }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</span>}
+              {curPill ? <EditorialButton key={keyOf(curPill)} style={{ color: C.paper }} className={`text-left ${newKeys.has(keyOf(curPill)) ? "elec-new" : ""}`} aria-label={curPill.texto} title={curPill.texto} onClick={() => abrirPill(curPill)}><span className="elec-cinta-hora block">{horaPill(curPill)}</span><span className="elec-cinta-t">{curPill.texto}</span></EditorialButton> : <span style={{ color: C.grey, fontSize: 15 }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</span>}
             </div>
             {showPills.length > 0 && <div className="elec-cinta-ctl">
               <span className="elec-cinta-n">{pillIdx + 1} de {showPills.length}</span>
@@ -398,7 +423,7 @@ export default function EspecialNoche29N() {
               <EditorialButton style={{ color: C.paper }} className="elec-cinta-all" aria-expanded={showAllPills} onClick={() => setShowAllPills(v => !v)}>{showAllPills ? "Cerrar" : "Ver todos"}</EditorialButton>
             </div>}
           </div>
-          {showAllPills && showPills.length > 0 && <ol className="elec-cinta-list">{showPills.map(p => <li key={keyOf(p)}><EditorialButton style={{ color: C.paper }} className="block w-full text-left py-2" aria-label={p.texto} onClick={() => { setShowAllPills(false); navigatePill(p); }}><span aria-hidden="true" className="inline-block w-1 h-4 mr-2 align-middle" style={{ background: pillColor(p) }} /><span className="elec-cinta-hora">{madrid(p.ts)}</span>{p.texto}</EditorialButton></li>)}</ol>}
+          {showAllPills && showPills.length > 0 && <ol className="elec-cinta-list">{showPills.map(p => <li key={keyOf(p)}><EditorialButton style={{ color: C.paper }} className="block w-full text-left py-2" aria-label={p.texto} onClick={() => { setShowAllPills(false); abrirPill(p); }}><span aria-hidden="true" className="inline-block w-1 h-4 mr-2 align-middle" style={{ background: pillColor(p) }} /><span className="elec-cinta-hora">{horaPill(p)}</span>{p.texto}</EditorialButton></li>)}{esHist && titularesHist?.fuente && <li className="pt-2 text-xs" style={{ color: "#bdb8ae", fontFamily: SANS }}>Fuente: {titularesHist.fuente}</li>}</ol>}
         </div>
         {<header ref={tabsRef} className="elec-top elec-top2">
           <div className="elec-row"><nav className="elec-row-in" aria-label="Grupos del especial">{GROUPS.map(g => <EditorialButton key={g} className={`elec-g ${curView.group === g ? "on" : ""}`} aria-current={curView.group === g ? "true" : undefined} onClick={() => { const first = VIEWS.find(v => v.group === g); if (first) openView(first.id); }}>{g}</EditorialButton>)}</nav></div>
@@ -406,16 +431,13 @@ export default function EspecialNoche29N() {
           <div className="elec-swipe">Desliza →</div>
         </header>}
         <main className="elec-main">
-          {vistaHistorica ? <HistoricoElectoral historico={historicoOficial} panel={panel} modo={st?.modo} vista={view} provincia={provinciaHistoria} onProvincia={abrirHistoriaProvincia} /> : !panel ? (
-            <p className="text-center py-24 text-xl" style={{ fontFamily: SERIF, color: C.muted }}>
-              {st ? "El panel se enciende con el primer dato oficial" : "Cargando…"}
-            </p>
+          {vistaHistorica ? <HistoricoElectoral historico={historicoOficial} panel={panel} vista={view} provincia={provinciaHistoria} onProvincia={abrirHistoriaProvincia} /> : !panel ? (
+            <SinDatos view={curView} historico={historicoOficial} />
           ) : (
             <div className="elec-views">
               {!panel?.vacio && <div className="elec-viewhead" style={{ order: 0 }}><div className="elec-crumb">{curView.group} › {curView.label}</div><h2 className="mt-1">{curView.label}</h2><p className="lede">{curView.lede}</p></div>}
               {/* A. GOLPE */}
               <section id="arriba" data-sec="arriba" className="elec-section relative overflow-hidden py-8 text-center">
-                {st?.modo === "simulacro" && <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center select-none" style={{ zIndex: 0 }}><span className="whitespace-nowrap font-bold" style={{ fontFamily: HEAD, fontSize: "clamp(64px, 16vw, 200px)", color: C.ochre, opacity: 0.09, transform: "rotate(-24deg)" }}>ENSAYO 23J</span></div>}
                 <div className="relative" style={{ zIndex: 1 }}>
                 {!panel?.vacio && <>
                 <EditorialButton onClick={() => go("rangos")} className="block mx-auto">
@@ -467,7 +489,7 @@ export default function EspecialNoche29N() {
                   </ul></div>
                   <div><div className="font-bold mb-2" style={{ color: C.red }}>NO</div><ul className="space-y-2 list-disc pl-5">
                     <li>Ninguna IA calcula ni redacta una cifra. Los números salen de aritmética que cualquiera puede repetir con los datos de Interior.</li>
-                    <li>Nuestro límite: si dentro de un mismo municipio se cuentan antes las mesas de un signo, eso no se ve con datos por municipio. Por eso las horquillas son anchas al principio. Este ensayo lo reproduce a propósito: en él, las mesas con más participación y más voto a la derecha se cuentan al final.</li>
+                    <li>Nuestro límite: si dentro de un mismo municipio se cuentan antes las mesas de un signo, eso no se ve con datos por municipio. Por eso las horquillas son anchas al principio.</li>
                   </ul></div>
                 </div>
               </Section>}

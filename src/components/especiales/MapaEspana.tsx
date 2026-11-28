@@ -36,9 +36,10 @@ type Props = {
   historico?: Historico | null;
   eleccionHistorica?: { provincias: Record<string, ResultadoHistorico> };
   onVerHistoria?: (p: string) => void;
+  vacio?: boolean;
 };
 
-export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), inicial = "gana", conFaros = false, onVerTabla, historico, eleccionHistorica, onVerHistoria }: Props) {
+export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), inicial = "gana", conFaros = false, onVerTabla, historico, eleccionHistorica, onVerHistoria, vacio = false }: Props) {
   const [geo, setGeo] = useState<Geo | null>(null);
   const [capa, setCapa] = useState<CapaMapa>(inicial);
   const [partido, setPartido] = useState("PP");
@@ -73,6 +74,7 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
   };
 
   const estilo = (p: string): { fill: string; opacity?: number; stroke?: string; sw?: number } => {
+    if (vacio) return { fill: "var(--hair)" };
     const d = byP[p];
     const esc = d?.escrutado ?? 0;
     if (capa === "gana") { const g = ganador(p); return g ? { fill: color(g), opacity: eleccionHistorica ? 1 : 0.25 + 0.75 * Math.min(100, esc) / 100 } : { fill: "var(--card)" }; }
