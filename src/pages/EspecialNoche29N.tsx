@@ -159,7 +159,7 @@ function CuentaAtras({ panel, name, go }: { panel: Panel | null; name: (k: strin
     return <div className="elec-cd" aria-live="off">
       {txt ? <>
         <div className="elec-cd-big">{txt}</div>
-        <p className="mt-2" style={{ fontFamily: SERIF, fontSize: 17 }}>Cierran los colegios y empieza el escrutinio oficial: domingo 29, 20:00 (en Canarias, 19:00 hora local)</p>
+        <p className="mt-2" style={{ fontFamily: SERIF, fontSize: 17 }}>Cierran los colegios y empieza el escrutinio oficial: domingo 29, 20:00 hora peninsular. En Canarias cierran a las 20:00 hora local (21:00 peninsular).</p>
       </> : <div className="elec-cd-big" style={{ fontSize: "clamp(22px,4vw,36px)" }}>Escrutinio en marcha: esperando los primeros datos oficiales</div>}
       <p className="mt-2 text-xs" style={{ fontFamily: SANS, color: C.muted, letterSpacing: ".04em" }}>14:00 primer avance de participación · 18:00 segundo avance · 20:00 cierre y escrutinio · 21:00 se abre el pronóstico sellado</p>
     </div>;
