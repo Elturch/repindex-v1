@@ -79,6 +79,7 @@ const VIEWS: { id: string; group: string; label: string; lede: string; secs: str
   { id: "distinto", group: "Método", label: "Por qué este panel", lede: "Lo que este panel ve y los demás no.", secs: ["distinto"] },
   { id: "metodo", group: "Método", label: "Cómo lo hacemos", lede: "Método, cotejos con elecciones anteriores y control de calidad.", secs: ["metodo", "cotejos", "calidad"] },
 ];
+const GROUPS = [...new Set(VIEWS.map(v => v.group))];
 const VIEW_OF: Record<string, string> = Object.fromEntries(VIEWS.flatMap(v => v.secs.map(sec => [sec, v.id])));
 const viewFor = (id: string) => VIEWS.some(v => v.id === id) ? id : VIEW_OF[id] ?? "ahora";
 const EXAM_TABS: [string, string][] = [["PP", "PP"], ["PSOE", "PSOE"], ["VOX", "Vox"], ["SUMAR", "Sumar"]];
@@ -313,7 +314,18 @@ export default function EspecialNoche29N() {
           .elec-page .elec-cinta-in { max-width:1180px; margin:0 auto; padding:8px 18px; display:flex; align-items:center; gap:14px; min-height:64px; }
           .elec-page .elec-cinta-lab { font:700 12px var(--sans); letter-spacing:.08em; white-space:nowrap; flex-shrink:0; display:flex; align-items:center; }
           .elec-page .elec-cinta-txt { flex:1; min-width:0; font:19px/1.3 var(--serif); }
-          .elec-page .elec-cinta-txt button { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; color:var(--paper); }
+          .elec-page .elec-cinta-txt button { display:block; width:100%; color:var(--paper); }
+          .elec-page .elec-cinta-hora.block { display:block; margin:0 0 2px; line-height:1.2; }
+          .elec-page .elec-cinta-t { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; font:19px/1.3 var(--serif); color:var(--paper); }
+          .elec-page .elec-top2 { width:100vw; margin-left:calc(50% - 50vw); }
+          .elec-page .elec-row-in { max-width:1180px; margin:0 auto; padding:0 18px; display:flex; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; gap:4px; }
+          .elec-page .elec-row-in::-webkit-scrollbar { display:none; }
+          .elec-page .elec-row2 { border-top:1px solid var(--hair); }
+          .elec-page .elec-g { font:800 13px var(--sans)!important; text-transform:uppercase; letter-spacing:.1em; padding:10px 12px 9px 0; margin-right:12px; white-space:nowrap!important; border-bottom:3px solid transparent; flex-shrink:0; }
+          .elec-page .elec-v { font:700 12.5px var(--sans)!important; text-transform:uppercase; letter-spacing:.09em; padding:8px 10px 7px 0; margin-right:10px; white-space:nowrap!important; border-bottom:3px solid transparent; flex-shrink:0; color:var(--ink2)!important; }
+          .elec-page .elec-g.on,.elec-page .elec-v.on { border-bottom-color:var(--ink); color:var(--ink)!important; }
+          .elec-page .elec-v.off { color:#9a958c!important; }
+          .elec-page .elec-crumb { font:600 11px var(--sans); color:var(--muted); letter-spacing:.04em; }
           .elec-page .elec-cinta-hora { font:600 11px var(--sans); color:#bdb8ae; margin-right:8px; letter-spacing:.05em; }
           .elec-page .elec-cinta-ctl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
           .elec-page .elec-cinta-n { font:600 12px var(--sans); color:#bdb8ae; white-space:nowrap; margin-right:4px; }
@@ -365,7 +377,7 @@ export default function EspecialNoche29N() {
           <div className="elec-cinta-in">
             <span className="elec-cinta-lab" style={{ color: st?.modo === "simulacro" ? "#e0b26a" : C.paper }}>{st?.modo === "simulacro" ? <>ENSAYO 23J{panel?.horaSimulada != null && <> · {panel.horaSimulada}</>}</> : <><span className="elec-live-dot inline-block h-2 w-2 rounded-full mr-1.5" style={{ background: "#d33" }} />EN DIRECTO</>}</span>
             <div className="elec-cinta-txt" aria-live="polite">
-              {curPill ? <EditorialButton key={keyOf(curPill)} style={{ color: C.paper }} className={`text-left ${newKeys.has(keyOf(curPill)) ? "elec-new" : ""}`} aria-label={curPill.texto} title={curPill.texto} onClick={() => navigatePill(curPill)}><span className="elec-cinta-hora">{madrid(curPill.ts)}</span>{curPill.texto}</EditorialButton> : <span style={{ color: C.grey, fontSize: 15 }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</span>}
+              {curPill ? <EditorialButton key={keyOf(curPill)} style={{ color: C.paper }} className={`text-left ${newKeys.has(keyOf(curPill)) ? "elec-new" : ""}`} aria-label={curPill.texto} title={curPill.texto} onClick={() => navigatePill(curPill)}><span className="elec-cinta-hora block">{madrid(curPill.ts)}</span><span className="elec-cinta-t">{curPill.texto}</span></EditorialButton> : <span style={{ color: C.grey, fontSize: 15 }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</span>}
             </div>
             {showPills.length > 0 && <div className="elec-cinta-ctl">
               <span className="elec-cinta-n">{pillIdx + 1} de {showPills.length}</span>
@@ -376,9 +388,11 @@ export default function EspecialNoche29N() {
           </div>
           {showAllPills && showPills.length > 0 && <ol className="elec-cinta-list">{showPills.map(p => <li key={keyOf(p)}><EditorialButton style={{ color: C.paper }} className="block w-full text-left py-2" aria-label={p.texto} onClick={() => { setShowAllPills(false); navigatePill(p); }}><span aria-hidden="true" className="inline-block w-1 h-4 mr-2 align-middle" style={{ background: pillColor(p) }} /><span className="elec-cinta-hora">{madrid(p.ts)}</span>{p.texto}</EditorialButton></li>)}</ol>}
         </div>
-        {!panel?.vacio && <header ref={tabsRef} className="elec-top"><div className="bar"><nav className="tabs" aria-label="Vistas del especial">
-          {VIEWS.map((v, i) => <Fragment key={v.id}>{(i === 0 || VIEWS[i - 1].group !== v.group) && <span className="elec-group">{v.group}</span>}<EditorialButton className={`elec-tab ${view === v.id ? "on" : ""} ${viewHas[v.id] ? "" : "off"}`} aria-current={view === v.id ? "page" : undefined} onClick={() => openView(v.id)}>{v.label}{!viewHas[v.id] && <span className="elec-nodata"> (sin datos aún)</span>}</EditorialButton></Fragment>)}
-        </nav></div><div className="elec-swipe">Desliza las pestañas: hay {VIEWS.length} secciones →</div></header>}
+        {!panel?.vacio && <header ref={tabsRef} className="elec-top elec-top2">
+          <div className="elec-row"><nav className="elec-row-in" aria-label="Grupos del especial">{GROUPS.map(g => <EditorialButton key={g} className={`elec-g ${curView.group === g ? "on" : ""}`} aria-current={curView.group === g ? "true" : undefined} onClick={() => openView(VIEWS.find(v => v.group === g)!.id)}>{g}</EditorialButton>)}</nav></div>
+          <div className="elec-row elec-row2"><nav className="elec-row-in" aria-label="Vistas del especial">{VIEWS.filter(v => v.group === curView.group).map(v => <EditorialButton key={v.id} className={`elec-v ${view === v.id ? "on" : ""} ${viewHas[v.id] ? "" : "off"}`} aria-current={view === v.id ? "page" : undefined} onClick={() => openView(v.id)}>{v.label}{!viewHas[v.id] && <span className="elec-nodata"> (sin datos aún)</span>}</EditorialButton>)}</nav></div>
+          <div className="elec-swipe">Desliza →</div>
+        </header>}
         <main className="elec-main">
           {!panel ? (
             <p className="text-center py-24 text-xl" style={{ fontFamily: SERIF, color: C.muted }}>
@@ -386,7 +400,7 @@ export default function EspecialNoche29N() {
             </p>
           ) : (
             <div className="elec-views">
-              {!panel?.vacio && <div className="elec-viewhead" style={{ order: 0 }}><div className="elec-kicker">{curView.group}</div><h2 className="mt-1">{curView.label}</h2><p className="lede">{curView.lede}</p></div>}
+              {!panel?.vacio && <div className="elec-viewhead" style={{ order: 0 }}><div className="elec-crumb">{curView.group} › {curView.label}</div><h2 className="mt-1">{curView.label}</h2><p className="lede">{curView.lede}</p></div>}
               {/* A. GOLPE */}
               <section id="arriba" data-sec="arriba" className="elec-section relative overflow-hidden py-8 text-center">
                 {st?.modo === "simulacro" && <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center select-none" style={{ zIndex: 0 }}><span className="whitespace-nowrap font-bold" style={{ fontFamily: HEAD, fontSize: "clamp(64px, 16vw, 200px)", color: C.ochre, opacity: 0.09, transform: "rotate(-24deg)" }}>ENSAYO 23J</span></div>}
