@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { MapaEspana } from "@/components/especiales/MapaEspana";
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid, Legend,
 } from "recharts";
@@ -65,13 +66,13 @@ const DISTINTO: [string, string, string][] = [
   ["Nos examinamos en público", "Cómo se movió nuestra proyección frente al recuento y frente al resultado final.", "examen"],
 ];
 const VIEWS: { id: string; group: string; label: string; lede: string; secs: string[] }[] = [
-  { id: "ahora", group: "Resultado", label: "Ahora", lede: "Lo que dice el recuento sobre el resultado final, con su margen y lo que ya es seguro.", secs: ["arriba", "rangos", "certezas"] },
+  { id: "ahora", group: "Resultado", label: "Ahora", lede: "Lo que dice el recuento sobre el resultado final, con su margen y lo que ya es seguro.", secs: ["arriba", "mapa-ahora", "rangos", "certezas"] },
   { id: "mayorias", group: "Resultado", label: "Mayorías", lede: "Quién puede sumar 176 y a cuántos votos está cada mayoría.", secs: ["poder", "reparto"] },
-  { id: "provincias", group: "Resultado", label: "Provincias", lede: "Provincia a provincia: lo contado, lo proyectado, el último escaño y el voto del exterior.", secs: ["alambre", "cera"] },
+  { id: "provincias", group: "Resultado", label: "Provincias", lede: "Provincia a provincia: lo contado, lo proyectado, el último escaño y el voto del exterior.", secs: ["mapa-provincias", "alambre", "cera"] },
   { id: "senado", group: "Resultado", label: "Senado", lede: "El Senado frente al Congreso, con los mismos votos.", secs: ["senado"] },
   { id: "pendiente", group: "Por qué", label: "El recuento engaña", lede: "Qué falta por contar, hacia quién se inclina y por qué se mueve la proyección.", secs: ["pendiente", "porque"] },
   { id: "votos-escanos", group: "Por qué", label: "Votos y escaños", lede: "Cuántos votos no eligen a nadie y cuánto premia el sistema a cada partido.", secs: ["reparto-resto"] },
-  { id: "territorio", group: "Por qué", label: "Territorio", lede: "Dónde ha cambiado el voto y qué dicen los pueblos faro.", secs: ["tamano", "faros"] },
+  { id: "territorio", group: "Por qué", label: "Territorio", lede: "Dónde ha cambiado el voto y qué dicen los pueblos faro.", secs: ["mapa-territorio", "tamano", "faros"] },
   { id: "movilizacion", group: "Por qué", label: "Quién vota", lede: "Qué electorados están acudiendo más a las urnas.", secs: ["movilizacion"] },
   { id: "noche", group: "La noche", label: "Minuto a minuto", lede: "Cómo se ha movido la proyección durante la noche.", secs: ["noche", "examen"] },
   { id: "relato", group: "La noche", label: "Lo que se dice", lede: "Lo que se dice en antena contrastado con el dato de ese minuto.", secs: ["relato"] },
@@ -634,6 +635,9 @@ export default function EspecialNoche29N() {
                 <p className="text-xs mt-2" style={{ color: C.muted }}>Cada punto es lo que el panel publicó en ese minuto. No borramos ni corregimos lo publicado.</p>
               </Section>}
 
+              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-ahora" kicker="Territorio" title="El mapa de la noche"><MapaEspana panel={panel} name={name} color={color} onVerTabla={openProvince} /></Section>}
+              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-provincias" kicker="Provincias" title="El mapa de la noche"><MapaEspana panel={panel} name={name} color={color} onVerTabla={openProvince} /></Section>}
+              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-territorio" kicker="Territorio" title="Dónde ha cambiado el voto, provincia a provincia">{tamano?.referenciaNombre && <p className="text-sm mb-4" style={{ color: C.muted }}>Cambio frente a {tamano.referenciaNombre}, solo municipios ya contados al 100 %</p>}<MapaEspana panel={panel} name={name} color={color} capas={["cambio", "gana", "contado"]} inicial="cambio" conFaros onVerTabla={openProvince} /></Section>}
               <Section id="alambre" kicker="Provincias" title="Escaños en juego y lo que vale un voto">
                 {panel?.enJuego?.total != null && <EditorialButton className="block text-left mb-5" onClick={() => { setAllProv(true); document.getElementById("tabla-alambre")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><span className="block text-6xl" style={{ fontFamily: HEAD, color: C.ochre }}>{num(panel?.enJuego?.total)}</span><span className="block text-sm">escaños en juego</span></EditorialButton>}
                 <div id="tabla-alambre" className="overflow-x-auto">
