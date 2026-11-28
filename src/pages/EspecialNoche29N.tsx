@@ -3,6 +3,8 @@ import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { MapaEspana } from "@/components/especiales/MapaEspana";
+import { HistoricoElectoral, ChipsHistoricos, FaroHistorial } from "@/components/especiales/HistoricoElectoral";
+import { familia2023, loadHistorico, resultado2023, type Historico } from "@/components/especiales/historicoElectoral";
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid, Legend,
 } from "recharts";
@@ -70,6 +72,9 @@ const VIEWS: { id: string; group: string; label: string; lede: string; secs: str
   { id: "mayorias", group: "Resultado", label: "Mayorías", lede: "Quién puede sumar 176 y a cuántos votos está cada mayoría.", secs: ["poder", "reparto"] },
   { id: "provincias", group: "Resultado", label: "Provincias", lede: "Provincia a provincia: lo contado, lo proyectado, el último escaño y el voto del exterior.", secs: ["mapa-provincias", "alambre", "cera"] },
   { id: "senado", group: "Resultado", label: "Senado", lede: "El Senado frente al Congreso, con los mismos votos.", secs: ["senado"] },
+  { id: "historia", group: "Histórico", label: "Seis elecciones", lede: "El Congreso, el voto y la participación en seis elecciones generales.", secs: ["historia"] },
+  { id: "mapa-historico", group: "Histórico", label: "Mapa histórico", lede: "Quién ganó y cuánta gente votó, provincia a provincia.", secs: ["mapa-historico"] },
+  { id: "provincia-historia", group: "Histórico", label: "Provincia a provincia", lede: "La historia electoral de cada provincia.", secs: ["provincia-historia"] },
   { id: "pendiente", group: "Por qué", label: "El recuento engaña", lede: "Qué falta por contar, hacia quién se inclina y por qué se mueve la proyección.", secs: ["pendiente", "porque"] },
   { id: "votos-escanos", group: "Por qué", label: "Votos y escaños", lede: "Cuántos votos no eligen a nadie y cuánto premia el sistema a cada partido.", secs: ["reparto-resto"] },
   { id: "territorio", group: "Por qué", label: "Territorio", lede: "Dónde ha cambiado el voto y qué dicen los pueblos faro.", secs: ["mapa-territorio", "tamano", "faros"] },
@@ -96,6 +101,9 @@ function Section({ id, title, kicker, children }: { id: string; title: string; k
 }
 
 export default function EspecialNoche29N() {
+  const [historicoOficial, setHistoricoOficial] = useState<Historico | null>(null);
+  const [provinciaHistoria, setProvinciaHistoria] = useState("28");
+  useEffect(() => { let alive = true; loadHistorico().then(h => { if (alive) setHistoricoOficial(h); }); return () => { alive = false; }; }, []);
   const [st, setSt] = useState<Estado | null>(null);
   const [err, setErr] = useState(false);
   const [updated, setUpdated] = useState<Date | null>(null);
@@ -197,6 +205,8 @@ export default function EspecialNoche29N() {
   }, []);
 
   const panel = st?.panel ?? null;
+  const vistaHistorica = ["historia", "mapa-historico", "provincia-historia"].includes(view);
+  const abrirHistoriaProvincia = (p: string) => { setProvinciaHistoria(p); if (view !== "provincia-historia") openView("provincia-historia"); };
   const historia: Any[] = st?.historia ?? [];
   const relato: Any[] = st?.relato ?? [];
   const partidos: Any[] = panel?.partidos ?? [];
@@ -259,7 +269,8 @@ export default function EspecialNoche29N() {
     return { data, final, frase };
   })();
   const viewHas: Record<string, boolean> = { ahora: true, mayorias: !!panel?.poder || !!reparto, provincias: provs.length > 0 || !!panel?.cera, senado: !!panel?.senado, pendiente: !!panel?.pendiente || !!panel?.porque, "votos-escanos": !!reparto && (reparto.votosSinEscanoPct != null || reparto.partidos?.length > 0), territorio: !!tamano || !!panel?.faros, movilizacion: !!panel?.movilizacion || !!st?.sobre2, noche: chartData.length > 0 || historia.length > 0, relato: relato.length > 0, apuesta: !!panel?.apuesta, distinto: true, metodo: true };
-  const curView = panel?.vacio ? VIEWS[0] : VIEWS.find(v => v.id === view) ?? VIEWS[0];
+  const curView = panel?.vacio && !vistaHistorica ? VIEWS[0] : VIEWS.find(v => v.id === view) ?? VIEWS[0];
+  for (const id of ["historia", "mapa-historico", "provincia-historia"]) viewHas[id] = !!historicoOficial;
   const showPills = panel?.vacio ? [] : pastillas;
   const pillIdx = showPills.length ? tick % showPills.length : 0;
   const curPill = showPills[pillIdx];
@@ -389,13 +400,13 @@ export default function EspecialNoche29N() {
           </div>
           {showAllPills && showPills.length > 0 && <ol className="elec-cinta-list">{showPills.map(p => <li key={keyOf(p)}><EditorialButton style={{ color: C.paper }} className="block w-full text-left py-2" aria-label={p.texto} onClick={() => { setShowAllPills(false); navigatePill(p); }}><span aria-hidden="true" className="inline-block w-1 h-4 mr-2 align-middle" style={{ background: pillColor(p) }} /><span className="elec-cinta-hora">{madrid(p.ts)}</span>{p.texto}</EditorialButton></li>)}</ol>}
         </div>
-        {!panel?.vacio && <header ref={tabsRef} className="elec-top elec-top2">
-          <div className="elec-row"><nav className="elec-row-in" aria-label="Grupos del especial">{GROUPS.map(g => <EditorialButton key={g} className={`elec-g ${curView.group === g ? "on" : ""}`} aria-current={curView.group === g ? "true" : undefined} onClick={() => openView(VIEWS.find(v => v.group === g)!.id)}>{g}</EditorialButton>)}</nav></div>
+        {<header ref={tabsRef} className="elec-top elec-top2">
+          <div className="elec-row"><nav className="elec-row-in" aria-label="Grupos del especial">{GROUPS.map(g => <EditorialButton key={g} className={`elec-g ${curView.group === g ? "on" : ""}`} aria-current={curView.group === g ? "true" : undefined} onClick={() => { const first = VIEWS.find(v => v.group === g); if (first) openView(first.id); }}>{g}</EditorialButton>)}</nav></div>
           <div className="elec-row elec-row2"><nav className="elec-row-in" aria-label="Vistas del especial">{VIEWS.filter(v => v.group === curView.group).map(v => <EditorialButton key={v.id} className={`elec-v ${view === v.id ? "on" : ""} ${viewHas[v.id] ? "" : "off"}`} aria-current={view === v.id ? "page" : undefined} onClick={() => openView(v.id)}>{v.label}{!viewHas[v.id] && <span className="elec-nodata"> (sin datos aún)</span>}</EditorialButton>)}</nav></div>
           <div className="elec-swipe">Desliza →</div>
         </header>}
         <main className="elec-main">
-          {!panel ? (
+          {vistaHistorica ? <HistoricoElectoral historico={historicoOficial} panel={panel} modo={st?.modo} vista={view} provincia={provinciaHistoria} onProvincia={abrirHistoriaProvincia} /> : !panel ? (
             <p className="text-center py-24 text-xl" style={{ fontFamily: SERIF, color: C.muted }}>
               {st ? "El panel se enciende con el primer dato oficial" : "Cargando…"}
             </p>
@@ -498,7 +509,7 @@ export default function EspecialNoche29N() {
                     const x = (v: number) => `${Math.min(100, (v / maxScale) * 100)}%`;
                     return (
                       <div key={p.k} className="grid grid-cols-[88px_1fr_56px] md:grid-cols-[140px_1fr_80px] items-center gap-2">
-                        <EditorialButton className="text-left text-sm font-semibold truncate" onClick={() => setFocusParty(focusParty === p.k ? null : p.k)}>{p.nombre}</EditorialButton>
+                        <div><EditorialButton className="text-left text-sm font-semibold truncate" onClick={() => setFocusParty(focusParty === p.k ? null : p.k)}>{p.nombre}</EditorialButton>{historicoOficial && <span className="block text-[11px] mt-1" style={{ color: C.muted, borderLeft: `1px solid ${C.ink}`, paddingLeft: 5 }}>{(() => { const antiguo = resultado2023(historicoOficial)?.partidos.find(v => v.k === familia2023(p.k)); return antiguo ? `2023: ${antiguo.escanos}` : "nuevo"; })()}</span>}</div>
                         <div className="relative h-7" style={{ background: "transparent", borderTop: `2px solid ${C.ink}` }}>
                           <div className="absolute top-0 bottom-0" style={{ left: x(p.p10), width: `calc(${x(p.p90)} - ${x(p.p10)})`, background: p.color, opacity: 0.25 }} />
                           <div className="absolute top-0 bottom-0" style={{ left: x(p.p50), width: 4, marginLeft: -2, background: p.color }} title={`Proyección: ${p.p50}`} />
@@ -521,7 +532,7 @@ export default function EspecialNoche29N() {
                   <p className="mt-3 text-lg" style={{ fontFamily: SERIF }}>{est.PP == null ? "Aún no ha terminado ninguno" : `Apuntan a PP ${fx(est.PP)} % y PSOE ${fx(est.PSOE)} %; la proyección del modelo dice ${fx(pro.PP)} % y ${fx(pro.PSOE)} %`}</p>
                 </div>
                 {est.PP != null && <div className="space-y-4 mb-8">{(["PP", "PSOE"] as const).map(k => <div key={k}><b style={{ color: FC[k] }}>{k}</b>{[["Faros", est[k], 1], ["Proyección", pro[k], 0.45]].map(([l, v, o]) => v == null ? null : <div key={String(l)} className="flex items-center gap-2 text-sm mt-1"><span className="w-24 shrink-0">{l}</span><div className="flex-1 h-4" style={{ background: C.rule }}><div className="h-full" style={{ width: `${Math.min(100, Number(v))}%`, background: FC[k], opacity: Number(o) }} /></div><span className="w-14 text-right">{fx(Number(v))} %</span></div>)}</div>)}</div>}
-                {lista.length > 0 && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">{lista.map((f: Any) => <div key={f.id} className="p-3 text-sm" style={{ background: "transparent", borderTop: `2px solid ${C.ink}`, color: f.terminado ? C.ink : C.grey }}><b className="block">{f.n}</b>{f.censo != null && <span className="block text-xs">Censo {num(f.censo)}</span>}{f.terminado ? <span className="block text-xs mt-1">{f.PP != null && <span style={{ color: FC.PP }}>PP {fx(f.PP)} % </span>}{f.PSOE != null && <span style={{ color: FC.PSOE }}>PSOE {fx(f.PSOE)} %</span>}</span> : <span className="block text-xs mt-1 italic">contando</span>}</div>)}</div>}
+                {lista.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">{lista.map((f: Any) => <div key={f.id} className="p-3 text-sm" style={{ background: "transparent", borderTop: `2px solid ${C.ink}`, color: f.terminado ? C.ink : C.grey }}><b className="block">{f.n}</b>{f.censo != null && <span className="block text-xs">Censo {num(f.censo)}</span>}{f.terminado ? <span className="block text-xs mt-1">{f.PP != null && <span style={{ color: FC.PP }}>PP {fx(f.PP)} % </span>}{f.PSOE != null && <span style={{ color: FC.PSOE }}>PSOE {fx(f.PSOE)} %</span>}</span> : <span className="block text-xs mt-1 italic">contando</span>}<FaroHistorial id={String(f.id)} historico={historicoOficial} /></div>)}</div>}
                 {F.nota && <p className="text-xs italic mt-4" style={{ color: C.muted }}>{F.nota}</p>}
               </Section>); })()}
               <Section id="movilizacion" kicker="Participación" title="Quién está votando (sobre de las 18:30)">
@@ -635,15 +646,16 @@ export default function EspecialNoche29N() {
                 <p className="text-xs mt-2" style={{ color: C.muted }}>Cada punto es lo que el panel publicó en ese minuto. No borramos ni corregimos lo publicado.</p>
               </Section>}
 
-              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-ahora" kicker="Territorio" title="El mapa de la noche"><MapaEspana panel={panel} name={name} color={color} onVerTabla={openProvince} /></Section>}
-              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-provincias" kicker="Provincias" title="El mapa de la noche"><MapaEspana panel={panel} name={name} color={color} onVerTabla={openProvince} /></Section>}
-              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-territorio" kicker="Territorio" title="Dónde ha cambiado el voto, provincia a provincia">{tamano?.referenciaNombre && <p className="text-sm mb-4" style={{ color: C.muted }}>Cambio frente a {tamano.referenciaNombre}, solo municipios ya contados al 100 %</p>}<MapaEspana panel={panel} name={name} color={color} capas={["cambio", "gana", "contado"]} inicial="cambio" conFaros onVerTabla={openProvince} /></Section>}
+              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-ahora" kicker="Territorio" title="El mapa de la noche"><MapaEspana panel={panel} historico={historicoOficial} name={name} color={color} onVerTabla={openProvince} /></Section>}
+              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-provincias" kicker="Provincias" title="El mapa de la noche"><MapaEspana panel={panel} historico={historicoOficial} name={name} color={color} onVerTabla={openProvince} /></Section>}
+              {!panel?.vacio && (panel?.provincias?.length ?? 0) > 0 && <Section id="mapa-territorio" kicker="Territorio" title="Dónde ha cambiado el voto, provincia a provincia">{tamano?.referenciaNombre && <p className="text-sm mb-4" style={{ color: C.muted }}>Cambio frente a {tamano.referenciaNombre}, solo municipios ya contados al 100 %</p>}<MapaEspana panel={panel} historico={historicoOficial} name={name} color={color} capas={["cambio", "gana", "contado"]} inicial="cambio" conFaros onVerTabla={openProvince} /></Section>}
               <Section id="alambre" kicker="Provincias" title="Escaños en juego y lo que vale un voto">
                 {panel?.enJuego?.total != null && <EditorialButton className="block text-left mb-5" onClick={() => { setAllProv(true); document.getElementById("tabla-alambre")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><span className="block text-6xl" style={{ fontFamily: HEAD, color: C.ochre }}>{num(panel?.enJuego?.total)}</span><span className="block text-sm">escaños en juego</span></EditorialButton>}
                 <div id="tabla-alambre" className="overflow-x-auto">
                   <table className="w-full min-w-[880px] text-sm">
                     <thead><tr className="text-left" style={{ borderBottom: `2px solid ${C.ink}` }}>
                       {[["nombre", "Provincia"], ["escrutado", "Escrutado"], ["cerrado", "Reparto cerrado"], ["enJuego", "En juego"], ["winner", "Último escaño"], ["runnerUp", "Lo persigue"], ["votesNeeded", "Votos que faltan"], ["valorVoto", "Valor del voto"]].map(([key, label]) => <th key={key} className="py-2" aria-sort={sortProv.key === key ? sortProv.asc ? "ascending" : "descending" : "none"}><EditorialButton className="text-left font-semibold" onClick={() => sortColumn(key)}>{label}{sortProv.key === key ? sortProv.asc ? " ↑" : " ↓" : " ↕"}</EditorialButton></th>)}
+                      <th>2023</th>
                     </tr></thead>
                     <tbody>{provShown.map(p => {
                       const detail = originalProvs.find(v => v.p === p.p) ?? p;
@@ -651,8 +663,9 @@ export default function EspecialNoche29N() {
                         <tr style={{ borderBottom: `1px solid ${C.rule}` }}>
                           <td className="py-3 font-semibold"><EditorialButton className="text-left" onClick={() => setOpenProv(openProv === p.p ? null : p.p)} aria-expanded={openProv === p.p}>{openProv === p.p ? "▾" : "▸"} {p.nombre}</EditorialButton></td>
                           <td>{num(p.escrutado)} %</td><td>{pct(p.cerrado)}</td><td>{num(p.enJuego)}</td><td style={{ color: p.ultimo ? color(p.ultimo.winner) : C.muted }}>{p.ultimo ? name(p.ultimo.winner) : "—"}</td><td>{p.ultimo ? name(p.ultimo.runnerUp) : "—"}</td><td>{num(p.ultimo?.votesNeeded)}</td><td>{p.valorVoto == null ? "—" : `×${num(p.valorVoto)}`}</td>
+                          <td className="min-w-[180px]"><ChipsHistoricos resultado={resultado2023(historicoOficial, String(p.p))} historico={historicoOficial} /></td>
                         </tr>
-                        {openProv === p.p && <tr><td colSpan={8} className="p-3" style={{ background: "transparent", borderTop: `2px solid ${C.ink}` }}>
+                        {openProv === p.p && <tr><td colSpan={9} className="p-3" style={{ background: "transparent", borderTop: `2px solid ${C.ink}` }}>
                           <div className="text-xs mb-2" style={{ color: C.muted }}>{num(p.escanos)} escaños{p.votosPorEscano != null && <> · {num(p.votosPorEscano)} votos por escaño</>}{p.ultimo && <> · persigue: {name(p.ultimo.runnerUp)}</>}</div>
                           <table className="text-sm"><thead><tr><th className="text-left pr-6">Partido</th><th>Oficial</th><th>Proyección</th></tr></thead><tbody>{Array.from(new Set([...Object.keys(detail.proy ?? {}), ...Object.keys(detail.bruto ?? {})])).map(k => <tr key={k}><td style={{ color: color(k) }}>{name(k)}</td><td className="text-center">{detail.bruto?.[k] ?? "—"}</td><td className="text-center">{detail.proy?.[k] ?? "—"}</td></tr>)}</tbody></table>
                         </td></tr>}

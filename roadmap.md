@@ -1,0 +1,3 @@
+- [x] Guardar el histórico oficial sin modificarlo y compartir su carga.
+- [x] Añadir las tres vistas históricas y las comparaciones con 2023.
+- [x] Verificar navegación, mapa y presentación a 1280 y 390 px, y pruebas.

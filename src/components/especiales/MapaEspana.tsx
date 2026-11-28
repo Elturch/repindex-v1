@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { ETIQUETAS, formatoHistorico, nombreGanador, resultado2023, type Historico, type ResultadoHistorico } from "./historicoElectoral";
 
 /* Mapa de provincias del especial Noche 29-N. Solo pinta datos del panel; no calcula resultados. */
 type Any = any;
 type Geo = { viewBox: string; provincias: Record<string, { n: string; d: string; cx: number; cy: number; pequena?: boolean }>; comunidades?: string; marcoCanarias?: string; faros?: Record<string, { n: string; x: number; y: number }>; fuente?: string };
-export type CapaMapa = "gana" | "contado" | "ultimo" | "exterior" | "cambio";
+export type CapaMapa = "gana" | "contado" | "ultimo" | "exterior" | "cambio" | "participacion";
 
 const URL_MAPA = "/especiales/elecciones/mapa-provincias.json";
 let cache: Promise<Geo | null> | null = null;
@@ -31,14 +33,18 @@ type Props = {
   inicial?: CapaMapa;
   conFaros?: boolean;
   onVerTabla?: (p: string) => void;
+  historico?: Historico | null;
+  eleccionHistorica?: { provincias: Record<string, ResultadoHistorico> };
+  onVerHistoria?: (p: string) => void;
 };
 
-export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), inicial = "gana", conFaros = false, onVerTabla }: Props) {
+export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), inicial = "gana", conFaros = false, onVerTabla, historico, eleccionHistorica, onVerHistoria }: Props) {
   const [geo, setGeo] = useState<Geo | null>(null);
   const [capa, setCapa] = useState<CapaMapa>(inicial);
   const [partido, setPartido] = useState("PP");
   const [hover, setHover] = useState<{ p?: string; faro?: string; x: number; y: number } | null>(null);
   const [sel, setSel] = useState<string | null>(null);
+  const [comparar, setComparar] = useState(false);
   useEffect(() => { let a = true; loadGeo().then(g => a && setGeo(g)); return () => { a = false; }; }, []);
 
   const byP = useMemo(() => Object.fromEntries(((panel?.provincias ?? []) as Any[]).map(p => [String(p.p), p])), [panel]);
@@ -49,6 +55,7 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
   const [vx, vy, vw, vh] = geo.viewBox.split(/\s+/).map(Number);
 
   const ganador = (p: string): string | null => {
+    if (eleccionHistorica) return eleccionHistorica.provincias[p]?.ganador ?? null;
     const v = panel?.votosProv?.[p];
     if (!v) return null;
     const ent: [string, number][] = Array.isArray(v) ? v.map((e: Any) => [e.k, e.votos ?? e.v ?? 0]) : Object.entries(v).map(([k, n]) => [k, Number(n) || 0]);
@@ -68,7 +75,8 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
   const estilo = (p: string): { fill: string; opacity?: number; stroke?: string; sw?: number } => {
     const d = byP[p];
     const esc = d?.escrutado ?? 0;
-    if (capa === "gana") { const g = ganador(p); return g ? { fill: color(g), opacity: 0.25 + 0.75 * Math.min(100, esc) / 100 } : { fill: "var(--card)" }; }
+    if (capa === "gana") { const g = ganador(p); return g ? { fill: color(g), opacity: eleccionHistorica ? 1 : 0.25 + 0.75 * Math.min(100, esc) / 100 } : { fill: "var(--card)" }; }
+    if (capa === "participacion") { const v = eleccionHistorica?.provincias[p]?.participacion; return { fill: v == null ? "var(--card)" : `color-mix(in srgb, var(--ink) ${Math.round(Math.max(0, Math.min(100, (v - 55) * 4)))}%, var(--hair))` }; }
     if (capa === "contado") return { fill: `color-mix(in srgb, var(--ink) ${Math.round(Math.min(100, esc))}%, var(--hair))` };
     if (capa === "ultimo") { const n = d?.ultimo?.votesNeeded; if (n == null) return { fill: "var(--card)" }; return { fill: n < 500 ? "var(--bad)" : n < 2000 ? mix("var(--bad)", 55) : n < 10000 ? mix("var(--warn)", 35) : "var(--card)" }; }
     if (capa === "exterior") return d?.exterior?.enRiesgo ? { fill: mix("var(--bad)", 20), stroke: "var(--bad)", sw: 2.5 } : { fill: "var(--card)" };
@@ -79,6 +87,7 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
 
   const datoCorto = (p: string) => {
     const d = byP[p];
+    if (eleccionHistorica) { const r = eleccionHistorica.provincias[p]; return r ? `${nombreGanador(r) ? `ganó ${nombreGanador(r)} · ` : ''}${r.participacion != null ? `participación ${fmt(r.participacion, 1)} %` : ''}` : 'sin datos aún'; }
     if (capa === "cambio") { const c = cambioDe(p); return c == null ? "sin datos aún" : `${name(partido)} ${c > 0 ? "+" : ""}${fmt(c, 1)} puntos`; }
     if (capa === "ultimo" && d?.ultimo) return `último escaño a ${fmt(d.ultimo.votesNeeded)} votos`;
     if (capa === "exterior") return d?.exterior?.enRiesgo ? "escaño en riesgo por el voto exterior" : "sin riesgo por el voto exterior";
@@ -93,14 +102,18 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
   const presentes = [...new Set(Object.keys(geo.provincias).map(ganador).filter(Boolean) as string[])];
   const d = sel ? byP[sel] : null;
   const hp = hover?.p ? byP[hover.p] : null;
+  const anterior = (p: string) => { const r = resultado2023(historico, p); return r ? <div className="text-xs mt-1">En 2023: {nombreGanador(r)}{r.participacion != null && <> (participación {fmt(r.participacion, 1)} %)</>}</div> : null; };
+  const distinta = (p: string) => { const ahora = ganador(p); const antes = resultado2023(historico, p)?.ganador; return comparar && ahora && antes && (ahora === "FA" ? "SUMAR" : ahora) !== antes; };
 
   return (
     <div className="mapa-esp" style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}>
       <style>{`.mapa-esp .mp{cursor:pointer;transition:stroke-width .1s}.mapa-esp .mp:hover,.mapa-esp .mp:focus-visible{stroke:var(--ink)!important;stroke-width:1.5px!important;outline:none}.mapa-esp .mtab{font:700 11.5px ${SANS};text-transform:uppercase;letter-spacing:.08em;color:var(--ink2);padding:6px 8px;border-bottom:3px solid transparent;white-space:nowrap}.mapa-esp .mtab.on{border-bottom-color:var(--ink);color:var(--ink)}`}</style>
       <div className="flex gap-1 overflow-x-auto mb-3" role="tablist" aria-label="Capas del mapa" style={{ borderBottom: "1px solid var(--line)" }}>
+        {capas.includes("participacion") && <Button variant="ghost" role="tab" aria-selected={capa === "participacion"} className={`mtab rounded-none ${capa === "participacion" ? "on" : ""}`} onClick={() => setCapa("participacion")}>Participación</Button>}
         {capas.includes("cambio") && <button role="tab" aria-selected={capa === "cambio"} className={`mtab ${capa === "cambio" ? "on" : ""}`} onClick={() => setCapa("cambio")}>Cambio de voto</button>}
-        {CAPAS.filter(([c]) => capas.includes(c)).map(([c, l]) => <button key={c} role="tab" aria-selected={capa === c} className={`mtab ${capa === c ? "on" : ""}`} onClick={() => setCapa(c)}>{l}</button>)}
+        {CAPAS.filter(([c]) => capas.includes(c)).map(([c, l]) => <button key={c} role="tab" aria-selected={capa === c} className={`mtab ${capa === c ? "on" : ""}`} onClick={() => setCapa(c)}>{eleccionHistorica && c === "gana" ? "Quién ganó" : l}</button>)}
       </div>
+      {!eleccionHistorica && historico && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={comparar} onChange={e => setComparar(e.target.checked)} />Comparar con 2023</label>}
       {capa === "cambio" && <div className="flex gap-1 mb-3" role="group" aria-label="Partido">{CAMBIO_PARTIDOS.map(([k, l]) => <button key={k} className={`mtab ${partido === k ? "on" : ""}`} style={partido === k ? { borderBottomColor: color(k) } : undefined} onClick={() => setPartido(k)}>{l}</button>)}</div>}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -112,32 +125,31 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
               const isSel = sel === p;
               const common = {
                 className: "mp", role: "button", tabIndex: 0, "aria-label": `${g.n}: ${datoCorto(p)}`, "aria-pressed": isSel,
-                fill: s.fill, fillOpacity: s.opacity, stroke: isSel ? "var(--ink)" : s.stroke ?? "var(--paper)", strokeWidth: isSel ? 2 : s.sw ?? 0.8,
+                fill: s.fill, fillOpacity: s.opacity, stroke: isSel || distinta(p) ? "var(--ink)" : s.stroke ?? "var(--paper)", strokeWidth: distinta(p) ? 3 : isSel ? 2 : s.sw ?? 0.8,
                 onClick: () => pick(p), onKeyDown: key(() => pick(p)),
-                onMouseMove: (e: React.MouseEvent) => { const r = (e.currentTarget as SVGElement).ownerSVGElement!.getBoundingClientRect(); setHover({ p, x: e.clientX - r.left, y: e.clientY - r.top }); },
+                onMouseMove: (e: React.MouseEvent) => { const svg = (e.currentTarget as SVGElement).ownerSVGElement; if (!svg) return; const r = svg.getBoundingClientRect(); setHover({ p, x: e.clientX - r.left, y: e.clientY - r.top }); },
                 onFocus: () => setHover({ p, x: ((g.cx - vx) / vw) * 100, y: -1 }), onBlur: () => setHover(null),
               };
-              return g.pequena
-                ? <g key={p}><path d={g.d} fill={s.fill} fillOpacity={s.opacity} stroke="var(--paper)" strokeWidth={0.8} pointerEvents="none" /><circle {...common} cx={g.cx} cy={g.cy} r={7} /></g>
-                : <path key={p} {...common} d={g.d} />;
+              return <g key={p}>{g.pequena ? <><path d={g.d} fill={s.fill} fillOpacity={s.opacity} stroke="var(--paper)" strokeWidth={0.8} pointerEvents="none" /><circle {...common} cx={g.cx} cy={g.cy} r={7} /></> : <path {...common} d={g.d} />}{distinta(p) && <circle cx={g.cx} cy={g.cy} r={3} fill="var(--ink)" stroke="var(--paper)" strokeWidth={1} pointerEvents="none" />}</g>;
             })}
             {geo.comunidades && <path d={geo.comunidades} fill="none" stroke="var(--ink)" strokeWidth={0.6} pointerEvents="none" />}
             {geo.marcoCanarias && <path d={geo.marcoCanarias} fill="none" stroke="var(--muted)" strokeWidth={0.8} pointerEvents="none" />}
             {conFaros && geo.faros && Object.entries(geo.faros).map(([id, f]) => { const fd = farosDatos[id]; const t = !!fd?.terminado; return (
               <circle key={id} cx={f.x} cy={f.y} r={3.6} fill={t ? "var(--ink)" : "var(--paper)"} stroke="var(--ink)" strokeWidth={1.2} tabIndex={0} role="img"
                 aria-label={`Pueblo faro ${fd?.n ?? f.n}: ${t ? `terminado, PP ${fmt(fd?.PP, 1)} %, PSOE ${fmt(fd?.PSOE, 1)} %` : "contando"}`}
-                onMouseMove={e => { const r = (e.currentTarget as SVGElement).ownerSVGElement!.getBoundingClientRect(); setHover({ faro: id, x: e.clientX - r.left, y: e.clientY - r.top }); }} />); })}
+                onMouseMove={e => { const svg = (e.currentTarget as SVGElement).ownerSVGElement; if (!svg) return; const r = svg.getBoundingClientRect(); setHover({ faro: id, x: e.clientX - r.left, y: e.clientY - r.top }); }} />); })}
           </svg>
           {hover && (hover.p || hover.faro) && hover.y >= 0 && (
             <div className="pointer-events-none absolute z-10 p-2 text-sm shadow-sm" style={{ left: Math.min(hover.x + 12, 9999), top: hover.y + 12, maxWidth: 260, background: "var(--card)", border: "1px solid var(--ink)", transform: hover.x > 220 ? "translateX(calc(-100% - 24px))" : undefined }}>
-              {hover.faro ? (() => { const fd = farosDatos[hover.faro!]; const f = geo.faros![hover.faro!]; return <><b>{fd?.n ?? f.n}</b><div className="text-xs">{fd?.terminado ? `PP ${fmt(fd.PP, 1)} % · PSOE ${fmt(fd.PSOE, 1)} %` : "contando"}</div></>; })() : <>
-                <b style={{ fontFamily: HEAD }}>{geo.provincias[hover.p!].n}</b>
-                <div className="text-xs" style={{ color: "var(--muted)" }}>{fmt(hp?.escrutado, 1)} % escrutado{hp?.escanos != null ? ` · ${fmt(hp.escanos)} escaños` : ""}</div>
+              {hover.faro ? (() => { const fd = farosDatos[hover.faro]; const f = geo.faros?.[hover.faro]; return <><b>{fd?.n ?? f?.n}</b><div className="text-xs">{fd?.terminado ? `PP ${fmt(fd.PP, 1)} % · PSOE ${fmt(fd.PSOE, 1)} %` : "contando"}</div></>; })() : hover.p ? <>
+                <b style={{ fontFamily: HEAD }}>{geo.provincias[hover.p]?.n}</b>
+                {eleccionHistorica ? <div>{datoCorto(hover.p)}</div> : <div className="text-xs" style={{ color: "var(--muted)" }}>{fmt(hp?.escrutado, 1)} % escrutado{hp?.escanos != null ? ` · ${fmt(hp.escanos)} escaños` : ""}</div>}
+                {!eleccionHistorica && anterior(hover.p)}
                 {hp?.proy && <div className="mt-1">{chips(hp.proy)}</div>}
                 {capa === "ultimo" && hp?.ultimo && <div className="text-xs mt-1">Último escaño: {name(hp.ultimo.winner)} frente a {name(hp.ultimo.runnerUp)}, a {fmt(hp.ultimo.votesNeeded)} votos</div>}
                 {capa === "exterior" && hp?.exterior?.enRiesgo && <div className="text-xs mt-1" style={{ color: "var(--bad)" }}>Escaño en riesgo por el voto exterior</div>}
-                {capa === "cambio" && <div className="text-xs mt-1">{datoCorto(hover.p!)}</div>}
-              </>}
+                {capa === "cambio" && <div className="text-xs mt-1">{datoCorto(hover.p)}</div>}
+              </> : null}
             </div>
           )}
         </div>
@@ -145,7 +157,7 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
         <aside aria-live="polite" className="text-sm" style={{ borderTop: "2px solid var(--ink)", paddingTop: 10 }}>
           {!sel ? <p style={{ color: "var(--muted)" }}>Pulsa una provincia para ver su detalle.</p> : <>
             <h3 className="text-2xl font-bold" style={{ fontFamily: HEAD }}>{geo.provincias[sel].n}</h3>
-            <p style={{ color: "var(--muted)" }}>{d?.escanos != null ? `${fmt(d.escanos)} escaños · ` : ""}{fmt(d?.escrutado, 1)} % escrutado</p>
+            {eleccionHistorica ? <><p>{datoCorto(sel)}</p><div className="mt-3 space-y-3">{historico?.elecciones.map(e => { const r = e.provincias[sel]; return r ? <div key={e.id}><b>{ETIQUETAS[e.id]}</b> · {nombreGanador(r)}<div className="flex flex-wrap gap-1">{r.partidos.filter(p => (p.escanos ?? 0) > 0).map(p => <span key={p.k} className="text-xs px-1" style={{ borderLeft: `4px solid ${historico.colores[p.k] ?? 'var(--muted)'}` }}>{p.nombre} {p.escanos}</span>)}</div>{r.participacion != null && <div>Participación {formatoHistorico(r.participacion)} %</div>}</div> : null; })}</div>{onVerHistoria && <Button variant="outline" className="rounded-none mt-4" onClick={() => onVerHistoria(sel)}>Ver la provincia</Button>}</> : <><p style={{ color: "var(--muted)" }}>{d?.escanos != null ? `${fmt(d.escanos)} escaños · ` : ""}{fmt(d?.escrutado, 1)} % escrutado</p>{anterior(sel)}</>}
             {d?.proy && <div className="mt-3"><div className="text-[11px] font-bold uppercase tracking-wider" style={{ fontFamily: SANS }}>Proyección</div>{chips(d.proy)}</div>}
             {d?.bruto && <div className="mt-2"><div className="text-[11px] font-bold uppercase tracking-wider" style={{ fontFamily: SANS }}>Recuento oficial</div>{chips(d.bruto)}</div>}
             {d?.ultimo && <p className="mt-3">Último escaño: <b>{name(d.ultimo.winner)}</b> frente a <b>{name(d.ultimo.runnerUp)}</b>, a {fmt(d.ultimo.votesNeeded)} votos</p>}
@@ -157,7 +169,9 @@ export function MapaEspana({ panel, name, color, capas = CAPAS.map(c => c[0]), i
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs" style={{ fontFamily: SANS }}>
-        {capa === "gana" && <>{presentes.map(k => <span key={k} className="inline-flex items-center gap-1"><i style={{ width: 10, height: 10, background: color(k), display: "inline-block" }} />{name(k)}</span>)}<span style={{ color: "var(--muted)" }}>más claro = menos escrutado</span></>}
+        {capa === "gana" && <>{presentes.map(k => <span key={k} className="inline-flex items-center gap-1"><i style={{ width: 10, height: 10, background: color(k), display: "inline-block" }} />{name(k)}</span>)}{!eleccionHistorica && <span style={{ color: "var(--muted)" }}>más claro = menos escrutado</span>}</>}
+        {capa === "participacion" && <span className="inline-flex items-center gap-2">55 %<i style={{ width: 120, height: 10, display: "inline-block", background: "linear-gradient(90deg,var(--hair),var(--ink))" }} />80 % · participación</span>}
+        {comparar && <span>● y borde grueso: cambia el más votado frente a 2023</span>}
         {capa === "contado" && <span className="inline-flex items-center gap-2">0 %<i style={{ width: 120, height: 10, display: "inline-block", background: "linear-gradient(90deg,var(--hair),var(--ink))" }} />100 %<span style={{ color: "var(--muted)" }}>(50 % en el centro)</span></span>}
         {capa === "ultimo" && <>{[["var(--bad)", "menos de 500 votos"], [mix("var(--bad)", 55), "menos de 2.000"], [mix("var(--warn)", 35), "menos de 10.000"], ["var(--card)", "más"]].map(([c, l]) => <span key={l} className="inline-flex items-center gap-1"><i style={{ width: 10, height: 10, background: c, border: "1px solid var(--line)", display: "inline-block" }} />{l}</span>)}</>}
         {capa === "exterior" && <span className="inline-flex items-center gap-1"><i style={{ width: 10, height: 10, background: mix("var(--bad)", 20), border: "2px solid var(--bad)", display: "inline-block" }} />escaño en riesgo por el voto exterior</span>}
