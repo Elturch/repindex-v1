@@ -1397,6 +1397,33 @@ export type Database = {
         }
         Relationships: []
       }
+      elec29n_sellos: {
+        Row: {
+          contenido_texto: string
+          id: number
+          revelar_desde: string
+          sellado_at: string
+          sha256: string
+          tipo: string
+        }
+        Insert: {
+          contenido_texto: string
+          id?: number
+          revelar_desde: string
+          sellado_at?: string
+          sha256: string
+          tipo: string
+        }
+        Update: {
+          contenido_texto?: string
+          id?: number
+          revelar_desde?: string
+          sellado_at?: string
+          sha256?: string
+          tipo?: string
+        }
+        Relationships: []
+      }
       elec29n_snap: {
         Row: {
           data: Json
@@ -6108,6 +6135,7 @@ export type Database = {
         Returns: number
       }
       elec29n_apuesta_publica: { Args: never; Returns: Json }
+      elec29n_sello_publico: { Args: { p_tipo: string }; Returns: Json }
       enforce_sweep_completeness: { Args: { p_week?: string }; Returns: Json }
       especiales_visita: {
         Args: { p_slug: string; p_sumar?: boolean }
