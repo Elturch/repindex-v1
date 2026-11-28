@@ -64,11 +64,28 @@ const DISTINTO: [string, string, string][] = [
   ["El voto del exterior", "Qué escaños puede mover el recuento del extranjero, días después.", "cera"],
   ["Nos examinamos en público", "Cómo se movió nuestra proyección frente al recuento y frente al resultado final.", "examen"],
 ];
+const VIEWS: { id: string; group: string; label: string; lede: string; secs: string[] }[] = [
+  { id: "ahora", group: "Resultado", label: "Ahora", lede: "Lo que dice el recuento sobre el resultado final, con su margen y lo que ya es seguro.", secs: ["arriba", "rangos", "certezas"] },
+  { id: "mayorias", group: "Resultado", label: "Mayorías", lede: "Quién puede sumar 176 y a cuántos votos está cada mayoría.", secs: ["poder", "reparto"] },
+  { id: "provincias", group: "Resultado", label: "Provincias", lede: "Provincia a provincia: lo contado, lo proyectado, el último escaño y el voto del exterior.", secs: ["alambre", "cera"] },
+  { id: "senado", group: "Resultado", label: "Senado", lede: "El Senado frente al Congreso, con los mismos votos.", secs: ["senado"] },
+  { id: "pendiente", group: "Por qué", label: "El recuento engaña", lede: "Qué falta por contar, hacia quién se inclina y por qué se mueve la proyección.", secs: ["pendiente", "porque"] },
+  { id: "votos-escanos", group: "Por qué", label: "Votos y escaños", lede: "Cuántos votos no eligen a nadie y cuánto premia el sistema a cada partido.", secs: ["reparto-resto"] },
+  { id: "territorio", group: "Por qué", label: "Territorio", lede: "Dónde ha cambiado el voto y qué dicen los pueblos faro.", secs: ["tamano", "faros"] },
+  { id: "movilizacion", group: "Por qué", label: "Quién vota", lede: "Qué electorados están acudiendo más a las urnas.", secs: ["movilizacion"] },
+  { id: "noche", group: "La noche", label: "Minuto a minuto", lede: "Cómo se ha movido la proyección durante la noche.", secs: ["noche", "examen"] },
+  { id: "relato", group: "La noche", label: "Lo que se dice", lede: "Lo que se dice en antena contrastado con el dato de ese minuto.", secs: ["relato"] },
+  { id: "apuesta", group: "La noche", label: "La apuesta", lede: "La predicción sellada frente al recuento.", secs: ["apuesta"] },
+  { id: "distinto", group: "Método", label: "Por qué este panel", lede: "Lo que este panel ve y los demás no.", secs: ["distinto"] },
+  { id: "metodo", group: "Método", label: "Cómo lo hacemos", lede: "Método, cotejos con elecciones anteriores y control de calidad.", secs: ["metodo", "cotejos", "calidad"] },
+];
+const VIEW_OF: Record<string, string> = Object.fromEntries(VIEWS.flatMap(v => v.secs.map(sec => [sec, v.id])));
+const viewFor = (id: string) => VIEWS.some(v => v.id === id) ? id : VIEW_OF[id] ?? "ahora";
 const EXAM_TABS: [string, string][] = [["PP", "PP"], ["PSOE", "PSOE"], ["VOX", "Vox"], ["SUMAR", "Sumar"]];
 
 function Section({ id, title, kicker, children }: { id: string; title: string; kicker?: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
+    <section id={id} data-sec={id} className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
       {kicker && <div className="elec-kicker mb-1">{kicker}</div>}
       <h2>{title}</h2>
       {children}
@@ -83,7 +100,11 @@ export default function EspecialNoche29N() {
   const [openProv, setOpenProv] = useState<string | null>(null);
   const [allProv, setAllProv] = useState(false);
   const [focusParty, setFocusParty] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState("arriba");
+  const [view, setView] = useState(() => viewFor(decodeURIComponent(window.location.hash.slice(1))));
+  const [tick, setTick] = useState(0);
+  const [showAllPills, setShowAllPills] = useState(false);
+  const tabsRef = useRef<HTMLElement>(null);
+  const cintaRef = useRef<HTMLDivElement>(null);
 
   const [pastillas, setPastillas] = useState<Pastilla[]>([]);
   const [newKeys, setNewKeys] = useState<Set<string>>(new Set());
@@ -93,36 +114,46 @@ export default function EspecialNoche29N() {
   const [openMay, setOpenMay] = useState<number | null>(null);
   const [examTab, setExamTab] = useState("PP");
   const [sortProv, setSortProv] = useState({ key: "votesNeeded", asc: true });
-  const carousel = useRef<HTMLDivElement>(null);
-  const liveBar = useRef<HTMLDivElement>(null);
   const paused = useRef(false);
   const touchUntil = useRef(0);
   const glowTimer = useRef<ReturnType<typeof setTimeout>>();
   const litSection = useRef<HTMLElement | null>(null);
   const keyOf = (p: Pastilla) => `${p.ts}-${p.clave}`;
+  const smooth = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  const openView = (v: string) => {
+    setView(v);
+    window.history.replaceState(null, "", `#${v}`);
+    window.scrollTo({ top: 0, behavior: smooth() as ScrollBehavior });
+  };
   const go = (id: string, prov?: string | null) => {
     if (prov) { setAllProv(true); setOpenProv(prov); }
-    const el = document.getElementById(id);
-    if (!el) return;
-    setActiveSection(id);
-    const bar = liveBar.current;
-    const offset = (bar ? parseFloat(getComputedStyle(bar).top) + bar.getBoundingClientRect().height : 310) + 16;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: reduced ? "auto" : "smooth" });
-    window.history.replaceState(null, "", `#${encodeURIComponent(id)}`);
-    if (glowTimer.current) clearTimeout(glowTimer.current);
-    litSection.current?.removeAttribute("data-lit");
-    el.setAttribute("data-lit", "true"); litSection.current = el;
-    glowTimer.current = setTimeout(() => el.removeAttribute("data-lit"), 1500);
-  };
-  const advance = (direction: number) => {
-    const el = carousel.current;
-    if (!el) return;
-    const end = el.scrollWidth - el.clientWidth;
-    el.scrollTo({ left: direction > 0 && el.scrollLeft >= end - 8 ? 0 : Math.max(0, el.scrollLeft + direction * Math.max(240, el.clientWidth * 0.7)), behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const v = viewFor(id);
+    setView(v);
+    window.history.replaceState(null, "", `#${v}`);
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const offset = (tabsRef.current?.getBoundingClientRect().bottom ?? 200) + 12;
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: smooth() as ScrollBehavior });
+      if (glowTimer.current) clearTimeout(glowTimer.current);
+      litSection.current?.removeAttribute("data-lit");
+      el.setAttribute("data-lit", "true"); litSection.current = el;
+      glowTimer.current = setTimeout(() => el.removeAttribute("data-lit"), 1500);
+    }, 60);
   };
   useEffect(() => {
-    const t = setInterval(() => { if (!paused.current && Date.now() > touchUntil.current) advance(1); }, 6000);
+    const onHash = () => setView(viewFor(decodeURIComponent(window.location.hash.slice(1))));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => {
+    const el = cintaRef.current; if (!el) return;
+    const set = () => document.documentElement.style.setProperty("--elec-cinta-h", `${el.getBoundingClientRect().height}px`);
+    set(); const ro = new ResizeObserver(set); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    const t = setInterval(() => { if (!paused.current && Date.now() > touchUntil.current) setTick(i => i + 1); }, 7000);
     return () => { clearInterval(t); if (glowTimer.current) clearTimeout(glowTimer.current); };
   }, []);
   useEffect(() => {
@@ -142,7 +173,7 @@ export default function EspecialNoche29N() {
     pastillas.forEach(p => seenKeys.current.add(keyOf(p)));
     if (!added.length) return;
     setNewKeys(new Set(added.map(keyOf)));
-    carousel.current?.scrollTo({ left: 0, behavior: "smooth" });
+    setTick(0);
     const t = setTimeout(() => setNewKeys(new Set()), 3000);
     return () => clearTimeout(t);
   }, [pastillas]);
@@ -225,7 +256,12 @@ export default function EspecialNoche29N() {
     const frase = ref ? `Con el ${miles(ref.esc)} % escrutado, la proyección decía ${miles(ref.p50)} y el recuento ${miles(ref.bruto)}${final != null ? `; el resultado fue ${miles(final)}` : ""}` : "";
     return { data, final, frase };
   })();
-  const sectionLinks: [string, string, Any][] = [["arriba", "Portada", true], ["distinto", "Por qué este panel", true], ["certezas", "Certezas", panel?.certezas], ["pendiente", "Voto pendiente", panel?.pendiente], ["porque", "Por qué cambia", panel?.porque], ["rangos", "Rangos", true], ["faros", "Pueblos faro", panel?.faros], ["movilizacion", "Movilización", true], ["poder", "Poder", panel?.poder], ["reparto", "Votos y escaños", panel?.reparto], ["tamano", "Territorio", panel?.tamano], ["noche", "La noche", true], ["examen", "A examen", historia.length > 0], ["alambre", "En juego", true], ["apuesta", "Apuesta", true], ["cera", "CERA", true], ["senado", "Senado", true], ["relato", "Relato", true], ["cotejos", "Cotejos", true], ["calidad", "Calidad", panel?.calidad], ["metodo", "Método", true]];
+  const viewHas: Record<string, boolean> = { ahora: true, mayorias: !!panel?.poder || !!reparto, provincias: provs.length > 0 || !!panel?.cera, senado: !!panel?.senado, pendiente: !!panel?.pendiente || !!panel?.porque, "votos-escanos": !!reparto && (reparto.votosSinEscanoPct != null || reparto.partidos?.length > 0), territorio: !!tamano || !!panel?.faros, movilizacion: !!panel?.movilizacion || !!st?.sobre2, noche: chartData.length > 0 || historia.length > 0, relato: relato.length > 0, apuesta: !!panel?.apuesta, distinto: true, metodo: true };
+  const curView = panel?.vacio ? VIEWS[0] : VIEWS.find(v => v.id === view) ?? VIEWS[0];
+  const showPills = panel?.vacio ? [] : pastillas;
+  const pillIdx = showPills.length ? tick % showPills.length : 0;
+  const curPill = showPills[pillIdx];
+  const viewCss = `.elec-page .elec-views > [data-sec] { display:none; } ${curView.secs.map((sec, i) => `.elec-page .elec-views > [data-sec="${sec}"] { display:block; order:${i + 1}; }`).join(" ")}`;
 
   return (
     <Layout>
@@ -269,7 +305,29 @@ export default function EspecialNoche29N() {
           .elec-page .text-4xl,.elec-page .text-5xl,.elec-page .text-6xl,.elec-page .text-7xl { font-family:var(--head); font-weight:700; font-size:clamp(34px,5vw,60px); line-height:1; }
           .elec-page table { font-size:15px; border-collapse:collapse; }
           .elec-page table th { font:700 11.5px var(--sans); text-transform:uppercase; letter-spacing:.08em; color:var(--ink); }
-          .elec-page .elec-section { scroll-margin-top:330px; transition:background-color 1.5s, box-shadow 1.5s; }
+          ${viewCss}
+          .elec-page .elec-views { display:flex; flex-direction:column; }
+          .elec-page .elec-viewhead { padding:6px 0 14px; }
+          .elec-page .lede { font:italic 17px/1.45 var(--serif); color:var(--ink2); margin:0; }
+          .elec-page .elec-cinta { background:var(--ink); color:var(--paper); width:100vw; margin-left:calc(50% - 50vw); position:sticky; top:72px; z-index:41; }
+          .elec-page .elec-cinta-in { max-width:1180px; margin:0 auto; padding:8px 18px; display:flex; align-items:center; gap:14px; min-height:64px; }
+          .elec-page .elec-cinta-lab { font:700 12px var(--sans); letter-spacing:.08em; white-space:nowrap; flex-shrink:0; display:flex; align-items:center; }
+          .elec-page .elec-cinta-txt { flex:1; min-width:0; font:19px/1.3 var(--serif); }
+          .elec-page .elec-cinta-txt button { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; color:var(--paper); }
+          .elec-page .elec-cinta-hora { font:600 11px var(--sans); color:#bdb8ae; margin-right:8px; letter-spacing:.05em; }
+          .elec-page .elec-cinta-ctl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+          .elec-page .elec-cinta-n { font:600 12px var(--sans); color:#bdb8ae; white-space:nowrap; margin-right:4px; }
+          .elec-page .elec-arrow { width:40px; height:40px; border-radius:50%; border:1px solid #666; color:var(--paper); font-size:24px; line-height:1; }
+          .elec-page .elec-cinta-all { font:700 11px var(--sans); text-transform:uppercase; letter-spacing:.08em; color:var(--paper); border:1px solid #666; padding:8px 10px; white-space:nowrap; }
+          .elec-page .elec-cinta-list { max-width:1180px; margin:0 auto; padding:0 18px 12px; max-height:50vh; overflow-y:auto; list-style:none; font:15px/1.4 var(--serif); }
+          .elec-page .elec-cinta-list li { border-top:1px solid #333; }
+          .elec-page .elec-top { position:sticky; top:calc(72px + var(--elec-cinta-h, 64px)); z-index:40; }
+          .elec-page .elec-group { font:800 10px var(--sans); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); padding:10px 4px 10px 14px; white-space:nowrap; align-self:center; }
+          .elec-page .elec-group:first-child { padding-left:0; }
+          .elec-page .tabs .elec-tab.off { color:#9a958c!important; }
+          .elec-page .elec-nodata { font-weight:400; text-transform:none; letter-spacing:0; }
+          .elec-page .elec-swipe { display:none; font:600 11px var(--sans); color:var(--muted); text-align:center; padding:0 0 6px; }
+          .elec-page .elec-section { scroll-margin-top:200px; transition:background-color 1.5s, box-shadow 1.5s; }
           .elec-page [data-lit="true"] { background-color:color-mix(in srgb, ${C.ochre} 12%, transparent); box-shadow:inset 3px 0 ${C.ochre}; }
           .elec-page .elec-ensayo { background:var(--warn); color:var(--paper); font:700 12px/1.45 var(--sans); }
           .elec-page .elec-live-label { font-family:var(--sans); }
@@ -286,7 +344,7 @@ export default function EspecialNoche29N() {
           @media (min-width:641px) { .elec-page .elec-ticker { scroll-padding-left:4px; } .elec-page .elec-pill { width:380px; max-width:380px; } .elec-page .elec-pill.elec-latest { width:420px; max-width:420px; } .elec-page .elec-ensayo { font-size:13px; } }
           @media (min-width:900px) { .elec-page .tabs { flex-wrap:wrap; overflow:visible; justify-content:center; } .elec-page .tabs .elec-tab { padding:9px 6px; letter-spacing:.04em; font-size:12px!important; } }
           @media (max-width:899px) { .elec-page .tabs { mask-image:linear-gradient(90deg,#000 85%,transparent); padding-right:24px; } }
-          @media (max-width:640px) { .elec-page .dbx-t,.elec-page .dbx-d { display:none; } .elec-page .dbx a { padding:8px 9px; } .elec-page .masthead,.elec-page .elec-main { width:100vw; margin-left:calc(50% - 50vw); } .elec-page .masthead .dateline { font-size:10px; letter-spacing:.04em; } .elec-page .elec-section { scroll-margin-top:360px; } }
+          @media (max-width:640px) { .elec-page .elec-cinta { position:static; } .elec-page .elec-top { top:72px; } .elec-page .elec-swipe { display:block; } .elec-page .elec-cinta-in { flex-wrap:wrap; gap:8px; } .elec-page .elec-cinta-txt { flex-basis:100%; order:3; font-size:18px; } .elec-page .elec-cinta-ctl { margin-left:auto; }  .elec-page .dbx-t,.elec-page .dbx-d { display:none; } .elec-page .dbx a { padding:8px 9px; } .elec-page .masthead,.elec-page .elec-main { width:100vw; margin-left:calc(50% - 50vw); } .elec-page .masthead .dateline { font-size:10px; letter-spacing:.04em; } .elec-page .elec-section { scroll-margin-top:140px; } }
           @media (prefers-reduced-motion:reduce) { .elec-page *,.elec-page .elec-new,.elec-page .elec-live-dot { animation:none; transition:none; scroll-behavior:auto; } }
         `}</style>
         <nav className="dbx" aria-label="Especiales electorales 29-N"><div className="dbx-in">
@@ -300,47 +358,37 @@ export default function EspecialNoche29N() {
           <div className="dateline"><span>Domingo, 29 de noviembre de 2026</span><span>Un análisis del equipo de RepIndex.ai</span><span>Madrid</span></div>
           <h1>La Noche Electoral</h1>
           <div className="sub">Elecciones generales 29-N · proyección en directo con los datos oficiales del Ministerio del Interior</div>
+          {st?.modo === "simulacro" && <div className="elec-status" style={{ fontStyle: "italic" }}>Ensayo con la noche del 23J de 2023: votos reales de cada municipio, orden de llegada simulado. La noche real empieza aquí el domingo 29 a las 21:00.</div>}
           <div className="elec-status">Última actualización: {updated ? madrid(updated) : "—"}{panel?.ts && <> · dato del panel {madrid(panel.ts)}</>}{hora && <> · hora {hora}</>}{err && <span style={{ color: C.red }}> · sin conexión, reintentando</span>}</div>
         </header>
-        <div ref={liveBar} className="sticky top-[72px] z-40 w-full" style={{ background: C.ink, color: C.paper, width: "100vw", marginLeft: "calc(50% - 50vw)" }}>
-          {!panel?.vacio && <header className="elec-top"><div className="bar"><nav className="tabs" aria-label="Secciones del especial">
-            {sectionLinks.filter(([, , visible]) => visible).map(([id, label]) => <EditorialButton key={id} className={`elec-tab ${activeSection === id ? "on" : ""}`} aria-current={activeSection === id ? "location" : undefined} onClick={() => go(id)}>{label}</EditorialButton>)}
-          </nav></div></header>}
-          <div>
-          {st?.modo === "simulacro" && <div className="elec-ensayo text-center px-3 py-2">ENSAYO · Así habría funcionado este panel la noche del 23J de 2023. Votos reales de cada municipio; el orden de llegada de las mesas es simulado.{panel?.horaSimulada != null && <> Hora simulada: {panel.horaSimulada}</>}{panel?.ensayo?.vuelta != null && <> · Vuelta {panel.ensayo.vuelta}</>}. La noche real empieza aquí el domingo 29 a las 21:00.{panel?.ensayo?.final === true && <> · Fin del recuento: vuelve a empezar en unos minutos</>}</div>}
-          <div className="relative flex h-24 sm:h-[110px] items-stretch gap-0 sm:gap-2 px-0 sm:px-4" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onTouchCancel={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
-            <div className="elec-live-label hidden sm:block shrink-0 self-center text-sm leading-tight pr-1"><span className="flex items-center gap-1.5 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN DIRECTO</span><span className="block mt-1" style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
-            <div className="elec-live-label sm:hidden absolute left-1 top-1/2 z-10 w-12 -translate-y-1/2 text-center text-[13px] leading-[14px]"><span className="flex items-center justify-center gap-1 font-bold"><span className="elec-live-dot inline-block h-2 w-2 rounded-full" style={{ background: C.red }} />EN</span><span className="block font-bold">DIRECTO</span><span className="block mt-1" style={{ color: C.grey }}>{panel?.vacio ? 0 : pastillas.length} titulares</span></div>
-            <EditorialButton aria-label="Titulares más recientes" title="Titulares más recientes" className="absolute sm:static left-14 top-1/2 sm:top-auto z-20 -translate-y-1/2 sm:translate-y-0 shrink-0 self-center h-10 w-10 text-3xl" style={{ color: C.paper, background: C.ink, border: `1px solid ${C.muted}`, borderRadius: "50%" }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(-1); }}>‹</EditorialButton>
-            <div ref={carousel} className="elec-ticker flex h-full min-w-0 flex-1 items-center gap-3 overflow-x-auto snap-x snap-proximity py-1 sm:py-2 pl-14 sm:pl-1 pr-0 sm:pr-1" style={{ touchAction: "pan-x pan-y" }}>
-              {!panel?.vacio && pastillas.length > 0 ? pastillas.map((p, index) => {
-                const latest = index === 0;
-                return <EditorialButton key={keyOf(p)} aria-label={p.texto} title={p.texto} onClick={() => navigatePill(p)} className={`elec-pill ${latest ? "elec-latest" : ""} ${newKeys.has(keyOf(p)) ? "elec-new" : ""}`} style={{ display: "flex", height: "100%", background: C.card, color: C.ink, border: latest ? `2px solid ${C.ochre}` : `1px solid ${C.rule}` }}>
-                  <span aria-hidden="true" className="h-full w-1 shrink-0" style={{ background: pillColor(p) }} />
-                  <span className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-12 sm:px-3 py-1.5 sm:py-2 text-left">
-                    <span className="flex items-center gap-2 whitespace-nowrap text-[11px] leading-[13px]" style={{ color: C.muted }}>
-                      {latest && <span className="font-bold uppercase" style={{ color: C.ochre }}>Último</span>}
-                      <time className="shrink-0">{madrid(p.ts)}</time>
-                      {st?.modo === "simulacro" && <span className="shrink-0 rounded-sm px-1 font-semibold uppercase" style={{ background: C.ochre, color: C.ink }}>Ensayo 23J</span>}
-                    </span>
-                    <span className="elec-pill-text text-base font-medium leading-[1.2]">{p.texto}</span>
-                  </span>
-                </EditorialButton>;
-              }) : <p className="text-sm sm:text-base py-1" style={{ color: C.grey }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</p>}
+        <div ref={cintaRef} className="elec-cinta" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
+          <div className="elec-cinta-in">
+            <span className="elec-cinta-lab" style={{ color: st?.modo === "simulacro" ? "#e0b26a" : C.paper }}>{st?.modo === "simulacro" ? <>ENSAYO 23J{panel?.horaSimulada != null && <> · {panel.horaSimulada}</>}</> : <><span className="elec-live-dot inline-block h-2 w-2 rounded-full mr-1.5" style={{ background: "#d33" }} />EN DIRECTO</>}</span>
+            <div className="elec-cinta-txt" aria-live="polite">
+              {curPill ? <EditorialButton key={keyOf(curPill)} style={{ color: C.paper }} className={`text-left ${newKeys.has(keyOf(curPill)) ? "elec-new" : ""}`} aria-label={curPill.texto} title={curPill.texto} onClick={() => navigatePill(curPill)}><span className="elec-cinta-hora">{madrid(curPill.ts)}</span>{curPill.texto}</EditorialButton> : <span style={{ color: C.grey, fontSize: 15 }}>Los titulares aparecerán en cuanto el recuento oficial supere el 0,5 % escrutado</span>}
             </div>
-            <EditorialButton aria-label="Titulares anteriores" title="Titulares anteriores" className="absolute sm:static right-0 top-1/2 sm:top-auto z-20 -translate-y-1/2 sm:translate-y-0 shrink-0 self-center h-10 w-10 text-3xl" style={{ color: C.paper, background: C.ink, border: `1px solid ${C.muted}`, borderRadius: "50%" }} onClick={() => { touchUntil.current = Date.now() + 10_000; advance(1); }}>›</EditorialButton>
+            {showPills.length > 0 && <div className="elec-cinta-ctl">
+              <span className="elec-cinta-n">{pillIdx + 1} de {showPills.length}</span>
+              <EditorialButton aria-label="Titular anterior" style={{ color: C.paper }} className="elec-arrow" onClick={() => { touchUntil.current = Date.now() + 10_000; setTick(pillIdx - 1 + showPills.length); }}>‹</EditorialButton>
+              <EditorialButton aria-label="Titular siguiente" style={{ color: C.paper }} className="elec-arrow" onClick={() => { touchUntil.current = Date.now() + 10_000; setTick(pillIdx + 1); }}>›</EditorialButton>
+              <EditorialButton style={{ color: C.paper }} className="elec-cinta-all" aria-expanded={showAllPills} onClick={() => setShowAllPills(v => !v)}>{showAllPills ? "Cerrar" : "Ver todos"}</EditorialButton>
+            </div>}
           </div>
-          </div>
+          {showAllPills && showPills.length > 0 && <ol className="elec-cinta-list">{showPills.map(p => <li key={keyOf(p)}><EditorialButton style={{ color: C.paper }} className="block w-full text-left py-2" aria-label={p.texto} onClick={() => { setShowAllPills(false); navigatePill(p); }}><span aria-hidden="true" className="inline-block w-1 h-4 mr-2 align-middle" style={{ background: pillColor(p) }} /><span className="elec-cinta-hora">{madrid(p.ts)}</span>{p.texto}</EditorialButton></li>)}</ol>}
         </div>
+        {!panel?.vacio && <header ref={tabsRef} className="elec-top"><div className="bar"><nav className="tabs" aria-label="Vistas del especial">
+          {VIEWS.map((v, i) => <Fragment key={v.id}>{(i === 0 || VIEWS[i - 1].group !== v.group) && <span className="elec-group">{v.group}</span>}<EditorialButton className={`elec-tab ${view === v.id ? "on" : ""} ${viewHas[v.id] ? "" : "off"}`} aria-current={view === v.id ? "page" : undefined} onClick={() => openView(v.id)}>{v.label}{!viewHas[v.id] && <span className="elec-nodata"> (sin datos aún)</span>}</EditorialButton></Fragment>)}
+        </nav></div><div className="elec-swipe">Desliza las pestañas: hay {VIEWS.length} secciones →</div></header>}
         <main className="elec-main">
           {!panel ? (
             <p className="text-center py-24 text-xl" style={{ fontFamily: SERIF, color: C.muted }}>
               {st ? "El panel se enciende con el primer dato oficial" : "Cargando…"}
             </p>
           ) : (
-            <>
+            <div className="elec-views">
+              {!panel?.vacio && <div className="elec-viewhead" style={{ order: 0 }}><div className="elec-kicker">{curView.group}</div><h2 className="mt-1">{curView.label}</h2><p className="lede">{curView.lede}</p></div>}
               {/* A. GOLPE */}
-              <section id="arriba" className="elec-section relative overflow-hidden py-8 text-center">
+              <section id="arriba" data-sec="arriba" className="elec-section relative overflow-hidden py-8 text-center">
                 {st?.modo === "simulacro" && <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center select-none" style={{ zIndex: 0 }}><span className="whitespace-nowrap font-bold" style={{ fontFamily: HEAD, fontSize: "clamp(64px, 16vw, 200px)", color: C.ochre, opacity: 0.09, transform: "rotate(-24deg)" }}>ENSAYO 23J</span></div>}
                 <div className="relative" style={{ zIndex: 1 }}>
                 {!panel?.vacio && <>
@@ -496,6 +544,8 @@ export default function EspecialNoche29N() {
                     {openMay === i && m.pasos?.length > 0 && <ol className="px-5 pb-5 space-y-1 text-sm list-decimal pl-9">{m.pasos.map((s: Any, j: number) => <li key={j}>{margen ? `${s.prov}: ${miles(s.votos)} votos menos a ${s.partidoNombre} le dan el escaño a ${s.aQuienNombre}` : `${s.prov}: ${miles(s.votos)} votos más a ${s.partidoNombre} le quitan un escaño a ${s.aQuienNombre}`}</li>)}</ol>}
                   </div>;
                 })}</div>
+              </Section>}
+              {reparto && <section id="reparto-resto" data-sec="reparto-resto" className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
                 {reparto.votosSinEscanoPct != null && <p className="mt-8 text-2xl md:text-3xl" style={{ fontFamily: SERIF }}><span className="text-5xl" style={{ color: C.ochre }}>{miles(reparto.votosSinEscanoPct)} %</span> de los votos no eligen a ningún diputado en su provincia{reparto.votosSinEscano != null && <> ({miles(reparto.votosSinEscano)} votos)</>}</p>}
                 {reparto.partidos?.length > 0 && <>
                   <h3 className="text-xl mt-8 mb-1" style={{ fontFamily: HEAD }}>Concentrar o dispersar</h3>
@@ -510,7 +560,7 @@ export default function EspecialNoche29N() {
                   <div className="overflow-x-auto mt-8"><table className="w-full text-sm text-left"><thead><tr style={{ borderBottom: `1px solid ${C.ink}` }}><th className="py-2">Partido</th><th>Escaño más barato</th><th>Escaño más frágil</th></tr></thead><tbody>{reparto.partidos.map((p: Any) => <tr key={p.k} style={{ borderBottom: `1px solid ${C.rule}` }}><td className="py-2 font-semibold" style={{ color: color(p.k) }}>{p.nombre}</td><td>{p.barato ? `${p.barato.prov}: ${miles(p.barato.votos)} votos · se lo quitaría a ${p.barato.aQuienNombre}` : "—"}</td><td>{p.fragil ? `${p.fragil.prov}: ${miles(p.fragil.votos)} votos · sería para ${p.fragil.paraQuienNombre}` : "—"}</td></tr>)}</tbody></table></div>
                 </>}
                 {reparto.nota && <p className="text-xs mt-4" style={{ color: C.muted }}>{reparto.nota}</p>}
-              </Section>}
+              </section>}
               {tamano && <Section id="tamano" kicker="Territorio" title="Dónde ha cambiado el voto">
                 {tamano.referenciaNombre && <p className="text-sm mb-4" style={{ color: C.muted }}>Cambio frente a {tamano.referenciaNombre}, en puntos, solo con municipios ya contados al 100 %</p>}
                 {(() => { const cols: Any[] = tamano.filas?.[0]?.cambios ?? []; const mx = Math.max(1, ...(tamano.filas ?? []).flatMap((f: Any) => (f.cambios ?? []).map((c: Any) => Math.abs(c.cambio ?? 0)))); return <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead><tr style={{ borderBottom: `1px solid ${C.ink}` }}><th className="py-2">Tamaño</th>{cols.map(c => <th key={c.k} style={{ color: color(c.k) }}>{c.nombre}</th>)}</tr></thead><tbody>{(tamano.filas ?? []).map((f: Any) => <tr key={f.nombre} style={{ borderBottom: `1px solid ${C.rule}` }}><td className="py-2"><b>{f.nombre}</b>{f.municipios != null && <span className="block text-xs" style={{ color: C.muted }}>{miles(f.municipios)} municipios</span>}</td>{cols.map(col => { const c = f.cambios?.find((x: Any) => x.k === col.k); if (!c || c.cambio == null) return <td key={col.k}>—</td>; const col2 = c.cambio > 0 ? C.olive : c.cambio < 0 ? C.red : C.muted; return <td key={col.k} className="min-w-[80px]"><span style={{ color: col2, fontWeight: 600 }}>{signed(c.cambio)}</span><span className="block h-1.5 mt-1" style={{ width: `${(Math.abs(c.cambio) / mx) * 100}%`, background: col2 }} /></td>; })}</tr>)}</tbody></table></div>; })()}
@@ -699,11 +749,8 @@ export default function EspecialNoche29N() {
                 <aside className="p-4 mt-5 text-sm leading-relaxed" style={{ background: "transparent", borderTop: `2px solid ${C.ink}`, borderLeft: `3px solid ${C.olive}` }}><h3 className="font-semibold mb-2">Guardarraíles</h3><p>{GUARDARRAILES}</p></aside>
               </Section>}
               </>}
-            </>
-          )}
-
           {/* I. MÉTODO */}
-          {!panel?.vacio && <section id="metodo" className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
+          {!panel?.vacio && <section id="metodo" data-sec="metodo" className="elec-section py-8" style={{ borderTop: `1px solid ${C.rule}` }}>
             <details>
               <summary className="cursor-pointer text-xl" style={{ fontFamily: HEAD }}>Método</summary>
               <div className="mt-3 space-y-2 text-sm leading-relaxed">
@@ -718,6 +765,8 @@ export default function EspecialNoche29N() {
               </div>
             </details>
           </section>}
+            </div>
+          )}
         </main>
       </div>
     </Layout>
