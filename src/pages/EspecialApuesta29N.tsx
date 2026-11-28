@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
+import { BarraEspeciales29N } from "@/components/especiales/BarraEspeciales29N";
 import { supabase } from "@/integrations/supabase/client";
 import { isDevOrPreview } from "@/lib/env";
 
@@ -453,6 +454,7 @@ export default function EspecialApuesta29N() {
         <meta name="description" content="Nuestro pronóstico para las elecciones del 29-N, sellado con una huella digital y abierto al cierre de los colegios." />
       </Helmet>
       <div style={{ background: C.paper, color: C.ink, minHeight: "100vh" }}>
+        <BarraEspeciales29N actual="apuesta" />
         {demo && <div className="sticky top-16 z-30 text-center text-sm font-semibold px-3 py-2" style={{ background: C.red, color: C.paper }}>DATOS DE EJEMPLO · modo demostración, no es la apuesta real</div>}
         <div className="max-w-5xl mx-auto px-4">
           <header className="pt-8 pb-4 text-center" style={{ borderBottom: `3px double ${C.ink}` }}>

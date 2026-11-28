@@ -3,6 +3,8 @@ import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { BarraEspeciales29N } from "@/components/especiales/BarraEspeciales29N";
+import { cuentaAtras } from "@/components/especiales/cuentaAtras";
 import { MapaEspana } from "@/components/especiales/MapaEspana";
 import { HistoricoElectoral, ChipsHistoricos, FaroHistorial } from "@/components/especiales/HistoricoElectoral";
 import { FUENTE_HISTORICA, familia2023, loadHistorico, resultado2023, type Historico } from "@/components/especiales/historicoElectoral";
@@ -21,7 +23,7 @@ const HEAD = "'Libre Caslon Text', Georgia, serif";
 const SANS = "'Libre Franklin', 'Franklin Gothic Medium', 'Helvetica Neue', Arial, sans-serif";
 
 type Any = any;
-type Pastilla = { ts: string; clave: string; tipo: "inicio" | "certeza" | "vuelco" | "primera" | "hora" | "mayoria" | "escanos" | "engano" | "poder" | "alambre" | "cera" | "apuesta" | "calidad" | "tramo"; texto: string; ancla: string; prioridad: 1 | 2 | 3; partido: string | null; escrutado: number };
+type Pastilla = { ts: string; clave: string; tipo: "inicio" | "certeza" | "vuelco" | "primera" | "hora" | "mayoria" | "escanos" | "engano" | "poder" | "alambre" | "cera" | "apuesta" | "calidad" | "tramo" | "enjuego"; texto: string; ancla: string; prioridad: 1 | 2 | 3; partido: string | null; escrutado: number };
 type Certeza = { id: string; texto: string; prob: number; ambito: string; ancla: string; prov: string | null; estado: "seguro" | "abierto"; hora?: string; minutos?: number };
 type Ultimo = { winner: string; runnerUp: string; votesNeeded: number };
 type EnJuegoProvincia = { p: string; nombre: string; escanos: number; cerrado: number; enJuego: number; votosPorEscano: number; valorVoto: number; ultimo: Ultimo | null; escrutado: number };
@@ -32,6 +34,7 @@ type Panel = {
   pendiente?: { votosPendientes?: number; filas?: { k: string; nombre: string; contado: number; pendiente: number; cuotaContado: number; cuotaFinal: number; diferencia: number }[]; bolsas?: { cls: string; nombre: string; votos: number; inclinacion?: { k: string; nombre: string; cuota: number }[] }[]; engano?: { recuentoNombre: string; proyeccionNombre: string } | null };
   porque?: { desde?: string | null; escAntes?: number | null; cambios?: { k: string; nombre: string; antes: number; ahora: number; delta: number; provincias?: { p: string; nombre: string; d: number; escAntes: number; escAhora: number }[] }[] };
   poder?: { partidos?: { k: string; nombre: string; poder: number; p10: number; p90: number; escanos: number }[]; nota?: string };
+  concluyente?: { estado?: "abierto" | "resuelto"; enJuego?: number; decididos?: number; hora?: string; minutos?: number; nota?: string };
   enJuego?: { total?: number; provincias?: EnJuegoProvincia[]; nota?: string };
   apuesta?: { total: number; aciertaMasVotado: number; repartoExacto: number; nacional?: { k: string; nombre: string; apuesta: number; ahora: number }[]; provincias?: { p: string; nombre: string; apuestaMasVotado: string; ahoraMasVotado: string; aciertaMasVotado: boolean; repartoExacto: boolean }[]; sha256?: string; nota?: string } | null;
   calidad?: { cuarentena?: { id: string; n: string; p: string; motivo: string }[]; nota?: string };
@@ -146,6 +149,34 @@ function SinPanelVista({ view, historico, sello, distinto, metodo }: { view: (ty
       </>}
     </div>
   );
+}
+
+function CuentaAtras({ panel, name, go }: { panel: Panel | null; name: (k: string) => string; go: (id: string, prov?: string | null) => void }) {
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setAhora(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (!panel) {
+    const txt = cuentaAtras(ahora);
+    return <div className="elec-cd" aria-live="off">
+      {txt ? <>
+        <div className="elec-cd-big">{txt}</div>
+        <p className="mt-2" style={{ fontFamily: SERIF, fontSize: 17 }}>Cierran los colegios y empieza el escrutinio oficial: domingo 29, 20:00 (en Canarias, 19:00 hora local)</p>
+      </> : <div className="elec-cd-big" style={{ fontSize: "clamp(22px,4vw,36px)" }}>Escrutinio en marcha: esperando los primeros datos oficiales</div>}
+      <p className="mt-2 text-xs" style={{ fontFamily: SANS, color: C.muted, letterSpacing: ".04em" }}>14:00 primer avance de participación · 18:00 segundo avance · 20:00 cierre y escrutinio · 21:00 se abre el pronóstico sellado</p>
+    </div>;
+  }
+  const K = panel.concluyente;
+  const lista = (panel.enJuego?.provincias ?? []).filter(p => (p.enJuego ?? 0) >= 0.35).sort((a, b) => b.enJuego - a.enJuego).slice(0, 8);
+  if (!K && !lista.length) return null;
+  const dec1 = (n?: number) => n == null ? "—" : n.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return <div className="elec-cd">
+    {K && (K.estado === "resuelto" ? <div className="elec-cd-big" style={{ color: C.olive, fontSize: "clamp(22px,4vw,38px)" }}>Reparto concluyente: menos de un escaño en el aire</div> : <>
+      <div className="elec-cd-big" style={{ fontSize: "clamp(22px,4vw,40px)" }}>Escaños decididos: {K.decididos ?? "—"} de 350 · en el aire: {dec1(K.enJuego)}</div>
+      {K.decididos != null && <div className="mx-auto mt-3 h-2 max-w-xl" style={{ background: C.rule }} role="progressbar" aria-valuemin={0} aria-valuemax={350} aria-valuenow={K.decididos}><div className="h-full" style={{ width: `${Math.min(100, K.decididos / 350 * 100)}%`, background: C.ink }} /></div>}
+      {K.hora && <p className="mt-2" style={{ fontFamily: SERIF, fontSize: 17 }}>Resultado concluyente estimado hacia las {K.hora}{K.minutos != null && ` (en ${K.minutos} min)`}</p>}
+    </>)}
+    {K?.nota && <p className="mt-2 text-xs" style={{ color: C.muted }}><span aria-hidden="true">ⓘ </span>{K.nota}</p>}
+    {lista.length > 0 && <div className="mt-3 text-left max-w-3xl mx-auto"><div className="text-xs font-bold uppercase" style={{ fontFamily: SANS, letterSpacing: ".08em" }}>Escaños en juego</div><ul className="mt-1">{lista.map(p => <li key={p.p}><EditorialButton className="block w-full text-left py-1 text-sm" onClick={() => go("alambre", p.p)}><b>{p.nombre}</b> · {dec1(p.enJuego)}{p.ultimo && <span style={{ color: C.muted }}> · ahora de {name(p.ultimo.winner)} · puede ir a {name(p.ultimo.runnerUp)}</span>}</EditorialButton></li>)}</ul></div>}
+  </div>;
 }
 
 export default function EspecialNoche29N() {
@@ -282,7 +313,7 @@ export default function EspecialNoche29N() {
   const provShown = allProv ? provs : provs.slice(0, 15);
   const sortColumn = (key: string) => setSortProv(s => ({ key, asc: s.key === key ? !s.asc : key !== "enJuego" && key !== "valorVoto" }));
   const openProvince = (p: string) => go("alambre", p);
-  const pillColor = (p: Pastilla) => ["vuelco", "mayoria", "engano"].includes(p.tipo) ? C.red : ["certeza", "hora"].includes(p.tipo) ? C.ochre : C.olive;
+  const pillColor = (p: Pastilla) => ["vuelco", "mayoria", "engano"].includes(p.tipo) ? C.red : ["certeza", "hora", "enjuego"].includes(p.tipo) ? C.ochre : C.olive;
   const navigatePill = (p: Pastilla) => {
     const province = p.ancla === "alambre" ? provs.find(v => p.texto.toLocaleLowerCase("es").startsWith(v.nombre.toLocaleLowerCase("es"))) : null;
     go(p.ancla, province?.p);
@@ -402,6 +433,9 @@ export default function EspecialNoche29N() {
           .elec-page .dbx a { color:var(--paper); text-decoration:none; padding:8px 12px; white-space:nowrap; border-bottom:3px solid transparent; opacity:.82; }
           .elec-page .dbx a:hover { opacity:1; }
           .elec-page .dbx a.dbx-on { opacity:1; border-bottom-color:var(--paper); }
+          .elec-page .dbx29 { width:100vw; margin-left:calc(50% - 50vw); }
+          .elec-page .elec-cd { max-width:1180px; margin:10px auto 0; padding:14px 18px; text-align:center; border-top:1px solid var(--ink); border-bottom:1px solid var(--ink); }
+          .elec-page .elec-cd-big { font-family:var(--head); font-weight:700; font-size:clamp(30px,6vw,58px); line-height:1.05; font-variant-numeric:tabular-nums; }
           .elec-page .masthead { max-width:1180px; margin:0 auto; padding:18px 18px 0; text-align:center; }
           .elec-page .masthead .dateline { display:flex; justify-content:space-between; gap:12px; font:600 12px var(--sans); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--ink); padding-bottom:8px; }
           .elec-page .masthead h1 { font-family:var(--head); font-weight:700; font-size:clamp(30px,5.2vw,56px); letter-spacing:-.01em; margin:12px 0 6px; line-height:1; }
@@ -475,19 +509,14 @@ export default function EspecialNoche29N() {
           @media (max-width:640px) { .elec-page .elec-cinta { position:static; } .elec-page .elec-top { top:72px; } .elec-page .elec-swipe { display:block; } .elec-page .elec-cinta-in { flex-wrap:wrap; gap:8px; } .elec-page .elec-cinta-txt { flex-basis:100%; order:3; font-size:18px; } .elec-page .elec-cinta-ctl { margin-left:auto; }  .elec-page .dbx-t,.elec-page .dbx-d { display:none; } .elec-page .dbx a { padding:8px 9px; } .elec-page .masthead,.elec-page .elec-main { width:100vw; margin-left:calc(50% - 50vw); } .elec-page .masthead .dateline { font-size:10px; letter-spacing:.04em; } .elec-page .elec-section { scroll-margin-top:140px; } }
           @media (prefers-reduced-motion:reduce) { .elec-page *,.elec-page .elec-new,.elec-page .elec-live-dot { animation:none; transition:none; scroll-behavior:auto; } }
         `}</style>
-        <nav className="dbx" aria-label="Especiales electorales 29-N"><div className="dbx-in">
-          <span className="dbx-t">Especiales 29-N</span>
-          <a href="https://debate.warrooms.info/" target="_top">Cara a cara<span className="dbx-d"> · 19-N</span></a>
-          <a href="/especiales/debates/debate-a-ocho-23n" target="_top">Debate a ocho<span className="dbx-d"> · 23-N</span></a>
-          <a href="/especiales/debates/debate-a-cuatro-26n" target="_top">Debate a cuatro<span className="dbx-d"> · 26-N</span></a>
-          <a href="/especiales/elecciones/noche-29n" className="dbx-on" aria-current="page">Noche electoral<span className="dbx-d"> · 29-N</span></a>
-        </div></nav>
+        <BarraEspeciales29N actual="noche" />
         <header className="masthead">
           <div className="dateline"><span>Domingo, 29 de noviembre de 2026</span><span>Un análisis del equipo de RepIndex.ai</span><span>Madrid</span></div>
           <h1>La Noche Electoral</h1>
           <div className="sub">Elecciones generales 29-N · proyección en directo con los datos oficiales del Ministerio del Interior</div>
           <div className="elec-status">Última actualización: {updated ? madrid(updated) : "—"}{panel?.ts && <> · dato del panel {madrid(panel.ts)}</>}{hora && <> · hora {hora}</>}{err && <span style={{ color: C.red }}> · sin conexión, reintentando</span>}</div>
         </header>
+        <CuentaAtras panel={panel} name={k => byK[k]?.nombre ?? k} go={go} />
         <div ref={cintaRef} className="elec-cinta" onMouseEnter={() => { paused.current = true; }} onMouseLeave={() => { paused.current = false; }} onTouchStart={() => { paused.current = true; }} onTouchEnd={() => { paused.current = false; touchUntil.current = Date.now() + 10_000; }} onFocusCapture={() => { paused.current = true; }} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}>
           <div className="elec-cinta-in">
             <span className="elec-cinta-lab" style={{ color: C.paper }}>{esHist || !realPills.length ? <>TITULARES</> : <><span className="elec-live-dot inline-block h-2 w-2 rounded-full mr-1.5" style={{ background: "#d33" }} />EN DIRECTO</>}</span>

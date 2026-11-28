@@ -249,6 +249,12 @@ export default function Especiales() {
           {elecciones.length > 0 && (
             <section className="s" id="elecciones">
               <div className="sh"><h2>Elecciones generales 29-N</h2><span>Debates de campaña y la noche electoral</span></div>
+              <article className="lead" style={{ marginBottom: 24 }}>
+                <div className="kick">Noche electoral<em> · Domingo 29</em></div>
+                <h3><Go to="/especiales/elecciones/noche-29n">La Noche Electoral</Go></h3>
+                <p className="ent">En directo el domingo 29 desde las 20:00. Proyección con los datos oficiales del Ministerio del Interior.</p>
+                <div><Go to="/especiales/elecciones/noche-29n" className="cta">Leer el especial: La Noche Electoral →</Go></div>
+              </article>
               <div className="g-lead">
                 {eLead && <article className="lead"><Noticia e={eLead} cats={cats} size="lead" /></article>}
                 {eSide && (

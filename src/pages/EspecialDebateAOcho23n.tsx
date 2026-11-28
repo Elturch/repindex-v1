@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Layout } from "@/components/layout/Layout";
+import { BarraEspeciales29N, ocultarBarraInterna } from "@/components/especiales/BarraEspeciales29N";
 
 const FALLBACK_HEADER_HEIGHT = 72;
 
@@ -26,12 +27,14 @@ export default function EspecialDebateAOcho23n() {
       <Helmet>
         <link rel="canonical" href="https://repindex.ai/especiales/debates/debate-a-ocho-23n" />
       </Helmet>
+      <BarraEspeciales29N actual="debate-a-ocho" />
       <iframe
+        onLoad={e => ocultarBarraInterna(e.currentTarget)}
         src={`/especiales/debates/src/debate-a-ocho-23n.html?v=${CACHE_BUST}${typeof window !== "undefined" ? window.location.hash : ""}`}
         title="El Debate a Ocho · RepIndex"
         style={{
           width: "100%",
-          height: `calc(100vh - ${headerHeight}px)`,
+          height: `calc(100vh - ${headerHeight + 34}px)`,
           border: "none",
           display: "block",
         }}
